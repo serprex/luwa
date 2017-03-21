@@ -1,0 +1,3 @@
+rule mkcjs
+ command=mkcjs $out $in
+build quire.js:mkcjs luwa.js lex.js
