@@ -1,3 +1,6 @@
+"use strict";
+exports.rekey = /^(and|break|do|else|elseif|end|false|for|function|goto|if|in|local|nil|not|or|repeat|return|then|true|until|while)$/;
+exports.reident = /^\w*$/
 exports["and"] = exports._and = 1;
 exports["break"] = exports._break = 2;
 exports["do"] = exports._do = 3;
@@ -55,6 +58,8 @@ exports[".."] = exports._dotdot = 54;
 exports["..."] = exports._dotdotdot = 55;
 exports['"'] = exports["'"] = exports._quote = 56;
 exports._ident = 57;
+exports._string = 58;
+exports._number = 59;
 
 function Lex(src) {
 	this.ss = {};
@@ -77,7 +82,7 @@ function Lex(src) {
 				this.ss[st] = sid;
 				si = sid++;
 			}
-			src = src.slice(0, idx) + ('\0' + si + '\0') + src.slice(idx2 + res0.length);
+			src = src.slice(0, idx) + (' \0' + si + ' ') + src.slice(idx2 + res0.length);
 		}
 	}
 	// TODO quoted newlines
@@ -125,11 +130,11 @@ function Lex(src) {
 			this.ss[st] = sid;
 			si = sid++;
 		}
-		src = src.slice(0, idx) + ('\0' + si + '\0') + src.slice(idx2 + 1);
+		src = src.slice(0, idx) + (' \0' + si + ' ') + src.slice(idx2 + 1);
 	}
 	this.lex = src.
 		replace(/--.*\n?/g, ' ').
-		replace(/(\+|-|\*|\/\/|\/|%|\^|#|&|==|~=|~|\||<=|>=|=|<<|<|>>|>|{|}|\(|\)|\[|\]|::|:|;|,|\.\.\.|\.\.|\.)/g, ' $1 ').
+		replace(/((0x[\da-fA-F]+|-?(\d+(\.(\d+)?)?)(?:[eE][+-]?\d+)?)|\+|-|\*|\/\/|\/|%|\^|#|&|==|~=|~|\||<=|>=|=|<<|<|>>|>|{|}|\(|\)|\[|\]|::|:|;|,|\.\.\.|\.\.|\.)/g, ' $1 ').
 		trim().
 		split(/\s+/);
 }
