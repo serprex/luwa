@@ -22,50 +22,53 @@ const _then = exports["then"] = exports._then = 19;
 const _true = exports["true"] = exports._true = 20;
 const _until = exports["until"] = exports._until = 21;
 const _while = exports["while"] = exports._while = 22;
-const _plus = exports["+"] = exports._plus = 23;
-const _minus = exports["-"] = exports._minus = 24;
-const _mul = exports["*"] = exports._mul = 25;
-const _div = exports["/"] = exports._div = 26;
-const _mod = exports["%"] = exports._mod = 27;
-const _bxor = exports["^"] = exports._bxor = 28;
-const _hash = exports["#"] = exports._hash = 29;
-const _band = exports["&"] = exports._band = 30;
-const _bnot = exports["~"] = exports._bnot = 31;
-const _bor = exports["|"] = exports._bor = 32;
-const _lsh = exports["<<"] = exports._lsh = 33;
-const _rsh = exports[">>"] = exports._rsh = 34;
-const _idiv = exports["//"] = exports._idiv = 35;
-const _eq = exports["=="] = exports._eq = 36;
-const _neq = exports["~="] = exports._neq = 37;
-const _lt = exports["<"] = exports._lt = 38;
-const _gt = exports[">"] = exports._gt = 39;
-const _lte = exports["<="] = exports._lte = 40;
-const _gte = exports[">="] = exports._gte = 41;
-const _set = exports["="] = exports._set = 42;
-const _pl = exports["("] = exports._pl = 43;
-const _pr = exports[")"] = exports._pr = 44;
-const _cl = exports["{"] = exports._cl = 45;
-const _cr = exports["}"] = exports._cr = 46;
-const _sl = exports["["] = exports._sl = 47;
-const _sr = exports["]"] = exports._sr = 48;
-const _label = exports["::"] = exports._label = 49;
-const _semi = exports[";"] = exports._semi = 50;
-const _colon = exports[":"] = exports._colon = 51;
-const _comma = exports[","] = exports._comma = 52;
-const _dot = exports["."] = exports._dot = 53;
-const _dotdot = exports[".."] = exports._dotdot = 54;
-const _dotdotdot = exports["..."] = exports._dotdotdot = 55;
+const _plus = exports._plus = 23;
+const _minus = exports._minus = 24;
+const _mul = exports._mul = 25;
+const _div = exports._div = 26;
+const _mod = exports._mod = 27;
+const _pow = exports._pow = 28;
+const _hash = exports._hash = 29;
+const _band = exports._band = 30;
+const _bnot = exports._bnot = 31;
+const _bor = exports._bor = 32;
+const _lsh = exports._lsh = 33;
+const _rsh = exports._rsh = 34;
+const _idiv = exports._idiv = 35;
+const _eq = exports._eq = 36;
+const _neq = exports._neq = 37;
+const _lt = exports._lt = 38;
+const _gt = exports._gt = 39;
+const _lte = exports._lte = 40;
+const _gte = exports._gte = 41;
+const _set = exports._set = 42;
+const _pl = exports._pl = 43;
+const _pr = exports._pr = 44;
+const _cl = exports._cl = 45;
+const _cr = exports._cr = 46;
+const _sl = exports._sl = 47;
+const _sr = exports._sr = 48;
+const _label = exports._label = 49;
+const _semi = exports._semi = 50;
+const _colon = exports._colon = 51;
+const _comma = exports._comma = 52;
+const _dot = exports._dot = 53;
+const _dotdot = exports._dotdot = 54;
+const _dotdotdot = exports._dotdotdot = 55;
 const _ident = exports._ident = 0x8000000;
 const _string = exports._string = 0x4000000;
 const _number = exports._number = 0x2000000;
 
-const alpha = /^\d$/;
+const digit = /^\d$/;
 const alphascore = /^[a-zA-Z_]$/;
 const alphanumscore = /^\w$/;
 function Lex(src) {
-	this.ss = {}; this.ssr = [];
-	this.si = {}; this.sir = [];
-	this.sn = {}; this.snr = [];
+	this.ss = {};
+	this.ssr = [];
+	this.si = {};
+	this.sir = [];
+	this.sn = {};
+	this.snr = [];
 	const ss = this.ss, ssr = this.ssr, si = this.si, sir = this.sir, sn = this.sn, snr = this.snr;
 	const lex = [];
 	this.lex = lex;
@@ -89,6 +92,8 @@ function Lex(src) {
 						sii++;
 					}
 				}
+			} else if (!/^\s$/.test(ch)) {
+				return console.log("Unexpected character", ch);
 			}
 			break;
 		case '+':lex.push(_plus);break;
@@ -144,7 +149,7 @@ function Lex(src) {
 		case ')':lex.push(_pr);break;
 		case ']':lex.push(_sr);break;
 		case '&':lex.push(_band);break;
-		case '^':lex.push(_bxor);break;
+		case '^':lex.push(_pow);break;
 		case '|':lex.push(_bor);break;
 		case ';':lex.push(_semi);break;
 		case ',':lex.push(_comma);break;
@@ -253,7 +258,7 @@ function Lex(src) {
 					i += 1;
 				}
 				break;
-			} else if (!alpha.test(src[i+1])) {
+			} else if (!digit.test(src[i+1])) {
 				lex.push(_dot);
 				break;
 			}
@@ -297,6 +302,7 @@ function Lex(src) {
 			}
 		}
 	}
+	lex.push(0);
 }
 
 exports.Lex = Lex;

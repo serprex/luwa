@@ -1,5 +1,6 @@
 "use strict";
 const lex = require("./lex");
+const ast = require("./ast");
 
 function varint (v, value) {
 	while (true) {
@@ -37,10 +38,6 @@ function pushArray(sink, data) {
 }
 
 exports.runSource = function(source, imp){
-	// 0000:cdff stack
-	// ce00:f5ff source
-	// f600:ffff xbits
-	console.log(new lex.Lex(source));
-	console.time("start");
-	const code = new Uint8Array(imp[""].m.buffer);
+	var l, b;
+	console.log(l = new lex.Lex(source), ast.parse(l));
 }
