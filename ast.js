@@ -2,111 +2,117 @@
 var lex = require("./lex");
 
 // Thanks lua-users.org/lists/lua-l/2010-12/msg00699.html
-var Chunk = 0,
-	Block = 1,
-	Stat = 2,
-	Retstat = 3,
-	Label = 4,
-	Funcname = 5,
-	Varlist = 6,
-	Var = 7,
-	Namelist = 8,
-	Explist = 9,
-	Exp = 10,
-	Prefix = 11,
-	Functioncall = 12,
-	Args = 13,
-	Functiondef = 14,
-	Funcbody = 15,
-	Parlist = 16,
-	Tableconstructor = 17,
-	Fieldlist = 18,
-	Field = 19,
-	Fieldsep = 20,
-	Binop = 21,
-	Unop = 22,
-	Value = 23,
-	Index = 24,
-	Call = 25,
-	Suffix = 26;
+var Block = 0,
+	Stat = 1,
+	Retstat = 2,
+	Label = 3,
+	Funcname = 4,
+	Varlist = 5,
+	Var = 6,
+	Namelist = 7,
+	Explist = 8,
+	Exp = 9,
+	Prefix = 10,
+	Functioncall = 11,
+	Args = 12,
+	Functiondef = 13,
+	Funcbody = 14,
+	Parlist = 15,
+	Tableconstructor = 16,
+	Fieldlist = 17,
+	Field = 18,
+	Fieldsep = 19,
+	Binop = 20,
+	Unop = 21,
+	Value = 22,
+	Index = 23,
+	Call = 24,
+	Suffix = 25;
 
-var name = function*(x) {
-	var t = x.next();
+var name = function*(x, p) {
+	var t = x.next(p);
 	if (t && t.val() & lex._ident)
 		yield t;
 };
-var number = function*(x) {
-	var t = x.next();
+var number = function*(x, p) {
+	var t = x.next(p);
 	if (t && t.val() & lex._number)
 		yield t;
 };
-var slit = function*(x) {
-	var t = x.next();
+var slit = function*(x, p) {
+	var t = x.next(p);
 	if (t && t.val() & lex._string)
 		yield t;
 };
-var s = r => function*(x) {
-	var t = x.next();
+var _s = [], s = r => _s[r] || (_s[r] = function*(x, p) {
+	var t = x.next(p);
 	if (t && t.val() == r) {
 		yield t;
 	}
-};
-var o = n => function*(x) {
-	yield *rules[n](x);
-};
-var seq2 = (a, b) => function*(x) {
-	for (let ax of a(x)) {
-		yield *b(ax);
+});
+var _o = [], o = n => _o[n] || (_o[n] = function*(x, p) {
+	let y = x.spawn(n, p);
+	yield *rules[n](y, y);
+});
+var seq2 = (a, b) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		yield *b(ax, y);
 	}
 };
-var seq3 = (a, b, c) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			yield *c(bx);
+var seq3 = (a, b, c) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		for (let bx of b(ax, y)) {
+			yield *c(bx, y);
 		}
 	}
 };
-var seq4 = (a, b, c, d) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			for (let cx of c(bx)) {
-				yield *d(cx);
+var seq4 = (a, b, c, d) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(x, y)) {
+		for (let bx of b(ax, y)) {
+			for (let cx of c(bx, y)) {
+				yield *d(cx, y);
 			}
 		}
 	}
 };
-var seq5 = (a, b, c, d, e) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			for (let cx of c(bx)) {
-				for (let dx of d(cx)) {
-					yield *e(dx);
+var seq5 = (a, b, c, d, e) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		for (let bx of b(ax, y)) {
+			for (let cx of c(bx, y)) {
+				for (let dx of d(cx, y)) {
+					yield *e(dx, y);
 				}
 			}
 		}
 	}
 };
-var seq6 = (a, b, c, d, e, f) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			for (let cx of c(bx)) {
-				for (let dx of d(cx)) {
-					for (let ex of e(dx)) {
-						yield *f(ex);
+var seq6 = (a, b, c, d, e, f) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		for (let bx of b(ax, y)) {
+			for (let cx of c(bx, y)) {
+				for (let dx of d(cx, y)) {
+					for (let ex of e(dx, y)) {
+						yield *f(ex, y);
 					}
 				}
 			}
 		}
 	}
 };
-var seq7 = (a, b, c, d, e, f, g) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			for (let cx of c(bx)) {
-				for (let dx of d(cx)) {
-					for (let ex of e(dx)) {
-						for (let fx of f(ex)) {
-							yield *g(fx);
+var seq7 = (a, b, c, d, e, f, g) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		for (let bx of b(ax, y)) {
+			for (let cx of c(bx, y)) {
+				for (let dx of d(cx, y)) {
+					for (let ex of e(dx, y)) {
+						for (let fx of f(ex, y)) {
+							yield *g(fx, y);
 						}
 					}
 				}
@@ -114,15 +120,16 @@ var seq7 = (a, b, c, d, e, f, g) => function*(x) {
 		}
 	}
 };
-var seq8 = (a, b, c, d, e, f, g, h) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			for (let cx of c(bx)) {
-				for (let dx of d(cx)) {
-					for (let ex of e(dx)) {
-						for (let fx of f(ex)) {
-							for (let gx of g(fx)) {
-								yield *h(gx);
+var seq8 = (a, b, c, d, e, f, g, h) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		for (let bx of b(ax, y)) {
+			for (let cx of c(bx, y)) {
+				for (let dx of d(cx, y)) {
+					for (let ex of e(dx, y)) {
+						for (let fx of f(ex, y)) {
+							for (let gx of g(fx, y)) {
+								yield *h(gx, y);
 							}
 						}
 					}
@@ -131,16 +138,17 @@ var seq8 = (a, b, c, d, e, f, g, h) => function*(x) {
 		}
 	}
 };
-var seq9 = (a, b, c, d, e, f, g, h, i) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			for (let cx of c(bx)) {
-				for (let dx of d(cx)) {
-					for (let ex of e(dx)) {
-						for (let fx of f(ex)) {
-							for (let gx of g(fx)) {
-								for (let hx of h(gx)) {
-									yield *i(hx);
+var seq9 = (a, b, c, d, e, f, g, h, i) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		for (let bx of b(ax, y)) {
+			for (let cx of c(bx, y)) {
+				for (let dx of d(cx, y)) {
+					for (let ex of e(dx, y)) {
+						for (let fx of f(ex, y)) {
+							for (let gx of g(fx, y)) {
+								for (let hx of h(gx, y)) {
+									yield *i(hx, y);
 								}
 							}
 						}
@@ -150,17 +158,18 @@ var seq9 = (a, b, c, d, e, f, g, h, i) => function*(x) {
 		}
 	}
 };
-var seq10 = (a, b, c, d, e, f, g, h, i, j) => function*(x) {
-	for (let ax of a(x)) {
-		for (let bx of b(ax)) {
-			for (let cx of c(bx)) {
-				for (let dx of d(cx)) {
-					for (let ex of e(dx)) {
-						for (let fx of f(ex)) {
-							for (let gx of g(fx)) {
-								for (let hx of h(gx)) {
-									for (let ix of i(hx)) {
-										yield *j(ix);
+var seq10 = (a, b, c, d, e, f, g, h, i, j) => function*(x, p) {
+	let y = x.spawn(-1, p);
+	for (let ax of a(y, y)) {
+		for (let bx of b(ax, y)) {
+			for (let cx of c(bx, y)) {
+				for (let dx of d(cx, y)) {
+					for (let ex of e(dx, y)) {
+						for (let fx of f(ex, y)) {
+							for (let gx of g(fx, y)) {
+								for (let hx of h(gx, y)) {
+									for (let ix of i(hx, y)) {
+										yield *j(ix, y);
 									}
 								}
 							}
@@ -171,18 +180,20 @@ var seq10 = (a, b, c, d, e, f, g, h, i, j) => function*(x) {
 		}
 	}
 };
-var of2 = (a, b) => function*(x) {
-	yield *a(x);
-	yield *b(x);
-};
-var many = f => function* manyf(x) {
-	for (let fx of f(x)) {
-		yield *manyf(fx);
+var many = f => {
+	function* manyf(x, p) {
+		for (let fx of f(x, p)) {
+			yield *manyf(fx, p);
+		}
+		yield x;
+	};
+	return function (x, p) {
+		let y = x.spawn(-2, p);
+		return manyf(y, y);
 	}
-	yield x;
-};
-var maybe = f => function*(x) {
-	yield *f(x);
+}
+var maybe = f => function*(x, p) {
+	yield *f(x, p);
 	yield x;
 };
 function of() {
@@ -190,23 +201,28 @@ function of() {
 	for (var i=0; i<arguments.length; i++) {
 		args.push(arguments[i]);
 	}
-	return function*(x){
+	return function*(x, p){
+		var i = 100;
 		for (let a of args) {
-			yield *a(x);
+			let y = x.spawn(i++, p);
+			yield *a(y, y);
 		}
 	}
 }
 
-function seq(a, b) {
+function seq() {
 	var args = [];
-	for (var i=0; i<arguments.length; i++) {
-		args.push(arguments[i]);
-	}
+	Array.prototype.push.apply(args, arguments);
 	return ([seq2, seq3, seq4, seq5, seq6, seq7, seq8, seq9, seq10][arguments.length - 2]).apply(null, args);
 }
 
+function *gmap(f, g) {
+	for (let x of g) {
+		yield f(x);
+	}
+}
+
 var rules = [];
-rules[Chunk] = seq(o(Block), s(0));
 rules[Block] = seq(many(o(Stat)), maybe(o(Retstat)));
 rules[Stat] = of(
 	s(lex._semi),
@@ -258,23 +274,27 @@ rules[Index] = of(
 rules[Call] = of(o(Args), seq(s(lex._colon), name, o(Args)));
 rules[Suffix] = of(o(Call), o(Index));
 
-function Builder(lx, li) {
+function Builder(lx, li, mo, fa, ty) {
 	this.lx = lx;
 	this.li = li;
+	this.mother = mo;
+	this.father = fa;
+	this.type = ty;
 }
 Builder.prototype.val = function() {
 	return this.lx.lex[this.li];
 }
-Builder.prototype.next = function() {
-	return this.li+1 >= this.lx.lex.length ? null : new Builder(this.lx, this.li+1);
+Builder.prototype.next = function(p) {
+	return this.li+1 >= this.lx.lex.length ? null : new Builder(this.lx, this.li+1, this, p, -3);
+}
+Builder.prototype.spawn = function(ty, p) {
+	return new Builder(this.lx, this.li, this, p, ty);
 }
 
+var _chunk = seq(rules[Block], s(0));
 function parse(lx) {
-	for (var x of rules[Chunk](new Builder(lx, -1))) {
-		if (x.li+1 == lx.lex.length) {
-			return x;
-		}
-	}
+	var root = new Builder(lx, -1, null, null, 0);
+	return _chunk(root, root).next().value;
 }
 
 exports.parse = parse;
