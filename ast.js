@@ -52,17 +52,17 @@ var _s = [], s = r => _s[r] || (_s[r] = function*(x, p) {
 });
 var _o = [], o = n => _o[n] || (_o[n] = function*(x, p) {
 	let y = x.spawn(n, p);
-	yield *rules[n](y, y);
+	yield *rules[n](x, y);
 });
 var seq2 = (a, b) => function*(x, p) {
 	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
+	for (let ax of a(x, y)) {
 		yield *b(ax, y);
 	}
 };
 var seq3 = (a, b, c) => function*(x, p) {
 	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
+	for (let ax of a(x, y)) {
 		for (let bx of b(ax, y)) {
 			yield *c(bx, y);
 		}
@@ -80,7 +80,7 @@ var seq4 = (a, b, c, d) => function*(x, p) {
 };
 var seq5 = (a, b, c, d, e) => function*(x, p) {
 	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
+	for (let ax of a(x, y)) {
 		for (let bx of b(ax, y)) {
 			for (let cx of c(bx, y)) {
 				for (let dx of d(cx, y)) {
@@ -92,7 +92,7 @@ var seq5 = (a, b, c, d, e) => function*(x, p) {
 };
 var seq6 = (a, b, c, d, e, f) => function*(x, p) {
 	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
+	for (let ax of a(x, y)) {
 		for (let bx of b(ax, y)) {
 			for (let cx of c(bx, y)) {
 				for (let dx of d(cx, y)) {
@@ -189,7 +189,7 @@ var many = f => {
 	};
 	return function (x, p) {
 		let y = x.spawn(-2, p);
-		return manyf(y, y);
+		return manyf(x, y);
 	}
 }
 var maybe = f => function*(x, p) {
@@ -198,28 +198,18 @@ var maybe = f => function*(x, p) {
 };
 function of() {
 	var args = [];
-	for (var i=0; i<arguments.length; i++) {
-		args.push(arguments[i]);
-	}
+	Array.prototype.push.apply(args, arguments);
 	return function*(x, p){
 		var i = 100;
 		for (let a of args) {
 			let y = x.spawn(i++, p);
-			yield *a(y, y);
+			yield *a(x, y);
 		}
 	}
 }
 
 function seq() {
-	var args = [];
-	Array.prototype.push.apply(args, arguments);
-	return ([seq2, seq3, seq4, seq5, seq6, seq7, seq8, seq9, seq10][arguments.length - 2]).apply(null, args);
-}
-
-function *gmap(f, g) {
-	for (let x of g) {
-		yield f(x);
-	}
+	return ([seq2, seq3, seq4, seq5, seq6, seq7, seq8, seq9, seq10][arguments.length - 2]).apply(null, arguments);
 }
 
 var rules = [];
