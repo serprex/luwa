@@ -54,132 +54,20 @@ var _o = [], o = n => _o[n] || (_o[n] = function*(x, p) {
 	let y = x.spawn(n, p);
 	yield *rules[n](x, y);
 });
-var seq2 = (a, b) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(x, y)) {
-		yield *b(ax, y);
-	}
-};
-var seq3 = (a, b, c) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(x, y)) {
-		for (let bx of b(ax, y)) {
-			yield *c(bx, y);
-		}
-	}
-};
-var seq4 = (a, b, c, d) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(x, y)) {
-		for (let bx of b(ax, y)) {
-			for (let cx of c(bx, y)) {
-				yield *d(cx, y);
+function seq() {
+	var args = [];
+	Array.prototype.push.apply(args, arguments);
+	function *seqf(x, p, i) {
+		if (i == args.length - 1) {
+			yield *args[i](x, p);
+		} else {
+			for (let ax of args[i](x, p)) {
+				yield *seqf(ax, p, i+1);
 			}
 		}
 	}
-};
-var seq5 = (a, b, c, d, e) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(x, y)) {
-		for (let bx of b(ax, y)) {
-			for (let cx of c(bx, y)) {
-				for (let dx of d(cx, y)) {
-					yield *e(dx, y);
-				}
-			}
-		}
-	}
-};
-var seq6 = (a, b, c, d, e, f) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(x, y)) {
-		for (let bx of b(ax, y)) {
-			for (let cx of c(bx, y)) {
-				for (let dx of d(cx, y)) {
-					for (let ex of e(dx, y)) {
-						yield *f(ex, y);
-					}
-				}
-			}
-		}
-	}
-};
-var seq7 = (a, b, c, d, e, f, g) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
-		for (let bx of b(ax, y)) {
-			for (let cx of c(bx, y)) {
-				for (let dx of d(cx, y)) {
-					for (let ex of e(dx, y)) {
-						for (let fx of f(ex, y)) {
-							yield *g(fx, y);
-						}
-					}
-				}
-			}
-		}
-	}
-};
-var seq8 = (a, b, c, d, e, f, g, h) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
-		for (let bx of b(ax, y)) {
-			for (let cx of c(bx, y)) {
-				for (let dx of d(cx, y)) {
-					for (let ex of e(dx, y)) {
-						for (let fx of f(ex, y)) {
-							for (let gx of g(fx, y)) {
-								yield *h(gx, y);
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-};
-var seq9 = (a, b, c, d, e, f, g, h, i) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
-		for (let bx of b(ax, y)) {
-			for (let cx of c(bx, y)) {
-				for (let dx of d(cx, y)) {
-					for (let ex of e(dx, y)) {
-						for (let fx of f(ex, y)) {
-							for (let gx of g(fx, y)) {
-								for (let hx of h(gx, y)) {
-									yield *i(hx, y);
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-};
-var seq10 = (a, b, c, d, e, f, g, h, i, j) => function*(x, p) {
-	let y = x.spawn(-1, p);
-	for (let ax of a(y, y)) {
-		for (let bx of b(ax, y)) {
-			for (let cx of c(bx, y)) {
-				for (let dx of d(cx, y)) {
-					for (let ex of e(dx, y)) {
-						for (let fx of f(ex, y)) {
-							for (let gx of g(fx, y)) {
-								for (let hx of h(gx, y)) {
-									for (let ix of i(hx, y)) {
-										yield *j(ix, y);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-};
+	return (x, p) => seqf(x, x.spawn(-1, p), 0);
+}
 var many = f => {
 	function* manyf(x, p) {
 		for (let fx of f(x, p)) {
@@ -187,10 +75,7 @@ var many = f => {
 		}
 		yield x;
 	};
-	return function (x, p) {
-		let y = x.spawn(-2, p);
-		return manyf(x, y);
-	}
+	return (x, p) => manyf(x, x.spawn(-2, p));
 }
 var maybe = f => function*(x, p) {
 	yield *f(x, p);
@@ -200,16 +85,12 @@ function of() {
 	var args = [];
 	Array.prototype.push.apply(args, arguments);
 	return function*(x, p){
-		var i = 100;
+		var i = 32;
 		for (let a of args) {
 			let y = x.spawn(i++, p);
 			yield *a(x, y);
 		}
 	}
-}
-
-function seq() {
-	return ([seq2, seq3, seq4, seq5, seq6, seq7, seq8, seq9, seq10][arguments.length - 2]).apply(null, arguments);
 }
 
 var rules = [];
@@ -275,7 +156,7 @@ Builder.prototype.val = function() {
 	return this.lx.lex[this.li];
 }
 Builder.prototype.next = function(p) {
-	return this.li+1 >= this.lx.lex.length ? null : new Builder(this.lx, this.li+1, this, p, -3);
+	return new Builder(this.lx, this.li+1, this, p, -3);
 }
 Builder.prototype.spawn = function(ty, p) {
 	return new Builder(this.lx, this.li, this, p, ty);
