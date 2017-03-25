@@ -51,8 +51,7 @@ var _s = [], s = r => _s[r] || (_s[r] = function*(x, p) {
 	}
 });
 var _o = [], o = n => _o[n] || (_o[n] = function*(x, p) {
-	let y = x.spawn(n, p);
-	yield *rules[n](x, y);
+	yield *rules[n](x, x.spawn(n, p));
 });
 function seq() {
 	var args = [];
@@ -87,8 +86,7 @@ function of() {
 	return function*(x, p){
 		var i = 32;
 		for (let a of args) {
-			let y = x.spawn(i++, p);
-			yield *a(x, y);
+			yield *a(x, x.spawn(i++, p));
 		}
 	}
 }
@@ -164,8 +162,230 @@ Builder.prototype.spawn = function(ty, p) {
 
 var _chunk = seq(rules[Block], s(0));
 function parse(lx) {
-	var root = new Builder(lx, -1, null, null, 0);
-	return _chunk(root, root).next().value;
+	var root = new Builder(lx, -1, null, null, -4);
+	var end = _chunk(root, root).next().value, start = end;
+	console.log(window.PARSE = end);
+	console.log(window.ROOT = root);
+	while (start.mother) start = start.mother;
+	makeChildren(end);
+	var bc = [];
+	astVisit(root, bc);
+	console.log(window.BYTES = bc);
 }
+
+function *selectNode(node, type) {
+	for (let ch of node.fathered) {
+		if (ch.type < 0 || ch.type > 31) {
+			yield *selectNode(ch, type);
+		} else if (ch.type == type) {
+			yield ch;
+		}
+	}
+}
+
+function *filterMask(node, mask) {
+	for (let ch of node.fathered) {
+		yield
+	}
+}
+
+function Namelist_names(node) {
+	if (!node.fathered) {
+		if (node.type & lex.ident) {
+			yield node;
+		}
+	} else {
+		for (let ch of node.fathered) {
+			yield *Namelist_names(ch);
+		}
+	}
+}
+
+function Explist_exps(node) {
+	return selectNode(node, Exp);
+}
+
+function genValue(node, bc) {
+}
+
+function genExp(node, bc) {
+	if (node.type != Exp) console.log(node, "Not an Exp");
+	if (node.fathered.length != 1) console.log(node, "Fathered.length <> 1");
+	let ofc = node.fathered[0];
+	if (ofc.type == 32) {
+		let unop = selectNode(ofc, Unop);
+		let exp = selectNode(ofc, Exp);
+		genExp(exp, bc);
+		switch (unop.type) {
+			case 32: // minus
+				bc.push(UNARY_MINUS);
+				break;
+			case 33: // not
+				bc.push(UNARY_NOT);
+				break;
+			case 34: // hash
+				bc.push(UNARY_HASH);
+				break;
+			case 35: // bnot
+				bc.push(UNARY_BNOT);
+				break;
+		}
+	} else {
+		let value = selectNode(ofc, Value).next().value;
+		let binop = selectNode(ofc, Binop).next().value;
+		if (binop) {
+			let rexp = selectNode(ofc, Exp);
+			genValue(value, bc);
+			genExp(rexp, bc);
+		} else {
+			getValue(value, bc);
+		}
+	}
+}
+
+function genStoreLocal(node, bc) {
+	if (!(node.val() & name) || node.type != -3) console.log(node, "Not a name");
+	var val = node.val();
+	bc.push(LOAD_IDENT, node.val());
+}
+
+function astVisit(node, bc) {
+	switch (node.type) {
+	case -4:
+		for (let child of node.fathered) {
+			astVisit(node);
+		}
+		break;
+	case -3:
+		console.log(node, "Unexpected terminal");
+		break;
+	case -2:
+		console.log(node, "Unexpected many");
+		break;
+	case -1:
+		console.log(node, "Unexpected seq");
+		break;
+	case 0: // Block
+		for (let child of node.fathered) {
+			astVisit(node);
+		}
+		break;
+	case 1: { // Stat
+		if (child.fathered.length != 1) console.log("Stat has fathered more than 1 node", child.fathered);
+		let ofc = child.fathered[0];
+		switch (ofc.type&0x31) {
+			case 0:
+				break;
+			case 1:
+				break;
+			case 2:
+				break;
+			case 3:
+				break;
+			case 4:
+				break;
+			case 5:
+				break;
+			case 6:
+				break;
+			case 7:
+				break;
+			case 8:
+				break;
+			case 9:
+				break;
+			case 10:
+				break;
+			case 11:
+				break;
+			case 12:
+				break;
+			case 13:
+				break;
+			case 14: {
+				let names = Array.from(Namelist_names(selectNode(Namelist).next().value)), exps = Explist_exps(selectNode(Explist).next().value);
+				for (let exp of exps) {
+					genExp(exp);
+				}
+				for (let i=names.length-1; i>=0; i--) {
+					genStoreLocal(names[i]);
+				}
+				break;
+			}
+		}
+		break;
+	}
+	case 2: // Retstat
+		break;
+	case 3: // Label
+		break;
+	case 4: // Funcname
+		break;
+	case 5: // Varlist
+		break;
+	case 6: // Var
+		break;
+	case 7: // Namelist
+		break;
+	case 8: // Explist
+		break;
+	case 9: // Exp
+		break;
+	case 10: // Prefix
+		break;
+	case 11: // Functioncall
+		break;
+	case 12: // Args
+		break;
+	case 13: // Functiondef
+		break;
+	case 14: // Funcbody
+		break;
+	case 15: // Parlist
+		break;
+	case 16: // Tableconstructor
+		break;
+	case 17: // Fieldlist
+		break;
+	case 18: // Field
+		break;
+	case 19: // Fieldsep
+		break;
+	case 20: // Binop
+		break;
+	case 21: // Unop
+		break;
+	case 22: // Value
+		break;
+	case 23: // Index
+		break;
+	case 24: // Call
+		break;
+	case 25: // Suffix
+		break;
+	default:
+		console.log(node, "Unexpected of");
+		break;
+	}
+}
+
+function makeChildren(child) {
+	if (!child) return;
+	if (child.mother){
+		if (!child.mother.mothered) {
+			child.mother.mothered = [child];
+			makeChildren(child.mother);
+		}
+		else child.mother.mothered.push(child);
+	}
+	if (child.father){
+		if (!child.father.fathered) {
+			child.father.fathered = [child];
+			makeChildren(child.father);
+		}
+		else child.father.fathered.push(child);
+	}
+}
+
 
 exports.parse = parse;
