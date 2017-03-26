@@ -182,19 +182,18 @@ Builder.prototype.spawn = function(ty, p) {
 const _chunk = seq(rules[Block], s(0));
 function parse(lx) {
 	var root = new Builder(lx, -1, null, null, -2);
-	var end = _chunk(root, root).next().value;
-	makeChildren(end);
-	return root;
-}
-
-function makeChildren(child) {
+	var child = _chunk(root, root).next().value;
 	while (child) {
-		if (child.father){
-			child.father.fathered.push(child);
-			if (child.father.fathered.length == 1) makeChildren(child.father);
+		var father = child.father, prev_father = child;
+		while (father) {
+			father.fathered.push(prev_father);
+			if (father.fathered.length > 1) break;
+			prev_father = father;
+			father = father.father;
 		}
 		child = child.mother;
 	}
+	return root;
 }
 
 exports.parse = parse;
