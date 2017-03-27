@@ -29,37 +29,37 @@ const Block = exports.Block = 0,
 	Call = exports.Call = 24,
 	Suffix = exports.Suffix = 25;
 
-function*name(x, p) {
+function*name(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val() & lex._ident)
+	if (t && t.val(lx) & lex._ident)
 		yield t;
 };
-function*number(x, p) {
+function*number(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val() & lex._number)
+	if (t && t.val(lx) & lex._number)
 		yield t;
 };
-function*slit(x, p) {
+function*slit(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val() & lex._string)
+	if (t && t.val(lx) & lex._string)
 		yield t;
 };
-const _s = [], s = r => _s[r] || (_s[r] = function*(x, p) {
+const _s = [], s = r => _s[r] || (_s[r] = function*(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val() == r) {
+	if (t && t.val(lx) == r) {
 		yield t;
 	}
 });
-const _o = [], o = n => _o[n] || (_o[n] = function*(x, p) {
-	yield *rules[n](x, p);
+const _o = [], o = n => _o[n] || (_o[n] = function*(lx, x, p) {
+	yield *rules[n](lx, x, p);
 });
 function seqcore(args) {
-	function *seqf(x, p, i) {
+	function *seqf(lx, x, p, i) {
 		if (i == args.length - 1) {
-			yield *args[i](x, p);
+			yield *args[i](lx, x, p);
 		} else {
-			for (let ax of args[i](x, p)) {
-				yield *seqf(ax, p, i+1);
+			for (let ax of args[i](lx, x, p)) {
+				yield *seqf(lx, ax, p, i+1);
 			}
 		}
 	}
@@ -69,31 +69,31 @@ function seq() {
 	const args = [];
 	for (var i=0; i<arguments.length; i++) args[i] = arguments[i];
 	const seqf = seqcore(args);
-	return (x, p) => seqf(x, p, 0);
+	return (lx, x, p) => seqf(lx, x, p, 0);
 }
 function seqo(o) {
 	const args = [];
 	for (var i=1; i<arguments.length; i++) args[i-1] = arguments[i];
 	const seqf = seqcore(args);
-	return (x, p) => seqf(x, x.spawn(o, p), 0);
+	return (lx, x, p) => seqf(lx, x, x.spawn(o, p), 0);
 }
-var many = f => function*manyf(x, p) {
-	for (let fx of f(x, p)) {
-		yield *manyf(fx, p);
+var many = f => function*manyf(lx, x, p) {
+	for (let fx of f(lx, x, p)) {
+		yield *manyf(lx, fx, p);
 	}
 	yield x;
 };
-var maybe = f => function*(x, p) {
-	yield *f(x, p);
+var maybe = f => function*(lx, x, p) {
+	yield *f(lx, x, p);
 	yield x;
 };
 function of(o) {
 	const args = [];
 	for (var i=1; i<arguments.length; i++) args[i-1] = arguments[i];
-	return function*(x, p){
+	return function*(lx, x, p){
 		let i = o;
 		for (let a of args) {
-			yield *a(x, x.spawn(i, p));
+			yield *a(lx, x, x.spawn(i, p));
 			i += 32;
 		}
 	}
@@ -161,28 +161,27 @@ rules[Call] = of(Call,
 	seq(s(lex._colon), name, o(Args)));
 rules[Suffix] = of(Suffix, o(Call), o(Index));
 
-function Builder(lx, li, mo, fa, ty) {
-	this.lx = lx;
+function Builder(li, mo, fa, ty) {
 	this.li = li;
+	this.type = ty;
 	this.mother = mo;
 	this.father = fa;
 	this.fathered = [];
-	this.type = ty;
 }
-Builder.prototype.val = function() {
-	return this.lx.lex[this.li];
+Builder.prototype.val = function(lx) {
+	return lx.lex[this.li];
 }
 Builder.prototype.next = function(p) {
-	return new Builder(this.lx, this.li+1, this, p, -1);
+	return new Builder(this.li+1, this, p, -1);
 }
 Builder.prototype.spawn = function(ty, p) {
-	return new Builder(this.lx, this.li, this, p, ty);
+	return new Builder(this.li, this, p, ty);
 }
 
 const _chunk = seq(rules[Block], s(0));
 function parse(lx) {
-	var root = new Builder(lx, -1, null, null, -2);
-	var child = _chunk(root, root).next().value;
+	var root = new Builder(-1, null, null, -2);
+	var child = _chunk(lx, root, root).next().value;
 	while (child) {
 		var father = child.father, prev_father = child;
 		while (father) {

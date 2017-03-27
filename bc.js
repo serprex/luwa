@@ -65,19 +65,19 @@ function selectNode(node, type) {
 	}
 }
 
-function *filterMasks(node, mask) {
+Assembler.prototype.filterMasks = function*(node, mask) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
 		let ch = node.fathered[i];
-		if (node.type == -1 && node.val() & mask) {
+		if (node.type == -1 && node.val(this.lx) & mask) {
 			yield node;
 		}
 	}
 }
 
-function filterMask(node, mask) {
+Assembler.prototype.filterMask = function(node, mask) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
 		let ch = node.fathered[i];
-		if (node.type == -1 && node.val() & mask) {
+		if (node.type == -1 && node.val(this.lx) & mask) {
 			return node;
 		}
 	}
@@ -97,7 +97,8 @@ function Explist_exps(node) {
 	return selectNodes(node, ast.Exp);
 }
 
-function Assembler() {
+function Assembler(lx) {
+	this.lx = lx;
 	this.bc = [];
 	this.fus = [];
 	this.fui = 0;
@@ -125,7 +126,7 @@ Assembler.prototype.genIndex = function(node, store) {
 	this.gensert(node, ast.Index);
 	if (node.type >> 5) {
 		// TODO convert this to LOAD_STR STORE_INDEX / LOAD_INDEX
-		this.push(store ? STORE_ATTR : LOAD_ATTR, filterMask(node, lex._ident))
+		this.push(store ? STORE_ATTR : LOAD_ATTR, this.filterMask(node, lex._ident))
 	} else {
 		var exp = selectNode(node, ast.Exp);
 		this.genExp(node, exp);
@@ -136,7 +137,7 @@ Assembler.prototype.genIndex = function(node, store) {
 Assembler.prototype.genVar = function(node, store) {
 	this.gensert(node, ast.Var);
 	if (node.type >> 5) {
-		this.push(store ? STORE_IDENT : LOAD_IDENT, filterMask(node, lex._ident).val());
+		this.push(store ? STORE_IDENT : LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx));
 	} else {
 		let prefix = selectNode(node, ast.Prefix),
 			suffix = selectNodes(node, ast.Suffix),
@@ -169,8 +170,8 @@ Assembler.prototype.genArgs = function(node) {
 			this.push(CALL, 1);
 			break;
 		case 2: {
-			let str = filterMask(node, lex._string);
-			this.push(LOAD_STR, str.val(), CALL, 1);
+			let str = this.filterMask(node, lex._string);
+			this.push(LOAD_STR, str.val(this.lx), CALL, 1);
 			break;
 		}
 	}
@@ -179,8 +180,8 @@ Assembler.prototype.genArgs = function(node) {
 Assembler.protototype.genCall = function(node) {
 	this.gensert(node, ast.Call);
 	if (this.type >> 5) {
-		let name = filterMask(node, lex._ident);
-		this.push(LOAD_METH, name.val());
+		let name = this.filterMask(node, lex._ident);
+		this.push(LOAD_METH, name.val(this.lx));
 	}
 	let args = selectNode(node, Args);
 	this.genArgs(args);
@@ -211,10 +212,10 @@ Assembler.prototype.genValue = function(node) {
 			this.push(LOAD_TRUE);
 			break;
 		case 3:
-			this.push(LOAD_NUM, node.fathered[0].val() & ~lex._number);
+			this.push(LOAD_NUM, node.fathered[0].val(this.lx) & ~lex._number);
 			break;
 		case 4:
-			this.push(LOAD_STR, node.fathered[0].val() & ~lex._string);
+			this.push(LOAD_STR, node.fathered[0].val(this.lx) & ~lex._string);
 			break;
 		case 5:
 			// TODO not sure how to handle multival
@@ -309,8 +310,8 @@ Assembler.prototype.genStat = function(node) {
 			this.genFuncCall(selectNode(node, ast.Functioncall));
 			break;
 		case 3: {
-			let name = filterMask(node, lex._ident);
-			this.push(LABEL, name.val());
+			let name = this.filterMask(node, lex._ident);
+			this.push(LABEL, name.val(this.lx));
 			break;
 		}
 		case 4: { // TODO transform into goto
@@ -318,8 +319,8 @@ Assembler.prototype.genStat = function(node) {
 			break;
 		}
 		case 5: { // TODO transform into jump offset
-			let name = filterMask(node, lex._ident);
-			this.push(GOTO, name.val());
+			let name = this.filterMask(node, lex._ident);
+			this.push(GOTO, name.val(this.lx));
 			break;
 		}
 		case 6:
@@ -359,7 +360,7 @@ Assembler.prototype.genStat = function(node) {
 			}
 			for (let i=names.length-1; i>=0; i--) {
 				let name = names[i];
-				this.push(STORE_IDENT, name.val());
+				this.push(STORE_IDENT, name.val(this.lx));
 			}
 			break;
 		}
@@ -393,8 +394,8 @@ Assembler.prototype.genChunk = function(node) {
 	if (block) return this.genBlock(block);
 }
 
-function assemble(ast) {
-	var asm = new Assembler();
+function assemble(lx, ast) {
+	var asm = new Assembler(lx);
 	asm.genChunk(ast);
 	return asm;
 }
