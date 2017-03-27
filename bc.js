@@ -70,6 +70,14 @@ function selectNode(node, type) {
 	}
 }
 
+Assembler.prototype.hasLiteral = function(node, lit) {
+	for (let i=node.fathered.length; i<=node.fathered.length; i++){
+		let ch = node.fathered[i];
+		if (node.type == -1 && node.val() == lit) return true;
+	}
+	return false;
+}
+
 Assembler.prototype.filterMasks = function*(node, mask) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
 		let ch = node.fathered[i];
@@ -229,6 +237,21 @@ Assembler.prototype.genFuncCall = function(node) {
 		this.genPrefix(suffix);
 	}
 	this.genCall(call);
+}
+
+Assembler.prototype.genFuncname = function(node) {
+	this.gensert(ast.Funcname);
+	let colon = hasLiteral(node, lex._colon);
+	let names = Array.from(this.filterMasks(node, lex._ident));
+	this.push(LOAD_IDENT, names[0].val());
+	for (var i=1; i<names.length - 1; i++) {
+		this.push(LOAD_ATTR, names[i].val());
+	}
+	this.push(colon ? STORE_METH : STORE_ATTR, names[names.length-1].val());
+}
+
+Assembler.prototype.genFuncbody = function(node) {
+	this.gensert(node, ast.Funcbody);
 }
 
 Assembler.prototype.genValue = function(node) {
@@ -413,8 +436,39 @@ Assembler.prototype.genStat = function(node) {
 			break;
 		}
 		case 10:
+			let lab0 = this.genLabel(), endlab = this.genLabel();
+			this.pushScope(endlab);
+			let exps = Array.from(selectNodes(node, ast.Exp));
+			this.genExp(exps[0]);
+			this.genExp(exps[1]);
+			if (exps.length > 2) {
+				this.genExp(exps[2]);
+				this.push(LABEL, lab0, FOR3);
+			} else {
+				this.push(LABEL, lab0, FOR2);
+			}
+			this.genBlock(selectNode(node, ast.Block));
+			this.push(GOTO, lab0);
+			this.push(LABEL, endlab);
+			this.push(exps.length > 2 ? POP3 : POP2);
+			this.popScope();
 			break;
 		case 11:
+			let lab0 = this.genLabel(), endlab = this.genLabel();
+			this.pushScope(endlab);
+			let exps = selectNodes(selectNode(node, ast.Explist), ast.Exp);
+			let names = filterMasks(selectNode(node, ast.Namelist), lex._ident);
+			for (let exp of exps) {
+				this.genExp(exp);
+			}
+			this.push(FORTIFY, LABEL, lab0);
+			this.push(FOR_NEXT, endlab);
+			for (let name of names) {
+				this.push(STORE_IDENT, name.val());
+			}
+			this.genBlock(selectNode(node, ast.Block));
+			this.push(GOTO, lab0);
+			this.popScope();
 			break;
 		case 12: {
 			this.genFuncbody(selectNode(node, ast.Funcbody));
