@@ -1,3 +1,4 @@
+"use strict";
 const lex = require("./lex"), ast = require("./ast");
 
 const NOP = exports.NOP = 0,
@@ -31,12 +32,18 @@ const NOP = exports.NOP = 0,
 	UNARY_BNOT = exports.UNARY_BNOT = 26,
 	MAKE_TABLE = exports.MAKE_TABLE = 27,
 	TABLE_ADD = exports.TABLE_ADD = 28,
+	FORTIFY = 29,
+	FOR2 = 30,
+	FOR3 = 31,
+	FOR_NEXT = 32,
+	POP2 = 33,
+	POP3 = 34,
 	LOAD_NUM = exports.LOAD_NUM = 128,
 	LOAD_STR = exports.LOAD_STR = 129,
 	LOAD_VARARG = exports.LOAD_VARARG = 130,
 	LOAD_IDENT = exports.LOAD_IDENT = 131,
 	GOTO = exports.GOTO = 132,
-	RETURN = exports.GOTO = 133,
+	RETURN = exports.RETURN = 133,
 	STORE_IDENT = exports.STORE_IDENT = 134,
 	LOAD_ATTR = exports.LOAD_ATTR = 135,
 	STORE_ATTR = exports.STORE_ATTR = 136,
@@ -45,53 +52,24 @@ const NOP = exports.NOP = 0,
 	TABLE_SET = 139,
 	JIF = 140,
 	JIFNOT = 141,
+	LOAD_METH = 142,
+	STORE_METH = 143,
 	LABEL = exports.LABEL = 255;
 
 function *selectNodes(node, type) {
-	for (let i = node.fathered.length - 1; i >= 0; i--)
+	for (let i = node.fathered.length - 1; i >= 0; i--) {
 		let ch = node.fathered[i];
 		if ((ch.type & 31) == type) {
 			yield ch;
-		} else if (ch.type < 0 || ch.type > 31) {
-			yield *selectNode(ch, type);
 		}
 	}
 }
 
 function selectNode(node, type) {
-	for (let i = node.fathered.length - 1; i >= 0; i--)
+	for (let i = node.fathered.length - 1; i >= 0; i--) {
 		let ch = node.fathered[i];
 		if ((ch.type & 31) == type) {
 			return ch;
-		} else if (ch.type < 0 || ch.type > 31) {
-			let n = selectNode(ch, type);
-			if (n) return n;
-		}
-	}
-}
-
-Assembler.prototype.hasLiteral = function(node, lit) {
-	for (let i=node.fathered.length; i<=node.fathered.length; i++){
-		let ch = node.fathered[i];
-		if (node.type == -1 && node.val() == lit) return true;
-	}
-	return false;
-}
-
-Assembler.prototype.filterMasks = function*(node, mask) {
-	for (let i = node.fathered.length - 1; i >= 0; i--) {
-		let ch = node.fathered[i];
-		if (node.type == -1 && node.val(this.lx) & mask) {
-			yield node;
-		}
-	}
-}
-
-Assembler.prototype.filterMask = function(node, mask) {
-	for (let i = node.fathered.length - 1; i >= 0; i--) {
-		let ch = node.fathered[i];
-		if (node.type == -1 && node.val(this.lx) & mask) {
-			return node;
 		}
 	}
 }
@@ -103,6 +81,28 @@ function Assembler(lx) {
 	this.fui = 0;
 	this.labgen = 0;
 	this.scopes = [];
+}
+
+Assembler.prototype.hasLiteral = function(node, lit) {
+	return node.fathered.exists(ch => ch.type == -1 && ch.val(this.lx) == lit);
+}
+
+Assembler.prototype.filterMasks = function*(node, mask) {
+	for (let i = node.fathered.length - 1; i >= 0; i--) {
+		let ch = node.fathered[i];
+		if (ch.type == -1 && ch.val(this.lx) & mask) {
+			yield ch;
+		}
+	}
+}
+
+Assembler.prototype.filterMask = function(node, mask) {
+	for (let i = node.fathered.length - 1; i >= 0; i--) {
+		let ch = node.fathered[i];
+		if (ch.type == -1 && ch.val(this.lx) & mask) {
+			return ch;
+		}
+	}
 }
 
 Assembler.prototype.push = function() {
@@ -125,8 +125,8 @@ Assembler.prototype.getScope = function() {
 	return this.scopes.length ? this.scopes[this.scopes.length - 1] : null;
 }
 
-Assembler.prototype.gensert(node, ty) {
-	if ((node & 31) != ty) console.log(node, "Invalid type, expected ", ty);
+Assembler.prototype.gensert = function(node, ty) {
+	if ((node.type & 31) != ty) console.log(node, "Invalid type, expected ", ty);
 }
 
 Assembler.prototype.genPrefix = function (node) {
@@ -134,7 +134,16 @@ Assembler.prototype.genPrefix = function (node) {
 	if (node.type >> 5) {
 		this.genExp(selectNode(node, ast.Exp));
 	} else {
-		this.push(LOAD_IDENT, this.filterMask(node, lex._ident).val());
+		this.push(LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx));
+	}
+}
+
+Assembler.prototype.genSuffix = function (node) {
+	this.gensert(node, ast.Suffix);
+	if (node.type >> 5) {
+		this.genIndex(selectNode(node, ast.Index), false);
+	} else {
+		this.genCall(selectNode(node, ast.Call));
 	}
 }
 
@@ -177,16 +186,16 @@ Assembler.prototype.genTable = function(node) {
 Assembler.prototype.genVar = function(node, store) {
 	this.gensert(node, ast.Var);
 	if (node.type >> 5) {
-		this.push(store ? STORE_IDENT : LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx));
-	} else {
 		let prefix = selectNode(node, ast.Prefix),
 			suffix = selectNodes(node, ast.Suffix),
 			index = selectNode(node, ast.Index);
 		this.genPrefix(prefix);
 		for (let suf of suffix) {
-			this.genPrefix(suffix);
+			this.genSuffix(suffix);
 		}
 		this.genIndex(index, store);
+	} else {
+		this.push(store ? STORE_IDENT : LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx));
 	}
 }
 
@@ -198,7 +207,7 @@ Assembler.prototype.genArgs = function(node) {
 			if (explist) {
 				let exps = Array.from(selectNodes(explist, ast.Exp));
 				for (let i=0; i<exps.length; i++) {
-					this.genExp(node, i == exps.length - 1);
+					this.genExp(exps[i], i == exps.length - 1);
 				}
 				this.push(CALL, exps.length);
 			} else {
@@ -217,13 +226,13 @@ Assembler.prototype.genArgs = function(node) {
 	}
 }
 
-Assembler.protototype.genCall = function(node) {
+Assembler.prototype.genCall = function(node) {
 	this.gensert(node, ast.Call);
 	if (this.type >> 5) {
 		let name = this.filterMask(node, lex._ident);
 		this.push(LOAD_METH, name.val(this.lx));
 	}
-	let args = selectNode(node, Args);
+	let args = selectNode(node, ast.Args);
 	this.genArgs(args);
 }
 
@@ -234,7 +243,7 @@ Assembler.prototype.genFuncCall = function(node) {
 		call = selectNode(node, ast.Call);
 	this.genPrefix(prefix);
 	for (let suf of suffix) {
-		this.genPrefix(suffix);
+		this.genSuffix(suf);
 	}
 	this.genCall(call);
 }
@@ -243,11 +252,11 @@ Assembler.prototype.genFuncname = function(node) {
 	this.gensert(ast.Funcname);
 	let colon = hasLiteral(node, lex._colon);
 	let names = Array.from(this.filterMasks(node, lex._ident));
-	this.push(LOAD_IDENT, names[0].val());
+	this.push(LOAD_IDENT, names[0].val(this.lx));
 	for (var i=1; i<names.length - 1; i++) {
-		this.push(LOAD_ATTR, names[i].val());
+		this.push(LOAD_ATTR, names[i].val(this.lx));
 	}
-	this.push(colon ? STORE_METH : STORE_ATTR, names[names.length-1].val());
+	this.push(colon ? STORE_METH : STORE_ATTR, names[names.length-1].val(this.lx));
 }
 
 Assembler.prototype.genFuncbody = function(node) {
@@ -360,10 +369,10 @@ Assembler.prototype.genStat = function(node) {
 		case 0: // ;
 			break;
 		case 1: { // varlist = explist
-			let vars = Array.from(selectNodes(selectNode(ast.Varlist), ast.Var)),
-				exps = selectNodes(selectNode(ast.Explist), ast.Exp);
+			let vars = Array.from(selectNodes(selectNode(node, ast.Varlist), ast.Var)),
+				exps = selectNodes(selectNode(node, ast.Explist), ast.Exp);
 			for (let exp of exps) {
-				genExp(exp);
+				this.genExp(exp);
 			}
 			for (let i=vars.length-1; i>=0; i--) {
 				this.genVar(vars[i], true);
@@ -424,18 +433,18 @@ Assembler.prototype.genStat = function(node) {
 			for (var i=0; i<exps.length; i++) {
 				let lab = this.genLabel();
 				this.genExp(exps[i]);
-				block.push(JIFNOT, lab);
+				this.push(JIFNOT, lab);
 				this.genBlock(blocks[i]);
-				if (i+1 < blocks.length) block.push(GOTO, endlab);
-				block.push(LABEL, lab);
+				if (i+1 < blocks.length) this.push(GOTO, endlab);
+				this.push(LABEL, lab);
 			}
 			if (i < blocks.length) {
-				this.genBlock(b, blocks[i]);
+				this.genBlock(blocks[i]);
 			}
 			this.push(LABEL, endlab);
 			break;
 		}
-		case 10:
+		case 10: {
 			let lab0 = this.genLabel(), endlab = this.genLabel();
 			this.pushScope(endlab);
 			let exps = Array.from(selectNodes(node, ast.Exp));
@@ -453,7 +462,8 @@ Assembler.prototype.genStat = function(node) {
 			this.push(exps.length > 2 ? POP3 : POP2);
 			this.popScope();
 			break;
-		case 11:
+		}
+		case 11: {
 			let lab0 = this.genLabel(), endlab = this.genLabel();
 			this.pushScope(endlab);
 			let exps = selectNodes(selectNode(node, ast.Explist), ast.Exp);
@@ -464,12 +474,13 @@ Assembler.prototype.genStat = function(node) {
 			this.push(FORTIFY, LABEL, lab0);
 			this.push(FOR_NEXT, endlab);
 			for (let name of names) {
-				this.push(STORE_IDENT, name.val());
+				this.push(STORE_IDENT, name.val(this.lx));
 			}
 			this.genBlock(selectNode(node, ast.Block));
 			this.push(GOTO, lab0);
 			this.popScope();
 			break;
+		}
 		case 12: {
 			this.genFuncbody(selectNode(node, ast.Funcbody));
 			this.genFuncname(selectNode(node, ast.Funcname), false);
@@ -481,13 +492,16 @@ Assembler.prototype.genStat = function(node) {
 			break;
 		}
 		case 14: {
-			let names = Array.from(this.filterMask(selectNode(ast.Namelist), lex._ident)),
-				exps = selectNodes(selectNode(ast.Explist), ast.Exp);
-			for (let exp of exps) {
-				genExp(exp);
-			}
-			for (let i=names.length-1; i>=0; i--) {
-				this.push(STORE_IDENT, names[i].val(this.lx));
+			let explist = selectNode(node, ast.Explist);
+			if (explist) {
+				let names = Array.from(this.filterMask(selectNode(node, ast.Namelist), lex._ident)),
+					exps = selectNodes(explist, ast.Exp);
+				for (let exp of exps) {
+					this.genExp(exp);
+				}
+				for (let i=names.length-1; i>=0; i--) {
+					this.push(STORE_IDENT, names[i].val(this.lx));
+				}
 			}
 			break;
 		}
@@ -497,7 +511,7 @@ Assembler.prototype.genStat = function(node) {
 Assembler.prototype.genRet = function(node) {
 	// TODO tail calls
 	this.gensert(node, ast.Retstat);
-	let exps = selectNodes(selectNode(ast.Explist), ast.Exp), i = 0;
+	let exps = selectNodes(selectNode(node, ast.Explist), ast.Exp), i = 0;
 	for (let exp of exps) {
 		this.genExp(exp);
 		i++;
@@ -510,9 +524,8 @@ Assembler.prototype.genBlock = function(node) {
 	for (let stat of selectNodes(node, ast.Stat)) {
 		this.genStat(stat);
 	}
-	for (let ret of selectNode(node, ast.Retstat)) {
-		this.genRet(ret);
-	}
+	let ret = selectNode(node, ast.Retstat);
+	if (ret) this.genRet(ret);
 }
 
 Assembler.prototype.genChunk = function(node) {
@@ -521,9 +534,9 @@ Assembler.prototype.genChunk = function(node) {
 	if (block) return this.genBlock(block);
 }
 
-function assemble(lx, ast) {
+function assemble(lx, root) {
 	var asm = new Assembler(lx);
-	asm.genChunk(ast);
+	asm.genChunk(root);
 	return asm;
 }
 
