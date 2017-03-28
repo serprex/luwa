@@ -71,7 +71,6 @@ function Lex(src) {
 	this.snr = [];
 	const ss = this.ss, ssr = this.ssr, si = this.si, sir = this.sir, sn = this.sn, snr = this.snr;
 	const lex = [];
-	this.lex = lex;
 	let ch, ssi = 0, sii = 0, sni = 0;
 	for (let i=0; i<src.length; i++){
 		switch (ch = src[i]) {
@@ -303,6 +302,7 @@ function Lex(src) {
 		}
 	}
 	lex.push(0);
+	this.lex = new Uint32Array(lex);
 }
 
 exports.Lex = Lex;

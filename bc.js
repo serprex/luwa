@@ -54,6 +54,8 @@ const NOP = exports.NOP = 0,
 	JIFNOT = 141,
 	LOAD_METH = 142,
 	STORE_METH = 143,
+	JIF_OR_POP = 144,
+	JIFNOT_OR_POP = 145,
 	LABEL = exports.LABEL = 255;
 
 function *selectNodes(node, type) {
@@ -314,30 +316,34 @@ Assembler.prototype.genExp = function(node) {
 		if (binop) {
 			let rexp = selectNode(node, ast.Exp);
 			this.genValue(value);
-			this.genExp(rexp);
-			switch (binop.type >> 5) {
-				case 0: this.push(BIN_PLUS); break; // plus
-				case 1: this.push(BIN_MINUS); break; // minus
-				case 2: this.push(BIN_MUL); break; // mul
-				case 3: this.push(BIN_DIV); break; // div
-				case 4: this.push(BIN_IDIV); break; // idiv
-				case 5: this.push(BIN_POW); break; // pow
-				case 6: this.push(BIN_MOD); break; // mod
-				case 7: this.push(BIN_BAND); break; // band
-				case 8: this.push(BIN_BNOT); break; // bnot
-				case 9: this.push(BIN_BOR); break; // bor
-				case 10: this.push(BIN_RSH); break; // rsh
-				case 11: this.push(BIN_LSH); break; // lsh
-				case 12: this.push(BIN_DOTDOT); break; // dotdot
-				case 13: this.push(BIN_LT); break; // lt
-				case 14: this.push(BIN_LTE); break; // lte
-				case 15: this.push(BIN_GT); break; // gt
-				case 16: this.push(BIN_GTE); break; // gte
-				case 17: this.push(BIN_EQ); break; // eq
-				case 18: this.push(BIN_NEQ); break; // neq
-					// TODO and/or need to be short circuiting
-				case 19: this.push(BIN_AND); break; // and
-				case 20: this.push(BIN_OR); break // or
+			if ((binop.type >> 5) > 18) {
+				let lab = this.genLabel();
+				this.push((binop.type >> 5) == 19 ? JIFNOT_OR_POP : JIF_OR_POP, lab);
+				this.genExp(rexp);
+				this.push(LABEL, lab);
+			} else {
+				this.genExp(rexp);
+				switch (binop.type >> 5) {
+					case 0: this.push(BIN_PLUS); break; // plus
+					case 1: this.push(BIN_MINUS); break; // minus
+					case 2: this.push(BIN_MUL); break; // mul
+					case 3: this.push(BIN_DIV); break; // div
+					case 4: this.push(BIN_IDIV); break; // idiv
+					case 5: this.push(BIN_POW); break; // pow
+					case 6: this.push(BIN_MOD); break; // mod
+					case 7: this.push(BIN_BAND); break; // band
+					case 8: this.push(BIN_BNOT); break; // bnot
+					case 9: this.push(BIN_BOR); break; // bor
+					case 10: this.push(BIN_RSH); break; // rsh
+					case 11: this.push(BIN_LSH); break; // lsh
+					case 12: this.push(BIN_DOTDOT); break; // dotdot
+					case 13: this.push(BIN_LT); break; // lt
+					case 14: this.push(BIN_LTE); break; // lte
+					case 15: this.push(BIN_GT); break; // gt
+					case 16: this.push(BIN_GTE); break; // gte
+					case 17: this.push(BIN_EQ); break; // eq
+					case 18: this.push(BIN_NEQ); break; // neq
+				}
 			}
 		} else {
 			this.genValue(value);
@@ -536,7 +542,7 @@ Assembler.prototype.genChunk = function(node) {
 
 function assemble(lx, root) {
 	var asm = new Assembler(lx);
-	asm.genChunk(root);
+	asm.genBlock(root);
 	return asm;
 }
 

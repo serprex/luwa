@@ -71,11 +71,11 @@ function seq() {
 	const seqf = seqcore(args);
 	return (lx, x, p) => seqf(lx, x, p, 0);
 }
-function seqo(o) {
+function sf(o) {
 	const args = [];
 	for (var i=1; i<arguments.length; i++) args[i-1] = arguments[i];
 	const seqf = seqcore(args);
-	return (lx, x, p) => seqf(lx, x, x.spawn(o, p), 0);
+	rules[o] = (lx, x, p) => seqf(lx, x, x.spawn(o, p), 0);
 }
 var many = f => function*manyf(lx, x, p) {
 	for (let fx of f(lx, x, p)) {
@@ -90,7 +90,7 @@ var maybe = f => function*(lx, x, p) {
 function of(o) {
 	const args = [];
 	for (var i=1; i<arguments.length; i++) args[i-1] = arguments[i];
-	return function*(lx, x, p){
+	rules[o] = function*(lx, x, p){
 		let i = o;
 		for (let a of args) {
 			yield *a(lx, x, x.spawn(i, p));
@@ -100,8 +100,8 @@ function of(o) {
 }
 
 const rules = [];
-rules[Block] = seqo(Block, many(o(Stat)), maybe(o(Retstat)));
-rules[Stat] = of(Stat,
+sf(Block, many(o(Stat)), maybe(o(Retstat)));
+of(Stat,
 	s(lex._semi),
 	seq(o(Varlist), s(lex._set), o(Explist)),
 	o(Functioncall),
@@ -118,48 +118,49 @@ rules[Stat] = of(Stat,
 	seq(s(lex._local), s(lex._function), name, o(Funcbody)),
 	seq(s(lex._local), o(Namelist), maybe(seq(s(lex._set), o(Explist))))
 );
-rules[Retstat] = seqo(Retstat, s(lex._return), maybe(o(Explist)), maybe(s(lex._semi)));
-rules[Label] = seqo(Label, s(lex._label), name, s(lex._label));
-rules[Funcname] = seqo(Funcname, name, many(seq(s(lex._dot), name)), maybe(s(lex._colon), name));
-rules[Varlist] = seqo(Varlist, o(Var), many(seq(s(lex._comma), o(Var))));
-rules[Var] = of(Var, name, seq(o(Prefix), many(o(Suffix)), o(Index)));
-rules[Namelist] = seqo(Namelist, name, many(seq(s(lex._comma), name)));
-rules[Explist] = seqo(Explist, o(Exp), many(seq(s(lex._comma), o(Exp))));
-rules[Exp] = of(Exp, seq(o(Unop), o(Exp)), seq(o(Value), maybe(seq(o(Binop), o(Exp)))));
-rules[Prefix] = of(Prefix, name, seq(s(lex._pl), o(Exp), s(lex._pr)));
-rules[Functioncall] = seqo(Functioncall, o(Prefix), many(o(Suffix)), o(Call));
-rules[Args] = of(Args,
+sf(Retstat, s(lex._return), maybe(o(Explist)), maybe(s(lex._semi)));
+sf(Label, s(lex._label), name, s(lex._label));
+sf(Funcname, name, many(seq(s(lex._dot), name)), maybe(s(lex._colon), name));
+sf(Varlist, o(Var), many(seq(s(lex._comma), o(Var))));
+of(Var, name, seq(o(Prefix), many(o(Suffix)), o(Index)));
+sf(Namelist, name, many(seq(s(lex._comma), name)));
+sf(Explist, o(Exp), many(seq(s(lex._comma), o(Exp))));
+of(Exp, seq(o(Unop), o(Exp)), seq(o(Value), maybe(seq(o(Binop), o(Exp)))));
+of(Prefix, name, seq(s(lex._pl), o(Exp), s(lex._pr)));
+sf(Functioncall, o(Prefix), many(o(Suffix)), o(Call));
+of(Args,
 	seq(s(lex._pl), maybe(o(Explist)), s(lex._pr)),
 	o(Tableconstructor),
 	slit);
-rules[Functiondef] = seqo(Functiondef, s(lex._function), o(Funcbody));
-rules[Funcbody] = seqo(Funcbody, s(lex._pl), maybe(o(Parlist)), s(lex._pr), o(Block), s(lex._end));
-rules[Parlist] = of(Parlist,
+sf(Functiondef, s(lex._function), o(Funcbody));
+sf(Funcbody, s(lex._pl), maybe(o(Parlist)), s(lex._pr), o(Block), s(lex._end));
+of(Parlist,
 	seq(o(Namelist), maybe(seq(s(lex._comma), s(lex._dotdotdot)))),
 	s(lex._dotdotdot));
-rules[Tableconstructor] = seqo(Tableconstructor, s(lex._cl), maybe(o(Fieldlist)), s(lex._cr));
-rules[Fieldlist] = seqo(Fieldlist, o(Field), many(seq(o(Fieldsep), o(Field))), maybe(o(Fieldsep)));
-rules[Field] = of(Field,
+sf(Tableconstructor, s(lex._cl), maybe(o(Fieldlist)), s(lex._cr));
+sf(Fieldlist, o(Field), many(seq(o(Fieldsep), o(Field))), maybe(o(Fieldsep)));
+of(Field,
 	seq(s(lex._sl), o(Exp), s(lex._sr), s(lex._set), o(Exp)),
 	seq(name, s(lex._set), o(Exp)),
 	o(Exp));
-rules[Fieldsep] = of(Fieldsep, s(lex._comma), s(lex._semi));
-rules[Binop] = of(Binop,
+of(Fieldsep, s(lex._comma), s(lex._semi));
+of(Binop,
 	s(lex._plus), s(lex._minus), s(lex._mul), s(lex._div), s(lex._idiv), s(lex._pow), s(lex._mod),
 	s(lex._band), s(lex._bnot), s(lex._bor), s(lex._rsh), s(lex._lsh), s(lex._dotdot),
 	s(lex._lt), s(lex._lte), s(lex._gt), s(lex._gte), s(lex._eq), s(lex._neq), s(lex._and), s(lex._or));
-rules[Unop] = of(Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot));
-rules[Value] = of(Value,
+of(Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot));
+of(Value,
 	s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
 	o(Functiondef), o(Tableconstructor), o(Functioncall), o(Var),
 	seq(s(lex._pl), o(Exp), s(lex._pr)));
-rules[Index] = of(Index,
+of(Index,
 	seq(s(lex._sl), o(Exp), s(lex._sr)),
 	seq(s(lex._dot), name));
-rules[Call] = of(Call,
+of(Call,
 	o(Args),
 	seq(s(lex._colon), name, o(Args)));
-rules[Suffix] = of(Suffix, o(Call), o(Index));
+of(Suffix, o(Call), o(Index));
+const _chunk = seq(rules[Block], s(0));
 
 function Builder(li, mo, fa, ty) {
 	this.li = li;
@@ -178,21 +179,23 @@ Builder.prototype.spawn = function(ty, p) {
 	return new Builder(this.li, this, p, ty);
 }
 
-const _chunk = seq(rules[Block], s(0));
 function parse(lx) {
-	var root = new Builder(-1, null, null, -2);
-	var child = _chunk(lx, root, root).next().value;
-	while (child) {
-		var father = child.father, prev_father = child;
-		while (father) {
-			father.fathered.push(prev_father);
-			if (father.fathered.length > 1) break;
-			prev_father = father;
-			father = father.father;
+	var root = new Builder(-1, null, null, 0);
+	for (let child of rules[Block](lx, root, root)) {
+		if (child.li == lx.lex.length - 2) {
+			while (child) {
+				var father = child.father, prev_father = child;
+				while (father) {
+					father.fathered.push(prev_father);
+					if (father.fathered.length > 1) break;
+					prev_father = father;
+					father = father.father;
+				}
+				child = child.mother;
+			}
+			return root;
 		}
-		child = child.mother;
 	}
-	return root;
 }
 
 exports.parse = parse;
