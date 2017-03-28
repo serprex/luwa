@@ -31,22 +31,22 @@ const Block = exports.Block = 0,
 
 function*name(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val(lx) & lex._ident)
+	if (t.val(lx) & lex._ident)
 		yield t;
 };
 function*number(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val(lx) & lex._number)
+	if (t.val(lx) & lex._number)
 		yield t;
 };
 function*slit(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val(lx) & lex._string)
+	if (t.val(lx) & lex._string)
 		yield t;
 };
 const _s = [], s = r => _s[r] || (_s[r] = function*(lx, x, p) {
 	var t = x.next(p);
-	if (t && t.val(lx) == r) {
+	if (t.val(lx) == r) {
 		yield t;
 	}
 });
@@ -180,10 +180,10 @@ Builder.prototype.spawn = function(ty, p) {
 }
 
 function parse(lx) {
-	var root = new Builder(-1, null, null, 0);
+	const root = new Builder(-1, null, null, -2);
 	for (let child of rules[Block](lx, root, root)) {
 		if (child.li == lx.lex.length - 2) {
-			while (child) {
+			do {
 				var father = child.father, prev_father = child;
 				while (father) {
 					father.fathered.push(prev_father);
@@ -191,9 +191,10 @@ function parse(lx) {
 					prev_father = father;
 					father = father.father;
 				}
-				child = child.mother;
-			}
-			return root;
+			} while (child = child.mother);
+			const b0 = root.fathered[0];
+			b0.father = b0.mother = null;
+			return b0;
 		}
 	}
 }

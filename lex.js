@@ -71,7 +71,7 @@ function Lex(src) {
 	this.snr = [];
 	const ss = this.ss, ssr = this.ssr, si = this.si, sir = this.sir, sn = this.sn, snr = this.snr;
 	const lex = [];
-	let ch, ssi = 0, sii = 0, sni = 0;
+	let ch;
 	for (let i=0; i<src.length; i++){
 		switch (ch = src[i]) {
 		default:
@@ -83,12 +83,11 @@ function Lex(src) {
 					lex.push(exports[ident]);
 				} else {
 					if (ident in si) {
-						lex.push(_ident | sii);
+						lex.push(_ident | si[ident]);
 					} else {
-						si[ident] = sii;
-						sir[sii] = ident;
-						lex.push(_ident | sii);
-						sii++;
+						lex.push(_ident | sir.length);
+						si[ident] = sir.length;
+						sir.push(ident);
 					}
 				}
 			} else if (!/^\s$/.test(ch)) {
@@ -170,10 +169,9 @@ function Lex(src) {
 					if (s in ss) {
 						lex.push(_string | ss[s]);
 					} else {
-						ss[s] = ssi;
-						ssr[ssi] = s;
-						lex.push(_string | ssi);
-						ssi++;
+						lex.push(_string | ssr.length);
+						ss[s] = ssr.length;
+						ssr.push(s);
 					}
 					break;
 				}
@@ -218,10 +216,9 @@ function Lex(src) {
 			if (s in ss) {
 				lex.push(_string | ss[s]);
 			} else {
-				ss[s] = ssi;
-				ssr[ssi] = s;
-				lex.push(_string | ssi);
-				ssi++;
+				lex.push(_string | ssr.length);
+				ss[s] = ssr.length;
+				ssr.push(s);
 			}
 			break;
 		}
@@ -270,10 +267,9 @@ function Lex(src) {
 					if (n in sn) {
 						lex.push(_number | sn[n]);
 					} else {
-						sn[n] = sni;
-						snr[sni] = n;
-						lex.push(_number | sni);
-						sni++;
+						lex.push(_number | snr.length);
+						sn[n] = snr.length;
+						snr.push(n);
 					}
 				} else {
 					while (i < src.length) {
@@ -290,10 +286,9 @@ function Lex(src) {
 					if (val in sn) {
 						lex.push(_number | sn[val]);
 					} else {
-						sn[val] = sni;
-						snr[sni] = val;
-						lex.push(_number | sni);
-						sni++;
+						lex.push(_number | snr.length);
+						sn[val] = snr.length;
+						snr.push(val);
 					}
 				}
 				i--;

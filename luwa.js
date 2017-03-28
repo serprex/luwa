@@ -1,7 +1,8 @@
 "use strict";
 const lex = require("./lex"),
 	ast = require("./ast"),
-	bc = require("./bc");
+	bc = require("./bc"),
+	runbc = require("./runbc");
 
 function varint (v, value) {
 	while (true) {
@@ -40,5 +41,5 @@ function pushArray(sink, data) {
 
 exports.runSource = function(source, imp){
 	var l, a, b;
-	console.log(l = new lex.Lex(source), a = ast.parse(l), b = bc.assemble(l, a));
+	console.log(l = new lex.Lex(source), a = ast.parse(l), b = bc.assemble(l, a), runbc.run(b));
 }

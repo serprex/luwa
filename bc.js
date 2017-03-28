@@ -24,20 +24,18 @@ const NOP = exports.NOP = 0,
 	BIN_GTE = exports.BIN_GTE = 20,
 	BIN_EQ = exports.BIN_EQ = 21,
 	BIN_NEQ = exports.BIN_NEQ = 22,
-	BIN_AND = exports.BIN_AND = -1,
-	BIN_OR = exports.BIN_OR = -2,
 	UNARY_MINUS = exports.UNARY_MINUS = 23,
 	UNARY_NOT = exports.UNARY_NOT = 24,
 	UNARY_HASH = exports.UNARY_HASH = 25,
 	UNARY_BNOT = exports.UNARY_BNOT = 26,
 	MAKE_TABLE = exports.MAKE_TABLE = 27,
 	TABLE_ADD = exports.TABLE_ADD = 28,
-	FORTIFY = 29,
-	FOR2 = 30,
-	FOR3 = 31,
-	FOR_NEXT = 32,
-	POP2 = 33,
-	POP3 = 34,
+	FORTIFY = exports.FORTIFY = 29,
+	FOR2 = exports.FOR2 = 30,
+	FOR3 = exports.FOR3 = 31,
+	FOR_NEXT = exports.FOR_NEXT = 32,
+	POP2 = exports.POP2 = 33,
+	POP3 = exports.POP3 = 34,
 	LOAD_NUM = exports.LOAD_NUM = 128,
 	LOAD_STR = exports.LOAD_STR = 129,
 	LOAD_VARARG = exports.LOAD_VARARG = 130,
@@ -48,14 +46,15 @@ const NOP = exports.NOP = 0,
 	LOAD_ATTR = exports.LOAD_ATTR = 135,
 	STORE_ATTR = exports.STORE_ATTR = 136,
 	CALL = exports.CALL = 137,
-	STORE_INDEX_SWAP = 138,
-	TABLE_SET = 139,
-	JIF = 140,
-	JIFNOT = 141,
-	LOAD_METH = 142,
-	STORE_METH = 143,
-	JIF_OR_POP = 144,
-	JIFNOT_OR_POP = 145,
+	STORE_INDEX_SWAP = exports.STORE_INDEX_SWAP = 138,
+	TABLE_SET = exports.TABLE_SET = 139,
+	JIF = exports.JIF = 140,
+	JIFNOT = exports.JIFNOT = 141,
+	LOAD_METH = exports.LOAD_METH = 142,
+	STORE_METH = exports.STORE_METH = 143,
+	JIF_OR_POP = exports.JIF_OR_POP = 144,
+	JIFNOT_OR_POP = exports.JIFNOT_OR_POP = 145,
+	RETURN_CALL = exports.RETURN_CALL = 146,
 	LABEL = exports.LABEL = 255;
 
 function *selectNodes(node, type) {
@@ -80,7 +79,6 @@ function Assembler(lx) {
 	this.lx = lx;
 	this.bc = [];
 	this.fus = [];
-	this.fui = 0;
 	this.labgen = 0;
 	this.scopes = [];
 }
@@ -201,7 +199,7 @@ Assembler.prototype.genVar = function(node, store) {
 	}
 }
 
-Assembler.prototype.genArgs = function(node) {
+Assembler.prototype.genArgs = function(node, ismeth) {
 	this.gensert(node, ast.Args);
 	switch (this.type >> 5) {
 		case 0:
@@ -211,18 +209,18 @@ Assembler.prototype.genArgs = function(node) {
 				for (let i=0; i<exps.length; i++) {
 					this.genExp(exps[i], i == exps.length - 1);
 				}
-				this.push(CALL, exps.length);
+				this.push(CALL, exps.length + ismeth);
 			} else {
-				this.push(CALL, 0);
+				this.push(CALL, ismeth);
 			}
 			break;
 		case 1:
 			this.genTable(selectNode(node, ast.Tableconstructor));
-			this.push(CALL, 1);
+			this.push(CALL, 1 + ismeth);
 			break;
 		case 2: {
 			let str = this.filterMask(node, lex._string);
-			this.push(LOAD_STR, str.val(this.lx), CALL, 1);
+			this.push(LOAD_STR, str.val(this.lx), CALL, 1 + ismeth);
 			break;
 		}
 	}
@@ -235,7 +233,7 @@ Assembler.prototype.genCall = function(node) {
 		this.push(LOAD_METH, name.val(this.lx));
 	}
 	let args = selectNode(node, ast.Args);
-	this.genArgs(args);
+	this.genArgs(args, this.type >> 5);
 }
 
 Assembler.prototype.genFuncCall = function(node) {
@@ -263,6 +261,13 @@ Assembler.prototype.genFuncname = function(node) {
 
 Assembler.prototype.genFuncbody = function(node) {
 	this.gensert(node, ast.Funcbody);
+	this.push(LOAD_FUNC, this.fus.length);
+	// TODO handle parlist, add to func's locals
+	var parlist = selectNode(node, ast.Parlist);
+	let dotdotdot = hasLiteral(node, lex._dotdotdot);
+	var subasm = new Assembler(this.lx);
+	subasm.genBlock(selectNode(node, ast.Block));
+	this.fus.push(subasm);
 }
 
 Assembler.prototype.genValue = function(node) {
@@ -515,13 +520,23 @@ Assembler.prototype.genStat = function(node) {
 }
 
 Assembler.prototype.genRet = function(node) {
-	// TODO tail calls
 	this.gensert(node, ast.Retstat);
 	let exps = selectNodes(selectNode(node, ast.Explist), ast.Exp), i = 0;
-	for (let exp of exps) {
+	for (var exp of exps) {
 		this.genExp(exp);
 		i++;
-	}	
+	}
+	if (i == 1 && this.bc[this.bc.length-2] == CALL && (exp.type >> 5)) {
+		let binop = selectNode(exp, ast.Binop);
+		if (!binop) {
+			let val = selectNode(exp, ast.Value);
+			if ((val.type >> 5) == 8) {
+				this.bc[this.bc.length-2] = RETURN_CALL;
+				this.bc.length--;
+				return;
+			}
+		}
+	}
 	this.push(RETURN, i);
 }
 
@@ -532,12 +547,6 @@ Assembler.prototype.genBlock = function(node) {
 	}
 	let ret = selectNode(node, ast.Retstat);
 	if (ret) this.genRet(ret);
-}
-
-Assembler.prototype.genChunk = function(node) {
-	this.gensert(node, -2 & 31);
-	let block = selectNode(node, ast.Block);
-	if (block) return this.genBlock(block);
 }
 
 function assemble(lx, root) {
