@@ -65,11 +65,9 @@ const alphanumscore = /^\w$/;
 function Lex(src) {
 	this.ss = {};
 	this.ssr = [];
-	this.si = {};
-	this.sir = [];
 	this.sn = {};
 	this.snr = [];
-	const ss = this.ss, ssr = this.ssr, si = this.si, sir = this.sir, sn = this.sn, snr = this.snr;
+	const ss = this.ss, ssr = this.ssr, sn = this.sn, snr = this.snr;
 	const lex = [];
 	let ch;
 	for (let i=0; i<src.length; i++){
@@ -82,12 +80,12 @@ function Lex(src) {
 				if (rekey.test(ident)) {
 					lex.push(exports[ident]);
 				} else {
-					if (ident in si) {
-						lex.push(_ident | si[ident]);
+					if (ident in ss) {
+						lex.push(_ident | ss[ident]);
 					} else {
-						lex.push(_ident | sir.length);
-						si[ident] = sir.length;
-						sir.push(ident);
+						lex.push(_ident | ssr.length);
+						ss[ident] = ssr.length;
+						ssr.push(ident);
 					}
 				}
 			} else if (!/^\s$/.test(ch)) {

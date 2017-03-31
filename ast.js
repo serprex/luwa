@@ -54,7 +54,7 @@ const _o = [], o = n => _o[n] || (_o[n] = function*(lx, x, p) {
 	yield *rules[n](lx, x, p);
 });
 function seqcore(args) {
-	function *seqf(lx, x, p, i) {
+	return function *seqf(lx, x, p, i) {
 		if (i == args.length - 1) {
 			yield *args[i](lx, x, p);
 		} else {
@@ -63,17 +63,12 @@ function seqcore(args) {
 			}
 		}
 	}
-	return seqf;
 }
-function seq() {
-	const args = [];
-	for (var i=0; i<arguments.length; i++) args[i] = arguments[i];
+function seq(...args) {
 	const seqf = seqcore(args);
 	return (lx, x, p) => seqf(lx, x, p, 0);
 }
-function sf(o) {
-	const args = [];
-	for (var i=1; i<arguments.length; i++) args[i-1] = arguments[i];
+function sf(o, ...args) {
 	const seqf = seqcore(args);
 	rules[o] = (lx, x, p) => seqf(lx, x, x.spawn(o, p), 0);
 }
@@ -87,9 +82,7 @@ var maybe = f => function*(lx, x, p) {
 	yield *f(lx, x, p);
 	yield x;
 };
-function of(o) {
-	const args = [];
-	for (var i=1; i<arguments.length; i++) args[i-1] = arguments[i];
+function of(o, ...args) {
 	rules[o] = function*(lx, x, p){
 		let i = o;
 		for (let a of args) {
@@ -160,7 +153,6 @@ of(Call,
 	o(Args),
 	seq(s(lex._colon), name, o(Args)));
 of(Suffix, o(Call), o(Index));
-const _chunk = seq(rules[Block], s(0));
 
 function Builder(li, mo, fa, ty) {
 	this.li = li;
@@ -173,10 +165,55 @@ Builder.prototype.val = function(lx) {
 	return lx.lex[this.li];
 }
 Builder.prototype.next = function(p) {
-	return new Builder(this.li+1, this, p, -1);
+	return new Builder(this.li+1, ~this.type ? this.mother : this, p, -1);
 }
 Builder.prototype.spawn = function(ty, p) {
-	return new Builder(this.li, this, p, ty);
+	return new Builder(this.li, ~this.type ? this.mother : this, p, ty);
+}
+
+function precedence(lx, x) {
+	if (x.type == -1) {
+		switch (lx.lex[x.li]) {
+			case lex._or:return 1;
+			case lex._and:return 2;
+			case lex._lt:case lex._lte:case lex._gt:case lex._gte:case lex._eq:case lex._neq:return 3;
+			case lex._dotdot:return 4;
+			case lex._bor:return 5;
+			case lex._bnot:return 6;
+			case lex._band:return 7;
+			case lex._rsh:case lex._lsh:return 8;
+			case lex._minus:case lex._plus:return 9;
+			case lex._mul:case lex._div:case lex._idiv:case lex._mod:return 10;
+			case lex._pow:return 11;
+		}
+	}
+	return 0;
+}
+
+function rewrite(lx, node) {
+	// BROKEN: 3 * 2 + 4 + 5 should be 15, not 23
+	for (let n of node.fathered) {
+		rewrite(lx, n);
+	}
+	if (node.type == (Exp|32) && node.fathered.length == 3) {
+		let [rson, op, lson] = node.fathered;
+		if (rson.type == (Exp|32) && rson.fathered.length == 3) {
+			let [rrson, rop, rlson] = rson.fathered;
+			if (precedence(lx, op.fathered[0]) >= precedence(lx, rop.fathered[0]) && precedence(lx, rop.fathered[0]) != 11) {
+				for (let i=0; i<node.father.fathered.length; i++) {
+					if (node.father.fathered[i] == node) {
+						node.father.fathered[i] = rson;
+						break;
+					}
+				}
+				rson.father = node.father;
+				node.fathered[0] = rlson;
+				rlson.father = node;
+				rson.fathered[2] = node;
+				node.father = rson.father;
+			}
+		}
+	}
 }
 
 function parse(lx) {
@@ -194,6 +231,7 @@ function parse(lx) {
 			} while (child = child.mother);
 			const b0 = root.fathered[0];
 			b0.father = b0.mother = null;
+			rewrite(lx, b0);
 			return b0;
 		}
 	}

@@ -188,18 +188,18 @@ vm.prototype.run = function(Bc) {
 				break;
 			}
 			case opc.LOAD_NUM: {
-				this.push(lx.snr[arg&0xffffff]);
+				this.push(lx.snr[arg]);
 				break;
 			}
 			case opc.LOAD_STR: {
-				this.push(lx.ssr[arg&0xffffff]);
+				this.push(lx.ssr[arg]);
 				break;
 			}
 			case opc.LOAD_VARARG: {
 				break;
 			}
 			case opc.LOAD_IDENT: {
-				this.push(this._G.get(lx.sir[arg & 0xffffff]));
+				this.push(this._G.get(lx.sir[arg]));
 				break;
 			}
 			case opc.GOTO: {
@@ -211,17 +211,17 @@ vm.prototype.run = function(Bc) {
 				else return [];
 			}
 			case opc.STORE_IDENT: {
-				this._G.set(lx.sir[arg & 0xffffff], this.pop());
+				this._G.set(lx.sir[arg], this.pop());
 				break;
 			}
 			case opc.LOAD_ATTR: {
 				let a = this.pop();
-				this.push(a.get(lx.sir[arg & 0xffffff]));
+				this.push(a.get(lx.sir[arg]));
 				break;
 			}
 			case opc.STORE_ATTR: {
 				let a = this.pop(), b = this.pop();
-				b.set(lx.sir[arg & 0xffffff], a);
+				b.set(lx.sir[arg], a);
 				break;
 			}
 			case opc.CALL: {
@@ -253,7 +253,7 @@ vm.prototype.run = function(Bc) {
 			}
 			case opc.LOAD_METH: {
 				let a = this.pop();
-				this.push(a.get(lx.sir[arg & 0xffffff]));
+				this.push(a.get(lx.sir[arg]));
 				this.push(a);
 				break;
 			}

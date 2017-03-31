@@ -36,6 +36,8 @@ const NOP = exports.NOP = 0,
 	FOR_NEXT = exports.FOR_NEXT = 32,
 	POP2 = exports.POP2 = 33,
 	POP3 = exports.POP3 = 34,
+	LOAD_INDEX = exports.LOAD_INDEX = 35,
+	STORE_INDEX = exports.STORE_INDEX = 36,
 	LOAD_NUM = exports.LOAD_NUM = 128,
 	LOAD_STR = exports.LOAD_STR = 129,
 	LOAD_VARARG = exports.LOAD_VARARG = 130,
@@ -43,8 +45,6 @@ const NOP = exports.NOP = 0,
 	GOTO = exports.GOTO = 132,
 	RETURN = exports.RETURN = 133,
 	STORE_IDENT = exports.STORE_IDENT = 134,
-	LOAD_ATTR = exports.LOAD_ATTR = 135,
-	STORE_ATTR = exports.STORE_ATTR = 136,
 	CALL = exports.CALL = 137,
 	STORE_INDEX_SWAP = exports.STORE_INDEX_SWAP = 138,
 	TABLE_SET = exports.TABLE_SET = 139,
@@ -134,7 +134,7 @@ Assembler.prototype.genPrefix = function (node) {
 	if (node.type >> 5) {
 		this.genExp(selectNode(node, ast.Exp));
 	} else {
-		this.push(LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx));
+		this.push(LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx) & 0xffffff);
 	}
 }
 
@@ -151,13 +151,12 @@ Assembler.prototype.genIndex = function(node, store) {
 	// TODO a[b] = c is order of evaluation
 	this.gensert(node, ast.Index);
 	if (node.type >> 5) {
-		// TODO convert this to LOAD_STR STORE_INDEX / LOAD_INDEX
-		this.push(store ? STORE_ATTR : LOAD_ATTR, this.filterMask(node, lex._ident))
+		this.push(LOAD_STR, this.filterMask(node, lex._ident).val(this.lx) & 0xffffff);
 	} else {
 		var exp = selectNode(node, ast.Exp);
 		this.genExp(node, exp);
-		this.push(store ? STORE_INDEX : LOAD_INDEX);
 	}
+	this.push(store ? STORE_INDEX : LOAD_INDEX);
 }
 
 Assembler.prototype.genTable = function(node) {
@@ -195,7 +194,7 @@ Assembler.prototype.genVar = function(node, store) {
 		}
 		this.genIndex(index, store);
 	} else {
-		this.push(store ? STORE_IDENT : LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx));
+		this.push(store ? STORE_IDENT : LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx) & 0xffffff);
 	}
 }
 
@@ -220,7 +219,7 @@ Assembler.prototype.genArgs = function(node, ismeth) {
 			break;
 		case 2: {
 			let str = this.filterMask(node, lex._string);
-			this.push(LOAD_STR, str.val(this.lx), CALL, 1 + ismeth);
+			this.push(LOAD_STR, str.val(this.lx) & 0xffffff, CALL, 1 + ismeth);
 			break;
 		}
 	}
@@ -230,7 +229,7 @@ Assembler.prototype.genCall = function(node) {
 	this.gensert(node, ast.Call);
 	if (this.type >> 5) {
 		let name = this.filterMask(node, lex._ident);
-		this.push(LOAD_METH, name.val(this.lx));
+		this.push(LOAD_METH, name.val(this.lx) & 0xffffff);
 	}
 	let args = selectNode(node, ast.Args);
 	this.genArgs(args, this.type >> 5);
@@ -252,11 +251,11 @@ Assembler.prototype.genFuncname = function(node) {
 	this.gensert(ast.Funcname);
 	let colon = hasLiteral(node, lex._colon);
 	let names = Array.from(this.filterMasks(node, lex._ident));
-	this.push(LOAD_IDENT, names[0].val(this.lx));
+	this.push(LOAD_IDENT, names[0].val(this.lx) & 0xffffff);
 	for (var i=1; i<names.length - 1; i++) {
-		this.push(LOAD_ATTR, names[i].val(this.lx));
+		this.push(LOAD_ATTR, names[i].val(this.lx) & 0xffffff);
 	}
-	this.push(colon ? STORE_METH : STORE_ATTR, names[names.length-1].val(this.lx));
+	this.push(colon ? STORE_METH : STORE_ATTR, names[names.length-1].val(this.lx) & 0xffffff);
 }
 
 Assembler.prototype.genFuncbody = function(node) {
@@ -283,10 +282,10 @@ Assembler.prototype.genValue = function(node) {
 			this.push(LOAD_TRUE);
 			break;
 		case 3:
-			this.push(LOAD_NUM, this.filterMask(node, lex._number).val(this.lx));
+			this.push(LOAD_NUM, this.filterMask(node, lex._number).val(this.lx) & 0xffffff);
 			break;
 		case 4:
-			this.push(LOAD_STR, this.filterMask(node, lex._string).val(this.lx));
+			this.push(LOAD_STR, this.filterMask(node, lex._string).val(this.lx) & 0xffffff);
 			break;
 		case 5:
 			// TODO not sure how to handle multival
@@ -316,18 +315,19 @@ Assembler.prototype.genValue = function(node) {
 Assembler.prototype.genExp = function(node) {
 	this.gensert(node, ast.Exp);
 	if (node.type >> 5) {
-		let value = selectNode(node, ast.Value);
 		let binop = selectNode(node, ast.Binop);
 		if (binop) {
-			let rexp = selectNode(node, ast.Exp);
-			this.genValue(value);
+			let [rson, op, lson] = node.fathered;
+			let genl = (lson.type&31) == ast.Exp ? (() => this.genExp(lson)) : (() => this.genValue(lson));
+			let genr = (rson.type&31) == ast.Exp ? (() => this.genExp(rson)) : (() => this.genValue(rson));
+			genl();
 			if ((binop.type >> 5) > 18) {
 				let lab = this.genLabel();
 				this.push((binop.type >> 5) == 19 ? JIFNOT_OR_POP : JIF_OR_POP, lab);
-				this.genExp(rexp);
+				genr();
 				this.push(LABEL, lab);
 			} else {
-				this.genExp(rexp);
+				genr();
 				switch (binop.type >> 5) {
 					case 0: this.push(BIN_PLUS); break; // plus
 					case 1: this.push(BIN_MINUS); break; // minus
@@ -351,6 +351,7 @@ Assembler.prototype.genExp = function(node) {
 				}
 			}
 		} else {
+			let value = selectNode(node, ast.Value);
 			this.genValue(value);
 		}
 	} else {
@@ -395,7 +396,7 @@ Assembler.prototype.genStat = function(node) {
 			break;
 		case 3: {
 			let name = this.filterMask(node, lex._ident);
-			this.push(LABEL, name.val(this.lx));
+			this.push(LABEL, name.val(this.lx) & 0xffffff);
 			break;
 		}
 		case 4: {
@@ -406,7 +407,7 @@ Assembler.prototype.genStat = function(node) {
 		}
 		case 5: { // TODO transform into jump offset
 			let name = this.filterMask(node, lex._ident);
-			this.push(GOTO, name.val(this.lx));
+			this.push(GOTO, name.val(this.lx) & 0xffffff);
 			break;
 		}
 		case 6:
@@ -485,7 +486,7 @@ Assembler.prototype.genStat = function(node) {
 			this.push(FORTIFY, LABEL, lab0);
 			this.push(FOR_NEXT, endlab);
 			for (let name of names) {
-				this.push(STORE_IDENT, name.val(this.lx));
+				this.push(STORE_IDENT, name.val(this.lx) & 0xffffff);
 			}
 			this.genBlock(selectNode(node, ast.Block));
 			this.push(GOTO, lab0);
@@ -499,7 +500,7 @@ Assembler.prototype.genStat = function(node) {
 		}
 		case 13: {
 			this.genFuncbody(selectNode(node, ast.Funcbody));
-			this.push(STORE_IDENT, this.filterMask(node, lex._ident).val(this.lx));
+			this.push(STORE_IDENT, this.filterMask(node, lex._ident).val(this.lx) & 0xffffff);
 			break;
 		}
 		case 14: {
@@ -511,7 +512,7 @@ Assembler.prototype.genStat = function(node) {
 					this.genExp(exp);
 				}
 				for (let i=names.length-1; i>=0; i--) {
-					this.push(STORE_IDENT, names[i].val(this.lx));
+					this.push(STORE_IDENT, names[i].val(this.lx) & 0xffffff);
 				}
 			}
 			break;
