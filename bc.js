@@ -132,7 +132,7 @@ Assembler.prototype.gensert = function(node, ty) {
 Assembler.prototype.genPrefix = function (node) {
 	this.gensert(node, ast.Prefix);
 	if (node.type >> 5) {
-		this.genExp(selectNode(node, ast.Exp));
+		this.genExpOr(selectNode(node, ast.ExpOr));
 	} else {
 		this.push(LOAD_IDENT, this.filterMask(node, lex._ident).val(this.lx) & 0xffffff);
 	}
@@ -153,8 +153,8 @@ Assembler.prototype.genIndex = function(node, store) {
 	if (node.type >> 5) {
 		this.push(LOAD_STR, this.filterMask(node, lex._ident).val(this.lx) & 0xffffff);
 	} else {
-		var exp = selectNode(node, ast.Exp);
-		this.genExp(node, exp);
+		var exp = selectNode(node, ast.ExpOr);
+		this.genExpOr(node, exp);
 	}
 	this.push(store ? STORE_INDEX : LOAD_INDEX);
 }
@@ -165,17 +165,17 @@ Assembler.prototype.genTable = function(node) {
 	for (let field of selectNodes(selectNode(node, ast.Fieldlist), ast.Field)) {
 		switch (field.type >> 5) {
 			case 0:
-				for (let exp of selectNodes(field, ast.Exp)) {
-					this.genExp(exp);
+				for (let exp of selectNodes(field, ast.ExpOr)) {
+					this.genExpOr(exp);
 				}
 				this.push(STORE_INDEX_SWAP);
 				break;
 			case 1:
-				this.genExp(selectNode(field, ast.Exp));
+				this.genExpOr(selectNode(field, ast.ExpOr));
 				this.push(TABLE_SET, this.filterMask(field, lex._ident));
 				break;
 			case 2:
-				this.genExp(selectNode(field, ast.Exp));
+				this.genExpOr(selectNode(field, ast.ExpOr));
 				this.push(TABLE_ADD);
 				break;
 		}
@@ -204,9 +204,9 @@ Assembler.prototype.genArgs = function(node, ismeth) {
 		case 0:
 			let explist = selectNode(node, ast.Explist);
 			if (explist) {
-				let exps = Array.from(selectNodes(explist, ast.Exp));
+				let exps = Array.from(selectNodes(explist, ast.ExpOr));
 				for (let i=0; i<exps.length; i++) {
-					this.genExp(exps[i], i == exps.length - 1);
+					this.genExpOr(exps[i], i == exps.length - 1);
 				}
 				this.push(CALL, exps.length + ismeth);
 			} else {
@@ -253,7 +253,7 @@ Assembler.prototype.genFuncname = function(node) {
 	let names = Array.from(this.filterMasks(node, lex._ident));
 	this.push(LOAD_IDENT, names[0].val(this.lx) & 0xffffff);
 	for (var i=1; i<names.length - 1; i++) {
-		this.push(LOAD_ATTR, names[i].val(this.lx) & 0xffffff);
+		this.push(LOAD_STR, names[i].val(this.lx) & 0xffffff, LOAD_INDEX);
 	}
 	this.push(colon ? STORE_METH : STORE_ATTR, names[names.length-1].val(this.lx) & 0xffffff);
 }
@@ -305,54 +305,117 @@ Assembler.prototype.genValue = function(node) {
 			this.genVar(selectNode(node, ast.Var));
 			break;
 		case 10: {
-			var exp = selectNode(node, ast.Exp);
-			this.genExp(exp);
+			var exp = selectNode(node, ast.ExpOr);
+			this.genExpOr(exp);
 			break;
 		}
+	}
+}
+
+function precedence(x) {
+	if ((x.type & 31) == ast.Binop) {
+		switch (x.type >> 5) {
+			case 13:case 14:case 15:case 16:case 17:case 18:return 1;
+			case 12:return 2;
+			case 9:return 3;
+			case 8:return 4;
+			case 7:return 5;
+			case 10:case 11:return 6;
+			case 1:case 0:return 7;
+			case 2:case 3:case 4:case 6:return 8;
+			case 5:return 9;
+		}
+	}
+	return 0;
+}
+
+const Exp32 = ast.Exp|32;
+function*shunt(lx, node) {
+	var ops = [];
+	while (node.type == Exp32 && node.fathered.length == 3) {
+		let [rson, op, lson] = node.fathered;
+		yield lson;
+		while (ops.length && precedence(ops[ops.length-1]) >= precedence(op) && precedence(op) != 9) {
+			yield ops.pop();
+		}
+		ops.push(op);
+		node = rson;
+	}
+	yield node.type == Exp32 ? selectNode(node, ast.Value) : node;
+	for (let i=ops.length-1; i>=0; i--) {
+		yield ops[i];
+	}
+}
+
+Assembler.prototype.genExpOr = function(node) {
+	this.gensert(node, ast.ExpOr);
+	let exps = Array.from(selectNodes(node, ast.ExpAnd));
+	if (exps.length == 1) {
+		this.genExpAnd(exps[0]);
+	} else {
+		let lab = this.genLabel();
+		for (let i=0; i<exps.length - 1; i++) {
+			this.genExpAnd(exps[i]);
+			this.push(JIF_OR_POP, lab);
+		}
+		this.genExpAnd(exps[exps.length - 1]);
+		this.push(LABEL, lab);
+	}
+}
+
+Assembler.prototype.genExpAnd = function(node) {
+	this.gensert(node, ast.ExpAnd);
+	let exps = Array.from(selectNodes(node, ast.Exp));
+	if (exps.length == 1) {
+		this.genExp(exps[0]);
+	} else {
+		let lab = this.genLabel();
+		for (let i=0; i<exps.length - 1; i++) {
+			this.genExp(exps[i]);
+			this.push(JIFNOT_OR_POP, lab);
+		}
+		this.genExp(exps[exps.length - 1]);
+		this.push(LABEL, lab);
 	}
 }
 
 Assembler.prototype.genExp = function(node) {
 	this.gensert(node, ast.Exp);
 	if (node.type >> 5) {
-		let binop = selectNode(node, ast.Binop);
-		if (binop) {
-			let [rson, op, lson] = node.fathered;
-			let genl = (lson.type&31) == ast.Exp ? (() => this.genExp(lson)) : (() => this.genValue(lson));
-			let genr = (rson.type&31) == ast.Exp ? (() => this.genExp(rson)) : (() => this.genValue(rson));
-			genl();
-			if ((binop.type >> 5) > 18) {
-				let lab = this.genLabel();
-				this.push((binop.type >> 5) == 19 ? JIFNOT_OR_POP : JIF_OR_POP, lab);
-				genr();
-				this.push(LABEL, lab);
-			} else {
-				genr();
-				switch (binop.type >> 5) {
-					case 0: this.push(BIN_PLUS); break; // plus
-					case 1: this.push(BIN_MINUS); break; // minus
-					case 2: this.push(BIN_MUL); break; // mul
-					case 3: this.push(BIN_DIV); break; // div
-					case 4: this.push(BIN_IDIV); break; // idiv
-					case 5: this.push(BIN_POW); break; // pow
-					case 6: this.push(BIN_MOD); break; // mod
-					case 7: this.push(BIN_BAND); break; // band
-					case 8: this.push(BIN_BNOT); break; // bnot
-					case 9: this.push(BIN_BOR); break; // bor
-					case 10: this.push(BIN_RSH); break; // rsh
-					case 11: this.push(BIN_LSH); break; // lsh
-					case 12: this.push(BIN_DOTDOT); break; // dotdot
-					case 13: this.push(BIN_LT); break; // lt
-					case 14: this.push(BIN_LTE); break; // lte
-					case 15: this.push(BIN_GT); break; // gt
-					case 16: this.push(BIN_GTE); break; // gte
-					case 17: this.push(BIN_EQ); break; // eq
-					case 18: this.push(BIN_NEQ); break; // neq
-				}
+		for (let op of shunt(this.lx, node)) {
+			switch (op.type & 31) {
+				case ast.Binop:
+					switch (op.type >> 5) {
+						case 0: this.push(BIN_PLUS); break; // plus
+						case 1: this.push(BIN_MINUS); break; // minus
+						case 2: this.push(BIN_MUL); break; // mul
+						case 3: this.push(BIN_DIV); break; // div
+						case 4: this.push(BIN_IDIV); break; // idiv
+						case 5: this.push(BIN_POW); break; // pow
+						case 6: this.push(BIN_MOD); break; // mod
+						case 7: this.push(BIN_BAND); break; // band
+						case 8: this.push(BIN_BNOT); break; // bnot
+						case 9: this.push(BIN_BOR); break; // bor
+						case 10: this.push(BIN_RSH); break; // rsh
+						case 11: this.push(BIN_LSH); break; // lsh
+						case 12: this.push(BIN_DOTDOT); break; // dotdot
+						case 13: this.push(BIN_LT); break; // lt
+						case 14: this.push(BIN_LTE); break; // lte
+						case 15: this.push(BIN_GT); break; // gt
+						case 16: this.push(BIN_GTE); break; // gte
+						case 17: this.push(BIN_EQ); break; // eq
+						case 18: this.push(BIN_NEQ); break; // neq
+					}
+					break;
+				case ast.Value:
+					this.genValue(op);
+					break;
+				case ast.Exp:
+					if (op.type >> 5) {
+						console.log("shunt error: returned binop exp");
+					} else this.genExp(op);
+					break;
 			}
-		} else {
-			let value = selectNode(node, ast.Value);
-			this.genValue(value);
 		}
 	} else {
 		let unop = selectNode(node, ast.Unop);
@@ -382,9 +445,9 @@ Assembler.prototype.genStat = function(node) {
 			break;
 		case 1: { // varlist = explist
 			let vars = Array.from(selectNodes(selectNode(node, ast.Varlist), ast.Var)),
-				exps = selectNodes(selectNode(node, ast.Explist), ast.Exp);
+				exps = selectNodes(selectNode(node, ast.Explist), ast.ExpOr);
 			for (let exp of exps) {
-				this.genExp(exp);
+				this.genExpOr(exp);
 			}
 			for (let i=vars.length-1; i>=0; i--) {
 				this.genVar(vars[i], true);
@@ -417,7 +480,7 @@ Assembler.prototype.genStat = function(node) {
 			let lab0 = this.genLabel(), lab1 = this.genLabel();
 			this.pushScope(lab1);
 			this.push(LABEL, lab0);
-			this.genExp(selectNode(node, ast.Exp));
+			this.genExpOr(selectNode(node, ast.ExpOr));
 			this.push(JIFNOT, lab1);
 			this.genBlock(selectNode(node, ast.Block));
 			this.push(GOTO, lab0);
@@ -430,7 +493,7 @@ Assembler.prototype.genStat = function(node) {
 			this.pushScope(lab1);
 			this.push(LABEL, lab0);
 			this.genBlock(selectNode(node, ast.Block));
-			this.genExp(selectNode(node, ast.Exp));
+			this.genExpOr(selectNode(node, ast.ExpOr));
 			this.push(JIFNOT, lab0);
 			this.push(LABEL, lab1);
 			this.popScope();
@@ -439,12 +502,12 @@ Assembler.prototype.genStat = function(node) {
 		case 9: {
 			/* If there's an else then exps.length != blocks.length
 			*/
-			let exps = Array.from(selectNodes(node, ast.Exp));
+			let exps = Array.from(selectNodes(node, ast.ExpOr));
 			let blocks = Array.from(selectNodes(node, ast.Block));
 			let endlab = this.genLabel();
 			for (var i=0; i<exps.length; i++) {
 				let lab = this.genLabel();
-				this.genExp(exps[i]);
+				this.genExpOr(exps[i]);
 				this.push(JIFNOT, lab);
 				this.genBlock(blocks[i]);
 				if (i+1 < blocks.length) this.push(GOTO, endlab);
@@ -459,11 +522,11 @@ Assembler.prototype.genStat = function(node) {
 		case 10: {
 			let lab0 = this.genLabel(), endlab = this.genLabel();
 			this.pushScope(endlab);
-			let exps = Array.from(selectNodes(node, ast.Exp));
-			this.genExp(exps[0]);
-			this.genExp(exps[1]);
+			let exps = Array.from(selectNodes(node, ast.ExpOr));
+			this.genExpOr(exps[0]);
+			this.genExpOr(exps[1]);
 			if (exps.length > 2) {
-				this.genExp(exps[2]);
+				this.genExpOr(exps[2]);
 				this.push(LABEL, lab0, FOR3);
 			} else {
 				this.push(LABEL, lab0, FOR2);
@@ -478,10 +541,10 @@ Assembler.prototype.genStat = function(node) {
 		case 11: {
 			let lab0 = this.genLabel(), endlab = this.genLabel();
 			this.pushScope(endlab);
-			let exps = selectNodes(selectNode(node, ast.Explist), ast.Exp);
+			let exps = selectNodes(selectNode(node, ast.Explist), ast.ExpOr);
 			let names = filterMasks(selectNode(node, ast.Namelist), lex._ident);
 			for (let exp of exps) {
-				this.genExp(exp);
+				this.genExpOr(exp);
 			}
 			this.push(FORTIFY, LABEL, lab0);
 			this.push(FOR_NEXT, endlab);
@@ -507,9 +570,9 @@ Assembler.prototype.genStat = function(node) {
 			let explist = selectNode(node, ast.Explist);
 			if (explist) {
 				let names = Array.from(this.filterMask(selectNode(node, ast.Namelist), lex._ident)),
-					exps = selectNodes(explist, ast.Exp);
+					exps = selectNodes(explist, ast.ExpOr);
 				for (let exp of exps) {
-					this.genExp(exp);
+					this.genExpOr(exp);
 				}
 				for (let i=names.length-1; i>=0; i--) {
 					this.push(STORE_IDENT, names[i].val(this.lx) & 0xffffff);
@@ -522,9 +585,9 @@ Assembler.prototype.genStat = function(node) {
 
 Assembler.prototype.genRet = function(node) {
 	this.gensert(node, ast.Retstat);
-	let exps = selectNodes(selectNode(node, ast.Explist), ast.Exp), i = 0;
+	let exps = selectNodes(selectNode(node, ast.Explist), ast.ExpOr), i = 0;
 	for (var exp of exps) {
-		this.genExp(exp);
+		this.genExpOr(exp);
 		i++;
 	}
 	if (i == 1 && this.bc[this.bc.length-2] == CALL && (exp.type >> 5)) {

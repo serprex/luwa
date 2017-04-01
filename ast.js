@@ -27,7 +27,9 @@ const Block = exports.Block = 0,
 	Value = exports.Value = 22,
 	Index = exports.Index = 23,
 	Call = exports.Call = 24,
-	Suffix = exports.Suffix = 25;
+	Suffix = exports.Suffix = 25,
+	ExpOr = exports.ExpOr = 26,
+	ExpAnd = exports.ExpAnd = 27;
 
 function*name(lx, x, p) {
 	var t = x.next(p);
@@ -102,10 +104,10 @@ of(Stat,
 	s(lex._break),
 	seq(s(lex._goto), name),
 	seq(s(lex._do), o(Block), s(lex._end)),
-	seq(s(lex._while), o(Exp), s(lex._do), o(Block), s(lex._end)),
-	seq(s(lex._repeat), o(Block), s(lex._until), o(Exp)),
-	seq(s(lex._if), o(Exp), s(lex._then), o(Block), many(seq(s(lex._elseif), o(Exp), s(lex._then), o(Block))), maybe(seq(s(lex._else), o(Block))), s(lex._end)),
-	seq(s(lex._for), name, s(lex._set), o(Exp), s(lex._comma), o(Exp), maybe(seq(s(lex._comma), o(Exp))), s(lex._do), o(Block), s(lex._end)),
+	seq(s(lex._while), o(ExpOr), s(lex._do), o(Block), s(lex._end)),
+	seq(s(lex._repeat), o(Block), s(lex._until), o(ExpOr)),
+	seq(s(lex._if), o(ExpOr), s(lex._then), o(Block), many(seq(s(lex._elseif), o(ExpOr), s(lex._then), o(Block))), maybe(seq(s(lex._else), o(Block))), s(lex._end)),
+	seq(s(lex._for), name, s(lex._set), o(ExpOr), s(lex._comma), o(ExpOr), maybe(seq(s(lex._comma), o(ExpOr))), s(lex._do), o(Block), s(lex._end)),
 	seq(s(lex._for), o(Namelist), s(lex._in), o(Explist), s(lex._do), o(Block), s(lex._end)),
 	seq(s(lex._function), o(Funcname), o(Funcbody)),
 	seq(s(lex._local), s(lex._function), name, o(Funcbody)),
@@ -117,9 +119,11 @@ sf(Funcname, name, many(seq(s(lex._dot), name)), maybe(s(lex._colon), name));
 sf(Varlist, o(Var), many(seq(s(lex._comma), o(Var))));
 of(Var, name, seq(o(Prefix), many(o(Suffix)), o(Index)));
 sf(Namelist, name, many(seq(s(lex._comma), name)));
-sf(Explist, o(Exp), many(seq(s(lex._comma), o(Exp))));
+sf(Explist, o(ExpOr), many(seq(s(lex._comma), o(ExpOr))));
+of(ExpOr, seq(o(ExpAnd), many(seq(s(lex._or), o(ExpAnd)))));
+of(ExpAnd, seq(o(Exp), many(seq(s(lex._and), o(Exp)))));
 of(Exp, seq(o(Unop), o(Exp)), seq(o(Value), maybe(seq(o(Binop), o(Exp)))));
-of(Prefix, name, seq(s(lex._pl), o(Exp), s(lex._pr)));
+of(Prefix, name, seq(s(lex._pl), o(ExpOr), s(lex._pr)));
 sf(Functioncall, o(Prefix), many(o(Suffix)), o(Call));
 of(Args,
 	seq(s(lex._pl), maybe(o(Explist)), s(lex._pr)),
@@ -133,21 +137,21 @@ of(Parlist,
 sf(Tableconstructor, s(lex._cl), maybe(o(Fieldlist)), s(lex._cr));
 sf(Fieldlist, o(Field), many(seq(o(Fieldsep), o(Field))), maybe(o(Fieldsep)));
 of(Field,
-	seq(s(lex._sl), o(Exp), s(lex._sr), s(lex._set), o(Exp)),
-	seq(name, s(lex._set), o(Exp)),
-	o(Exp));
+	seq(s(lex._sl), o(ExpOr), s(lex._sr), s(lex._set), o(ExpOr)),
+	seq(name, s(lex._set), o(ExpOr)),
+	o(ExpOr));
 of(Fieldsep, s(lex._comma), s(lex._semi));
 of(Binop,
 	s(lex._plus), s(lex._minus), s(lex._mul), s(lex._div), s(lex._idiv), s(lex._pow), s(lex._mod),
 	s(lex._band), s(lex._bnot), s(lex._bor), s(lex._rsh), s(lex._lsh), s(lex._dotdot),
-	s(lex._lt), s(lex._lte), s(lex._gt), s(lex._gte), s(lex._eq), s(lex._neq), s(lex._and), s(lex._or));
+	s(lex._lt), s(lex._lte), s(lex._gt), s(lex._gte), s(lex._eq), s(lex._neq));
 of(Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot));
 of(Value,
 	s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
 	o(Functiondef), o(Tableconstructor), o(Functioncall), o(Var),
-	seq(s(lex._pl), o(Exp), s(lex._pr)));
+	seq(s(lex._pl), o(ExpOr), s(lex._pr)));
 of(Index,
-	seq(s(lex._sl), o(Exp), s(lex._sr)),
+	seq(s(lex._sl), o(ExpOr), s(lex._sr)),
 	seq(s(lex._dot), name));
 of(Call,
 	o(Args),
@@ -171,51 +175,6 @@ Builder.prototype.spawn = function(ty, p) {
 	return new Builder(this.li, ~this.type ? this.mother : this, p, ty);
 }
 
-function precedence(lx, x) {
-	if (x.type == -1) {
-		switch (lx.lex[x.li]) {
-			case lex._or:return 1;
-			case lex._and:return 2;
-			case lex._lt:case lex._lte:case lex._gt:case lex._gte:case lex._eq:case lex._neq:return 3;
-			case lex._dotdot:return 4;
-			case lex._bor:return 5;
-			case lex._bnot:return 6;
-			case lex._band:return 7;
-			case lex._rsh:case lex._lsh:return 8;
-			case lex._minus:case lex._plus:return 9;
-			case lex._mul:case lex._div:case lex._idiv:case lex._mod:return 10;
-			case lex._pow:return 11;
-		}
-	}
-	return 0;
-}
-
-function rewrite(lx, node) {
-	// BROKEN: 3 * 2 + 4 + 5 should be 15, not 23
-	for (let n of node.fathered) {
-		rewrite(lx, n);
-	}
-	if (node.type == (Exp|32) && node.fathered.length == 3) {
-		let [rson, op, lson] = node.fathered;
-		if (rson.type == (Exp|32) && rson.fathered.length == 3) {
-			let [rrson, rop, rlson] = rson.fathered;
-			if (precedence(lx, op.fathered[0]) >= precedence(lx, rop.fathered[0]) && precedence(lx, rop.fathered[0]) != 11) {
-				for (let i=0; i<node.father.fathered.length; i++) {
-					if (node.father.fathered[i] == node) {
-						node.father.fathered[i] = rson;
-						break;
-					}
-				}
-				rson.father = node.father;
-				node.fathered[0] = rlson;
-				rlson.father = node;
-				rson.fathered[2] = node;
-				node.father = rson.father;
-			}
-		}
-	}
-}
-
 function parse(lx) {
 	const root = new Builder(-1, null, null, -2);
 	for (let child of rules[Block](lx, root, root)) {
@@ -231,7 +190,6 @@ function parse(lx) {
 			} while (child = child.mother);
 			const b0 = root.fathered[0];
 			b0.father = b0.mother = null;
-			rewrite(lx, b0);
 			return b0;
 		}
 	}

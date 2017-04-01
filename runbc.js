@@ -1,10 +1,10 @@
 "use strict";
 const opc = require("./bc");
 
-function vm(_G) {
+function vm(_G, stack) {
 	this._G = _G;
 	this.pc = 0;
-	this.stack = [];
+	this.stack = stack;
 }
 
 vm.prototype.pop = function() {
@@ -187,6 +187,16 @@ vm.prototype.run = function(Bc) {
 				this.pop();
 				break;
 			}
+			case opc.LOAD_INDEX: {
+				let a = this.pop();
+				this.push(a);
+				break;
+			}
+			case opc.STORE_INDEX: {
+				let a = this.pop(), b = this.pop(), c = this.pop();
+				b.set(a, c); // TODO should be c.set(b, a)
+				break;
+			}
 			case opc.LOAD_NUM: {
 				this.push(lx.snr[arg]);
 				break;
@@ -199,7 +209,7 @@ vm.prototype.run = function(Bc) {
 				break;
 			}
 			case opc.LOAD_IDENT: {
-				this.push(this._G.get(lx.sir[arg]));
+				this.push(this._G.get(lx.ssr[arg]));
 				break;
 			}
 			case opc.GOTO: {
@@ -207,26 +217,15 @@ vm.prototype.run = function(Bc) {
 				break;
 			}
 			case opc.RETURN: {
-				if (arg) return this.stack.slice(-arg);
-				else return [];
+				return;
 			}
 			case opc.STORE_IDENT: {
-				this._G.set(lx.sir[arg], this.pop());
-				break;
-			}
-			case opc.LOAD_ATTR: {
-				let a = this.pop();
-				this.push(a.get(lx.sir[arg]));
-				break;
-			}
-			case opc.STORE_ATTR: {
-				let a = this.pop(), b = this.pop();
-				b.set(lx.sir[arg], a);
+				this._G.set(lx.ssr[arg], this.pop());
 				break;
 			}
 			case opc.CALL: {
-				var subvm = new vm(this._G);
-				Array.prototype.push.apply(this.stack, subvm.run(arg));
+				var subvm = new vm(this._G, this.stack);
+				subvm.run(Bc.fu[this.stack[this.stack-arg-1]]);
 				break;
 			}
 			case opc.STORE_INDEX_SWAP: {
@@ -277,7 +276,7 @@ vm.prototype.run = function(Bc) {
 				break;
 			}
 			case opc.RETURN_CALL: {
-				var subvm = new vm(this._G);
+				var subvm = new vm(this._G, this.stack);
 				Bc = arg;
 				bc = Bc.bc;
 				lx = Bc.lx;
@@ -297,8 +296,9 @@ function run(bc) {
 	io.set("clock", () => Date.now());
 	_G.set("io", io);
 	_G.set(_G, _G);
-	var v = new vm(_G);
-	return v.run(bc);
+	var v = new vm(_G, []);
+	v.run(bc);
+	return v.stack;
 }
 
 exports.run = run;
