@@ -1,5 +1,6 @@
 "use strict";
 const opc = require("./bc");
+const env = require("./env");
 
 function vm(_G, stack) {
 	this._G = _G;
@@ -17,16 +18,20 @@ vm.prototype.push = function(x) {
 vm.prototype.run = function(Bc) {
 	var bc = Bc.bc, lx = Bc.lx;
 	var labels = [];
-	for (var i=0; i<bc.length;) {
+	for (var i=0; i<bc.length; i += (bc[i] >> 6) + 1) {
 		if (bc[i] == opc.LABEL) {
 			labels[bc[i+1]] = i;
 		}
-		if (i&128) i+=2;
-		else i++;
 	}
 	while (true){
-		let op = bc[this.pc], arg;
-		if (op & 128) arg = bc[this.pc+1];
+		let op = bc[this.pc], arg, arg2, arg3;
+		switch (op >> 6) {
+			// thru
+			case 3:arg3 = bc[this.pc+3];
+			case 2:arg2 = bc[this.pc+2];
+			case 1:arg = bc[this.pc+1];
+		}
+		this.pc += (op >> 6) + 1;
 		switch (op) {
 			case opc.LOAD_NIL: {
 				this.push(null);
@@ -173,20 +178,11 @@ vm.prototype.run = function(Bc) {
 			case opc.FOR3: {
 				break;
 			}
-			case opc.FOR_NEXT: {
+			// thru
+			case POP3:this.pop();
+			case POP2:this.pop();
+			case POP:this.pop();
 				break;
-			}
-			case opc.POP2: {
-				this.pop();
-				this.pop();
-				break;
-			}
-			case opc.POP3: {
-				this.pop();
-				this.pop();
-				this.pop();
-				break;
-			}
 			case opc.LOAD_INDEX: {
 				let a = this.pop();
 				this.push(a);
@@ -205,9 +201,6 @@ vm.prototype.run = function(Bc) {
 				this.push(lx.ssr[arg]);
 				break;
 			}
-			case opc.LOAD_VARARG: {
-				break;
-			}
 			case opc.LOAD_IDENT: {
 				this.push(this._G.get(lx.ssr[arg]));
 				break;
@@ -221,17 +214,6 @@ vm.prototype.run = function(Bc) {
 			}
 			case opc.STORE_IDENT: {
 				this._G.set(lx.ssr[arg], this.pop());
-				break;
-			}
-			case opc.CALL: {
-				var subvm = new vm(this._G, this.stack);
-				subvm.run(Bc.fu[this.stack[this.stack-arg-1]]);
-				break;
-			}
-			case opc.STORE_INDEX_SWAP: {
-				let a = this.pop(), b = this.pop(), c = this.pop();
-				c.set(a, b);
-				this.push(c);
 				break;
 			}
 			case opc.TABLE_SET: {
@@ -275,6 +257,12 @@ vm.prototype.run = function(Bc) {
 				}
 				break;
 			}
+			case opc.APPEND_CALL: {
+				break;
+			}
+			case opc.APPEND_VARG_CALL: {
+				break;
+			}
 			case opc.RETURN_CALL: {
 				var subvm = new vm(this._G, this.stack);
 				Bc = arg;
@@ -283,20 +271,39 @@ vm.prototype.run = function(Bc) {
 				this.pc = -2;
 				break;
 			}
+			case opc.RETURN_VARG_CALL: {
+				break;
+			}
+			case opc.CALL: {
+				let fu = Bc.fu[this.stack[this.stack-arg-1]];
+				if (typeof fu === 'function') {
+					fu(this, arg);
+				} else {
+					let subvm = new vm(this._G, this.stack);
+					subvm.run(fu);
+				}
+				break;
+			}
+			case opc.VARG_CALL: {
+				break;
+			}
+			case opc.FOR_NEXT: {
+				break;
+			}
+			case opc.RETURN_CALL_CALL: {
+			}
+			case opc.APPEND_CALL_CALL: {
+			}
+			case opc.CALL_CALL: {
+				break;
+			}
 		}
-		if (op&128) this.pc += 2;
-		else this.pc += 1
 	}
 }
 
 function run(bc) {
-	var _G = new Map();
-	var io = new Map();
-	io.set("write", x => console.log(x));
-	io.set("clock", () => Date.now());
-	_G.set("io", io);
-	_G.set(_G, _G);
-	var v = new vm(_G, []);
+	var e = env();
+	var v = new vm(e, []);
 	v.run(bc);
 	return v.stack;
 }
