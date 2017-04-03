@@ -41,5 +41,5 @@ function pushArray(sink, data) {
 
 exports.runSource = function(source, imp){
 	var l, a, b;
-	console.log(l = new lex.Lex(source), a = ast.parse(l), b = bc.assemble(l, a), 0 && runbc.run(b));
+	console.log(l = new lex.Lex(source), a = ast.parse(l), b = bc.assemble(l, a), runbc.run(b));
 }

@@ -1,5 +1,6 @@
 "use strict";
-const obj = require("./obj");
+const obj = require("./obj"),
+	Table = require("./table");
 
 function pcall(vm, stack) {
 	try {
@@ -12,13 +13,14 @@ function pcall(vm, stack) {
 function error(vm, stack) {
 	throw val;
 }
+
 function assert(vm, stack) {
 	if (cond) throw val;
 }
 
 module.exports = function api() {
-	var _G = new Map();
-	var io = new Map();
+	var _G = new Table();
+	var io = new Table();
 	io.set("write", x => console.log(x));
 	io.set("clock", () => Date.now());
 	_G.set("io", io);

@@ -1,11 +1,15 @@
 "use strict";
-const opc = require("./bc");
-const env = require("./env");
+const opc = require("./bc"),
+	env = require("./env"),
+	Table = require("./table");
 
-function vm(_G, stack) {
+
+function vm(_G, stack, bc) {
 	this._G = _G;
 	this.pc = 0;
 	this.stack = stack;
+	this.bc = bc;
+	this.locals = [];
 }
 
 vm.prototype.pop = function() {
@@ -15,8 +19,8 @@ vm.prototype.push = function(x) {
 	return this.stack.push(x);
 }
 
-vm.prototype.run = function(Bc) {
-	var bc = Bc.bc, lx = Bc.lx;
+vm.prototype.run = function() {
+	var bc = this.bc.bc, lx = this.bc.lx;
 	var labels = [];
 	for (var i=0; i<bc.length; i += (bc[i] >> 6) + 1) {
 		if (bc[i] == opc.LABEL) {
@@ -151,7 +155,7 @@ vm.prototype.run = function(Bc) {
 			}
 			case opc.UNARY_HASH: {
 				let a = this.pop();
-				this.push(a.length);
+				this.push(a.getlength());
 				break;
 			}
 			case opc.UNARY_BNOT: {
@@ -160,29 +164,42 @@ vm.prototype.run = function(Bc) {
 				break;
 			}
 			case opc.MAKE_TABLE: {
-				this.push(new Map());
-				break;
-			}
-			case opc.TABLE_ADD: {
-				let a = this.pop(), b = this.pop();
-				b.add(b.size, a);
-				this.push(b);
+				this.push(new Table());
 				break;
 			}
 			case opc.FORTIFY: {
 				break;
 			}
 			case opc.FOR2: {
+				let a = this.pop(), b = this.pop();
+				if (b > a) {
+					this.pc = labels[arg];
+				}
+				else {
+					this._G.set(lx.ssr[bc[arg2]], b);
+					this.push(b+1, a);
+				}
 				break;
 			}
 			case opc.FOR3: {
+				let a = this.pop(), b = this.pop(), c = this.pop(), ca = c+a;
+				if (Math.abs(ca - b) > Math.abs(c - b) && b != c) {
+					this.pc = labels[arg];
+				}
+				else {
+					this._G.set(lx.ssr[bc[arg2]], c);
+					this.push(ca, b, a);
+				}
 				break;
 			}
-			// thru
-			case POP3:this.pop();
-			case POP2:this.pop();
-			case POP:this.pop();
+			case opc.LOAD_FUNC: {
+				this.push(this.bc.fus[arg]);
 				break;
+			}
+			case opc.POP: {
+				this.pop();
+				break;
+			}
 			case opc.LOAD_INDEX: {
 				let a = this.pop();
 				this.push(a);
@@ -216,9 +233,12 @@ vm.prototype.run = function(Bc) {
 				this._G.set(lx.ssr[arg], this.pop());
 				break;
 			}
+			case opc.LOAD_VARG: {
+				break;
+			}
 			case opc.TABLE_SET: {
 				let a = this.pop(), b = this.pop(), c = this.pop();
-				c.add(b, a);
+				c.set(b, a);
 				this.push(c);
 				break;
 			}
@@ -257,6 +277,12 @@ vm.prototype.run = function(Bc) {
 				}
 				break;
 			}
+			case opc.APPEND: {
+				let a = this.pop(), b = this.pop();
+				b.add(a);
+				this.push(b);
+				break;
+			}
 			case opc.APPEND_CALL: {
 				break;
 			}
@@ -264,20 +290,30 @@ vm.prototype.run = function(Bc) {
 				break;
 			}
 			case opc.RETURN_CALL: {
-				var subvm = new vm(this._G, this.stack);
-				Bc = arg;
-				bc = Bc.bc;
-				lx = Bc.lx;
-				this.pc = -2;
+				let endstl = this.stack.length - arg2 - 1;
+				let fu = this.stack[endstl];
+				for (var i=0; i<arg - 1; i++) {
+					// TODO inner calls
+				}
+				if (typeof fu === 'function') {
+					return fu(this, arg);
+				} else {
+					this.bc = fu;
+					bc = this.bc.bc;
+					lx = this.bc.lx;
+					this.stack.length = endstl;
+					this.pc = 0;
+				}
 				break;
 			}
 			case opc.RETURN_VARG_CALL: {
 				break;
 			}
 			case opc.CALL: {
-				let fu = Bc.fu[this.stack[this.stack-arg-1]];
+				let endstl = this.stack.length - arg2 - 1;
+				let fu = this.stack[endstl];
 				if (typeof fu === 'function') {
-					fu(this, arg);
+					fu(this);
 				} else {
 					let subvm = new vm(this._G, this.stack);
 					subvm.run(fu);
@@ -288,13 +324,10 @@ vm.prototype.run = function(Bc) {
 				break;
 			}
 			case opc.FOR_NEXT: {
-				break;
-			}
-			case opc.RETURN_CALL_CALL: {
-			}
-			case opc.APPEND_CALL_CALL: {
-			}
-			case opc.CALL_CALL: {
+				for (let i=arg2-1; i >= 0; i--) {
+					this._G.set(lx.ssr[bc[this.pc+i]], this.pop());
+				}
+				this.pc += arg2
 				break;
 			}
 		}
@@ -303,8 +336,9 @@ vm.prototype.run = function(Bc) {
 
 function run(bc) {
 	var e = env();
-	var v = new vm(e, []);
-	v.run(bc);
+	var v = new vm(e, [], bc);
+	v.run();
+	console.log("vm", v);
 	return v.stack;
 }
 
