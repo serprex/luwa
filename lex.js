@@ -63,8 +63,8 @@ const digit = /^\d$/;
 const alphascore = /^[a-zA-Z_]$/;
 const alphanumscore = /^\w$/;
 function Lex(src) {
-	this.ss = {};
-	this.ssr = [];
+	this.ss = { _ENV: 0 };
+	this.ssr = ["_ENV"];
 	this.sn = {};
 	this.snr = [];
 	const ss = this.ss, ssr = this.ssr, sn = this.sn, snr = this.snr;
@@ -79,14 +79,12 @@ function Lex(src) {
 				i--;
 				if (rekey.test(ident)) {
 					lex.push(exports[ident]);
+				} else if (ident in ss) {
+					lex.push(_ident | ss[ident]);
 				} else {
-					if (ident in ss) {
-						lex.push(_ident | ss[ident]);
-					} else {
-						lex.push(_ident | ssr.length);
-						ss[ident] = ssr.length;
-						ssr.push(ident);
-					}
+					lex.push(_ident | ssr.length);
+					ss[ident] = ssr.length;
+					ssr.push(ident);
 				}
 			} else if (!/^\s$/.test(ch)) {
 				return console.log("Unexpected character", ch);

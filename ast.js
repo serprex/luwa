@@ -15,21 +15,20 @@ const Block = exports.Block = 0,
 	Prefix = exports.Prefix = 10,
 	Functioncall = exports.Functioncall = 11,
 	Args = exports.Args = 12,
-	Functiondef = exports.Functiondef = 13,
-	Funcbody = exports.Funcbody = 14,
-	Parlist = exports.Parlist = 15,
-	Tableconstructor = exports.Tableconstructor = 16,
-	Fieldlist = exports.Fieldlist = 17,
-	Field = exports.Field = 18,
-	Fieldsep = exports.Fieldsep = 19,
-	Binop = exports.Binop = 20,
-	Unop = exports.Unop = 21,
-	Value = exports.Value = 22,
-	Index = exports.Index = 23,
-	Call = exports.Call = 24,
-	Suffix = exports.Suffix = 25,
-	ExpOr = exports.ExpOr = 26,
-	ExpAnd = exports.ExpAnd = 27;
+	Funcbody = exports.Funcbody = 13,
+	Parlist = exports.Parlist = 14,
+	Tableconstructor = exports.Tableconstructor = 15,
+	Fieldlist = exports.Fieldlist = 16,
+	Field = exports.Field = 17,
+	Fieldsep = exports.Fieldsep = 18,
+	Binop = exports.Binop = 19,
+	Unop = exports.Unop = 20,
+	Value = exports.Value = 21,
+	Index = exports.Index = 22,
+	Call = exports.Call = 23,
+	Suffix = exports.Suffix = 24,
+	ExpOr = exports.ExpOr = 25,
+	ExpAnd = exports.ExpAnd = 26;
 
 function*name(lx, x, p) {
 	var t = x.next(p);
@@ -129,7 +128,6 @@ of(Args,
 	seq(s(lex._pl), maybe(o(Explist)), s(lex._pr)),
 	o(Tableconstructor),
 	slit);
-sf(Functiondef, s(lex._function), o(Funcbody));
 sf(Funcbody, s(lex._pl), maybe(o(Parlist)), s(lex._pr), o(Block), s(lex._end));
 of(Parlist,
 	seq(o(Namelist), maybe(seq(s(lex._comma), s(lex._dotdotdot)))),
@@ -148,7 +146,7 @@ of(Binop,
 of(Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot));
 of(Value,
 	s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
-	o(Functiondef), o(Tableconstructor), o(Functioncall), o(Var),
+	seq(s(lex._function), o(Funcbody)), o(Tableconstructor), o(Functioncall), o(Var),
 	seq(s(lex._pl), o(ExpOr), s(lex._pr)));
 of(Index,
 	seq(s(lex._sl), o(ExpOr), s(lex._sr)),
