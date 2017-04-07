@@ -3,24 +3,32 @@ const opc = require("./bc"),
 	env = require("./env"),
 	Table = require("./table");
 
-
-function vm(stack, func) {
+function Vm(stack, func) {
 	this.pc = 0;
-	this.stack = stack;
 	this.func = func;
 	this.locals = [];
 	this.frees = [];
+	this.dotdotdot = null;
 }
 
-vm.prototype.pop = function() {
-	return this.stack.pop();
-}
-vm.prototype.push = function(x) {
-	return this.stack.push(x);
+Vm.prototype.readarg = function(stack, base) {
+	for (var i=0; i<this.func.pcount; i++) {
+		let freeid = this.func.local2free[i];
+		let val = base+i+1 < stack.length ? stack[base+i+1] : null;
+		if (freeid == undefined) {
+			this.locals[i] = val;
+		} else {
+			this.frees[freeid] = val;
+		}
+	}
+	if (this.func.isdotdotdot) {
+		this.dotdotdot = stack.slice(base + this.func.pcount);
+	}
+	stack.length = base;
 }
 
-vm.prototype.run = function() {
-	var bc = this.func.bc, lx = this.func.lx;
+function _run(vm, stack) {
+	var bc = vm.func.bc, lx = vm.func.lx;
 	var labels = [];
 	for (var i=0; i<bc.length; i += (bc[i] >> 6) + 1) {
 		if (bc[i] == opc.LABEL) {
@@ -28,295 +36,320 @@ vm.prototype.run = function() {
 		}
 	}
 	while (true){
-		let op = bc[this.pc], arg, arg2, arg3;
+		let op = bc[vm.pc], arg, arg2, arg3;
 		switch (op >> 6) {
 			// thru
-			case 3:arg3 = bc[this.pc+3];
-			case 2:arg2 = bc[this.pc+2];
-			case 1:arg = bc[this.pc+1];
+			case 3:arg3 = bc[vm.pc+3];
+			case 2:arg2 = bc[vm.pc+2];
+			case 1:arg = bc[vm.pc+1];
 		}
-		this.pc += (op >> 6) + 1;
+		vm.pc += (op >> 6) + 1;
 		switch (op) {
 			case opc.LOAD_NIL: {
-				this.push(null);
+				stack.push(null);
 				break;
 			}
 			case opc.LOAD_FALSE: {
-				this.push(false);
+				stack.push(false);
 				break;
 			}
 			case opc.LOAD_TRUE: {
-				this.push(true);
+				stack.push(true);
 				break;
 			}
 			case opc.BIN_PLUS: {
-				let a = this.pop(), b = this.pop();
-				this.push(b + a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b + a);
 				break;
 			}
 			case opc.BIN_MINUS: {
-				let a = this.pop(), b = this.pop();
-				this.push(b - a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b - a);
 				break;
 			}
 			case opc.BIN_MUL: {
-				let a = this.pop(), b = this.pop();
-				this.push(b * a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b * a);
 				break;
 			}
 			case opc.BIN_DIV: {
-				let a = this.pop(), b = this.pop();
-				this.push(b / a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b / a);
 				break;
 			}
 			case opc.BIN_IDIV: {
-				let a = this.pop(), b = this.pop();
-				this.push(b / a | 0);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b / a | 0);
 				break;
 			}
 			case opc.BIN_POW: {
-				let a = this.pop(), b = this.pop();
-				this.push(Math.pow(b, a));
+				let a = stack.pop(), b = stack.pop();
+				stack.push(Math.pow(b, a));
 				break;
 			}
 			case opc.BIN_MOD: {
-				let a = this.pop(), b = this.pop();
-				this.push(b % a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b % a);
 				break;
 			}
 			case opc.BIN_BAND: {
-				let a = this.pop(), b = this.pop();
-				this.push(b & a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b & a);
 				break;
 			}
 			case opc.BIN_BNOT: {
-				let a = this.pop(), b = this.pop();
-				this.push(b ^ a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b ^ a);
 				break;
 			}
 			case opc.BIN_BOR: {
-				let a = this.pop(), b = this.pop();
-				this.push(b | a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b | a);
 				break;
 			}
 			case opc.BIN_RSH: {
-				let a = this.pop(), b = this.pop();
-				this.push(b >> a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b >> a);
 				break;
 			}
 			case opc.BIN_LSH: {
-				let a = this.pop(), b = this.pop();
-				this.push(b << a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b << a);
 				break;
 			}
 			case opc.BIN_DOTDOT: {
-				let a = this.pop(), b = this.pop();
-				this.push(b.toString() + a.toString());
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b.toString() + a.toString());
 				break;
 			}
 			case opc.BIN_LT: {
-				let a = this.pop(), b = this.pop();
-				this.push(b < a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b < a);
 				break;
 			}
 			case opc.BIN_LTE: {
-				let a = this.pop(), b = this.pop();
-				this.push(b <= a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b <= a);
 				break;
 			}
 			case opc.BIN_GT: {
-				let a = this.pop(), b = this.pop();
-				this.push(b > a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b > a);
 				break;
 			}
 			case opc.BIN_GTE: {
-				let a = this.pop(), b = this.pop();
-				this.push(b >= a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b >= a);
 				break;
 			}
 			case opc.BIN_EQ: {
-				let a = this.pop(), b = this.pop();
-				this.push(b == a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b == a);
 				break;
 			}
 			case opc.BIN_NEQ: {
-				let a = this.pop(), b = this.pop();
-				this.push(b != a);
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b != a);
 				break;
 			}
 			case opc.UNARY_MINUS: {
-				this.push(-this.pop());
+				stack.push(-stack.pop());
 				break;
 			}
 			case opc.UNARY_NOT: {
-				let a = this.pop();
-				this.push(a !== false && a !== nil);
+				let a = stack.pop();
+				stack.push(a !== false && a !== nil);
 				break;
 			}
 			case opc.UNARY_HASH: {
-				let a = this.pop();
-				this.push(a.getlength());
+				let a = stack.pop();
+				stack.push(a.getlength());
 				break;
 			}
 			case opc.UNARY_BNOT: {
-				let a = this.pop();
-				this.push(~a);
+				let a = stack.pop();
+				stack.push(~a);
 				break;
 			}
 			case opc.MAKE_TABLE: {
-				this.push(new Table());
+				stack.push(new Table());
 				break;
 			}
 			case opc.FORTIFY: {
 				break;
 			}
 			case opc.FOR2: {
-				let a = this.pop(), b = this.pop();
+				let a = stack.pop(), b = stack.pop();
 				if (b > a) {
-					this.pc = labels[arg];
+					vm.pc = labels[arg];
 				}
 				else {
-					this.locals[arg2] = b;
-					this.push(b+1, a);
+					vm.locals[arg2] = b;
+					stack.push(b+1, a);
 				}
 				break;
 			}
 			case opc.FOR3: {
-				let a = this.pop(), b = this.pop(), c = this.pop(), ca = c+a;
+				let a = stack.pop(), b = stack.pop(), c = stack.pop(), ca = c+a;
 				if (Math.abs(ca - b) > Math.abs(c - b) && b != c) {
-					this.pc = labels[arg];
+					vm.pc = labels[arg];
 				}
 				else {
-					this.locals[arg2] = c;
-					this.push(ca, b, a);
+					vm.locals[arg2] = c;
+					stack.push(ca, b, a);
 				}
 				break;
 			}
 			case opc.LOAD_FUNC: {
-				let f = this.func.fus[arg];
-				let subvm = new vm(null, f);
+				let f = vm.func.fus[arg];
+				let subvm = new Vm(null, f);
 				for (let i=0; i<f.fcount; i++) {
 					subvm.frees[i] = { value: null };
 				}
-				for (let [ff, cf] of this.func.freelist[f.id]) {
-					subvm.frees[cf] = this.frees[ff];
+				let freelist = vm.func.freelist[f.id];
+				if (freelist) {
+					for (let [ff, cf] of freelist) {
+						subvm.frees[cf] = vm.frees[ff];
+					}
 				}
-				this.push(subvm);
+				stack.push(subvm);
 				break;
 			}
 			case opc.POP: {
-				this.pop();
+				stack.pop();
 				break;
 			}
 			case opc.LOAD_INDEX: {
-				let a = this.pop(), b = this.pop();
-				this.push(b.get(a));
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b.get(a));
 				break;
 			}
 			case opc.STORE_INDEX: {
-				let a = this.pop(), b = this.pop(), c = this.pop();
+				let a = stack.pop(), b = stack.pop(), c = stack.pop();
 				b.set(a, c); // TODO should be c.set(b, a)
 				break;
 			}
 			case opc.LOAD_NUM: {
-				this.push(lx.snr[arg]);
+				stack.push(lx.snr[arg]);
 				break;
 			}
 			case opc.LOAD_STR: {
-				this.push(lx.ssr[arg]);
+				stack.push(lx.ssr[arg]);
 				break;
 			}
 			case opc.LOAD_DEREF: {
-				this.push(this.frees[arg].value);
+				stack.push(vm.frees[arg].value);
 				break;
 			}
 			case opc.STORE_DEREF: {
-				this.frees[arg].value = this.pop();
+				vm.frees[arg].value = stack.pop();
 				break;
 			}
 			case opc.GOTO: {
-				this.pc = labels[arg];
+				vm.pc = labels[arg];
 				break;
 			}
 			case opc.LOAD_LOCAL: {
-				this.push(this.locals[arg]);
+				stack.push(vm.locals[arg]);
 				break;
 			}
 			case opc.STORE_LOCAL: {
-				this.locals[arg] = this.pop();
+				vm.locals[arg] = stack.pop();
 				break;
 			}
 			case opc.RETURN: {
 				return;
 			}
 			case opc.LOAD_VARG: {
+				for (let i=0; i<arg; i++) {
+					if (i < this.dotdotdot.length) {
+						stack.push(this.dotdotdot[i]);
+					} else {
+						stack.push(null);
+					}
+				}
 				break;
 			}
 			case opc.TABLE_SET: {
-				let a = this.pop(), b = this.pop(), c = this.pop();
+				let a = stack.pop(), b = stack.pop(), c = stack.pop();
 				c.set(b, a);
-				this.push(c);
+				stack.push(c);
 				break;
 			}
 			case opc.JIF: {
-				let a = this.pop();
-				if (a !== false && a !== null) this.pc = labels[arg];
+				let a = stack.pop();
+				if (a !== false && a !== null) vm.pc = labels[arg];
 				break;
 			}
 			case opc.JIFNOT: {
-				let a = this.pop();
-				if (a === false || a === null) this.pc = labels[arg];
+				let a = stack.pop();
+				if (a === false || a === null) vm.pc = labels[arg];
 				break;
 			}
 			case opc.LOAD_METH: {
-				let a = this.pop();
-				this.push(a.get(lx.sir[arg]));
-				this.push(a);
+				let a = stack.pop();
+				stack.push(a.get(lx.sir[arg]));
+				stack.push(a);
 				break;
 			}
 			case opc.STORE_METH: {
 				break;
 			}
 			case opc.JIF_OR_POP: {
-				let a = this.pop();
+				let a = stack.pop();
 				if (a !== false && a !== null) {
-					this.push(a);
-					this.pc = labels[arg];
+					stack.push(a);
+					vm.pc = labels[arg];
 				}
 				break;
 			}
 			case opc.JIFNOT_OR_POP: {
-				let a = this.pop();
+				let a = stack.pop();
 				if (a === false || a === null) {
-					this.push(a);
-					this.pc = labels[arg];
+					stack.push(a);
+					vm.pc = labels[arg];
 				}
 				break;
 			}
 			case opc.APPEND: {
-				let a = this.pop(), b = this.pop();
+				let a = stack.pop(), b = stack.pop();
 				b.add(a);
-				this.push(b);
+				stack.push(b);
 				break;
 			}
 			case opc.APPEND_CALL: {
+				let endstl = stack.length - arg2 - 1;
+				let subvm = stack[endstl];
+				for (var i=0; i<arg - 1; i++) {
+					// TODO inner calls
+				}
+				if (typeof subvm === 'function') {
+					subvm(vm, arg);
+				} else {
+					subvm.readarg(stack, endstl);
+					_run(subvm, stack);
+				}
+				let table = stack[endstl - 1];
+				for (let i=endstl+1; i<stack.length; i++) {
+					table.add(stack[i]);
+				}
+				stack.length = endstl - 1;
 				break;
 			}
 			case opc.APPEND_VARG_CALL: {
 				break;
 			}
 			case opc.RETURN_CALL: {
-				let endstl = this.stack.length - arg2 - 1;
-				let fu = this.stack[endstl];
+				let endstl = stack.length - arg2 - 1;
+				let subvm = stack[endstl];
 				for (var i=0; i<arg - 1; i++) {
 					// TODO inner calls
 				}
-				if (typeof fu === 'function') {
-					return fu(this, arg);
+				if (typeof subvm === 'function') {
+					return subvm(vm, arg);
 				} else {
-					this.stack.length = endstl;
-					fu.stack = this.stack;
-					return fu.run();
+					subvm.readarg(stack, endstl);
+					vm = subvm;
 				}
 				break;
 			}
@@ -324,14 +357,15 @@ vm.prototype.run = function() {
 				break;
 			}
 			case opc.CALL: {
-				let endstl = this.stack.length - arg2 - 1;
-				let fu = this.stack[endstl];
+				let endstl = stack.length - arg2 - 1;
+				let fu = stack[endstl];
 				if (typeof fu === 'function') {
-					fu(this);
+					fu(vm);
 				} else {
-					fu.stack = this.stack;
-					fu.run();
+					fu.readarg(stack, endstl);
+					_run(fu, stack);
 				}
+				stack.length = endstl + arg;
 				break;
 			}
 			case opc.VARG_CALL: {
@@ -339,9 +373,9 @@ vm.prototype.run = function() {
 			}
 			case opc.FOR_NEXT: {
 				for (let i=arg2-1; i >= 0; i--) {
-					this.locals[this.pc+i] = this.pop();
+					vm.locals[vm.pc+i] = stack.pop();
 				}
-				this.pc += arg2
+				vm.pc += arg2
 				break;
 			}
 		}
@@ -349,15 +383,14 @@ vm.prototype.run = function() {
 }
 
 function run(func) {
-	var e = env();
-	var v = new vm([], func);
-	v.locals[0] = e;
+	const stack = [], e = env(), vm = new Vm([], func);
+	vm.locals[0] = e;
 	for (let i=0; i<func.fcount; i++) {
-		v.frees[i] = { value: null };
+		vm.frees[i] = { value: null };
 	}
-	v.run();
-	console.log("vm", v);
-	return v.stack;
+	_run(vm, stack);
+	console.log("vm", vm, stack);
+	return stack;
 }
 
 exports.run = run;

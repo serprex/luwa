@@ -1,5 +1,5 @@
 "use strict";
-const lex = require("./lex"), ast = require("./ast");
+const lex = require("./lex"), ast = require("./ast"), Func = require("./func");
 
 const NOP = exports.NOP = 0,
 	LOAD_NIL = exports.LOAD_NIL = 1,
@@ -97,29 +97,11 @@ function Assembler(lx, pcount, isdotdotdot, uplink) {
 	this.fcount = 0;
 	this.locals = [];
 	this.frees = [];
+	this.local2free = [];
 	this.scopes = [];
 	this.upfree = new Map();
 	this.uplink = uplink;
 	this.isdotdotdot = isdotdotdot;
-}
-
-function Func(asm) {
-	this.id = asm.id;
-	this.lx = asm.lx;
-	this.bc = asm.bc;
-	this.fus = asm.fus;
-	this.pcount = asm.pcount;
-	this.lcount = asm.lcount;
-	this.fcount = asm.fcount;
-	this.isdotdotdot = asm.isdotdotdot;
-	this.freelist = [];
-	for (let key in asm.frees) {
-		key = +key;
-		for (let [fid, val] of asm.frees[key]) {
-			if (!this.freelist[fid]) this.freelist[fid] = new Map();
-			this.freelist[fid].set(key, val);
-		}
-	}
 }
 
 Assembler.prototype.hasLiteral = function(node, lit) {
@@ -220,6 +202,7 @@ Assembler.prototype.getScope = function(name, li, chain = []) {
 				this.scopes[li] = scope;
 			} else if (scope.op == LOAD_LOCAL) {
 				scope.op = LOAD_DEREF;
+				this.local2free[scope.n] = this.fcount;
 				scope.n = this.fcount++;
 				this.frees[scope.n] = new Map();
 			}
@@ -360,7 +343,7 @@ Assembler.prototype.genArgs = function(node, ismeth, vals, ret, calls) {
 				for (let i=0; i<exps.length - 1; i++) {
 					this.genExpOr(exps[i], 1);
 				}
-				this.genExpOr(exps[i], -1, ret, calls);
+				this.genExpOr(exps[exps.length - 1], -1, ret, calls);
 				return;
 			} else {
 				calls.push(ismeth);
@@ -482,16 +465,18 @@ const _precedence = [7, 7, 8, 8, 8, 9, 8, 5, 4, 3, 6, 6, 2, 1, 1, 1, 1, 1, 1],
 	precedence = x => (x.type & 31) == ast.Binop ? _precedence[x.type>>5] : 0;
 
 Assembler.prototype.handleRet = function(made, vals, ret, calls) {
-	if (~made && ~vals) {
+	if (~made) {
+		if (~vals) {
+			while (made > vals) {
+				this.push(POP);
+				made--;
+			}
+			while (made < vals) {
+				this.push(LOAD_NIL);
+				made++;
+			}
+		}
 		if (calls) calls[calls.length - 1] += made;
-		while (made > vals) {
-			this.push(POP);
-			made--;
-		}
-		while (made < vals) {
-			this.push(LOAD_NIL);
-			made++;
-		}
 	}
 	if (ret) {
 		if (calls) {
