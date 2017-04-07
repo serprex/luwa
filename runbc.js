@@ -4,12 +4,12 @@ const opc = require("./bc"),
 	Table = require("./table");
 
 
-function vm(_G, stack, bc) {
-	this._G = _G;
+function vm(stack, func) {
 	this.pc = 0;
 	this.stack = stack;
-	this.bc = bc;
+	this.func = func;
 	this.locals = [];
+	this.frees = [];
 }
 
 vm.prototype.pop = function() {
@@ -20,7 +20,7 @@ vm.prototype.push = function(x) {
 }
 
 vm.prototype.run = function() {
-	var bc = this.bc.bc, lx = this.bc.lx;
+	var bc = this.func.bc, lx = this.func.lx;
 	var labels = [];
 	for (var i=0; i<bc.length; i += (bc[i] >> 6) + 1) {
 		if (bc[i] == opc.LABEL) {
@@ -176,7 +176,7 @@ vm.prototype.run = function() {
 					this.pc = labels[arg];
 				}
 				else {
-					this._G.set(lx.ssr[bc[arg2]], b);
+					this.locals[arg2] = b;
 					this.push(b+1, a);
 				}
 				break;
@@ -187,13 +187,21 @@ vm.prototype.run = function() {
 					this.pc = labels[arg];
 				}
 				else {
-					this._G.set(lx.ssr[bc[arg2]], c);
+					this.locals[arg2] = c;
 					this.push(ca, b, a);
 				}
 				break;
 			}
 			case opc.LOAD_FUNC: {
-				this.push(this.bc.fus[arg]);
+				let f = this.func.fus[arg];
+				let subvm = new vm(null, f);
+				for (let i=0; i<f.fcount; i++) {
+					subvm.frees[i] = { value: null };
+				}
+				for (let [ff, cf] of this.func.freelist[f.id]) {
+					subvm.frees[cf] = this.frees[ff];
+				}
+				this.push(subvm);
 				break;
 			}
 			case opc.POP: {
@@ -201,8 +209,8 @@ vm.prototype.run = function() {
 				break;
 			}
 			case opc.LOAD_INDEX: {
-				let a = this.pop();
-				this.push(a);
+				let a = this.pop(), b = this.pop();
+				this.push(b.get(a));
 				break;
 			}
 			case opc.STORE_INDEX: {
@@ -218,20 +226,28 @@ vm.prototype.run = function() {
 				this.push(lx.ssr[arg]);
 				break;
 			}
-			case opc.LOAD_IDENT: {
-				this.push(this._G.get(lx.ssr[arg]));
+			case opc.LOAD_DEREF: {
+				this.push(this.frees[arg].value);
+				break;
+			}
+			case opc.STORE_DEREF: {
+				this.frees[arg].value = this.pop();
 				break;
 			}
 			case opc.GOTO: {
 				this.pc = labels[arg];
 				break;
 			}
+			case opc.LOAD_LOCAL: {
+				this.push(this.locals[arg]);
+				break;
+			}
+			case opc.STORE_LOCAL: {
+				this.locals[arg] = this.pop();
+				break;
+			}
 			case opc.RETURN: {
 				return;
-			}
-			case opc.STORE_IDENT: {
-				this._G.set(lx.ssr[arg], this.pop());
-				break;
 			}
 			case opc.LOAD_VARG: {
 				break;
@@ -298,11 +314,9 @@ vm.prototype.run = function() {
 				if (typeof fu === 'function') {
 					return fu(this, arg);
 				} else {
-					this.bc = fu;
-					bc = this.bc.bc;
-					lx = this.bc.lx;
 					this.stack.length = endstl;
-					this.pc = 0;
+					fu.stack = this.stack;
+					return fu.run();
 				}
 				break;
 			}
@@ -315,8 +329,8 @@ vm.prototype.run = function() {
 				if (typeof fu === 'function') {
 					fu(this);
 				} else {
-					let subvm = new vm(this._G, this.stack);
-					subvm.run(fu);
+					fu.stack = this.stack;
+					fu.run();
 				}
 				break;
 			}
@@ -325,7 +339,7 @@ vm.prototype.run = function() {
 			}
 			case opc.FOR_NEXT: {
 				for (let i=arg2-1; i >= 0; i--) {
-					this._G.set(lx.ssr[bc[this.pc+i]], this.pop());
+					this.locals[this.pc+i] = this.pop();
 				}
 				this.pc += arg2
 				break;
@@ -334,9 +348,13 @@ vm.prototype.run = function() {
 	}
 }
 
-function run(bc) {
+function run(func) {
 	var e = env();
-	var v = new vm(e, [], bc);
+	var v = new vm([], func);
+	v.locals[0] = e;
+	for (let i=0; i<func.fcount; i++) {
+		v.frees[i] = { value: null };
+	}
 	v.run();
 	console.log("vm", v);
 	return v.stack;
