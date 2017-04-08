@@ -280,7 +280,7 @@ Assembler.prototype.genIndex = function(node, store) {
 	if (node.type >> 5) {
 		this.push(LOAD_STR, this.filterMask(node, lex._ident));
 	} else {
-		this.genExpOr(node, selectNode(node, ast.ExpOr), 1);
+		this.genExpOr(selectNode(node, ast.ExpOr), 1);
 	}
 	this.push(store ? STORE_INDEX : LOAD_INDEX);
 }
@@ -765,7 +765,7 @@ Assembler.prototype.genRet = function(node) {
 		for (let i = 0; i<exps.length-1; i++) {
 			this.genExpOr(exps[i], 1, 0);
 		}
-		this.genExpOr(exps[exps.length - 1], -1, 1);
+		this.genExpOr(exps[exps.length - 1], -1, -1, 1);
 	} else {
 		this.push(RETURN);
 	}

@@ -346,8 +346,8 @@ function _run(vm, stack) {
 				if (typeof subvm === 'function') {
 					return subvm(vm, stack, endstl);
 				} else {
-					subvm.readarg(stack, endstl);
 					vm = subvm;
+					vm.readarg(stack, endstl);
 					bc = vm.func.bc;
 					lx = vm.func.lx;
 				}
