@@ -54,6 +54,9 @@ module.exports = function () {
 	var utf8 = new Table();
 	env.set("utf8", utf8);
 
+	env.set("ipairs", ipairs);
+	env.set("pairs", pairs);
+	env.set("next", next);
 	env.set("type", type);
 	env.set("pcall", pcall);
 	env.set("error", error);
@@ -70,6 +73,33 @@ const obj = require("./obj"),
 
 function readarg(stack, base, i) {
 	return base + i < stack.length ? stack[base+i] : null;
+}
+
+function pairs(vm, stack, base) {
+	stack[base] = next;
+	stack[base+2] = null;
+	stack.length = base + 3;
+}
+
+function ipairs(vm, stack, base) {
+	stack[base] = inext;
+	stack[base+2] = 0;
+	stack.length = base + 3;
+}
+
+function inext(vm, stack, base) {
+	let t = stack[base+1], key = stack[base+2]++;
+	if (key < t.array.length) {
+		stack[base] = t.array[key];
+		stack[base + 1] = key;
+		stack.length = base + 2;
+	} else {
+		stack.length = base;
+	}
+}
+
+function next(vm, stack, base) {
+	// TODO
 }
 
 function type(vm, stack, base) {
