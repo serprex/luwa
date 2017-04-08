@@ -452,7 +452,7 @@ Assembler.prototype.genValue = function(node, vals, ret, calls) {
 			this.genFuncCall(selectNode(node, ast.Functioncall), vals, ret, calls);
 			return;
 		case 9:
-			this.genVar(selectNode(node, ast.Var));
+			this.genVar(selectNode(node, ast.Var), false);
 			break;
 		case 10:
 			this.genExpOr(selectNode(node, ast.ExpOr), 1);
@@ -970,6 +970,38 @@ Assembler.prototype.scopeStat = function(node) {
 			this.pushScope();
 			this.scopeBlock(selectNode(node, ast.Block), true);
 			this.scopeExpOr(selectNode(node, ast.ExpOr));
+			this.popScope();
+			break;
+		}
+		case 9: {
+			for (let exp of selectNodes(node, ast.ExpOr)) {
+				this.scopeExpOr(exp);
+			}
+			for (let block of selectNodes(node, ast.Block)) {
+				this.scopeBlock(block);
+			}
+			break;
+		}
+		case 10: {
+			for (let exp of selectNodes(node, ast.ExpOr)) {
+				this.scopeExpOr(exp);
+			}
+			this.pushScope();
+			let name = this.identIndex(node);
+			this.nameScope(name.name, name.li);
+			this.scopeBlock(selectNode(node, ast.Block), true);
+			this.popScope();
+			break;
+		}
+		case 11: {
+			for (let exp of selectNodes(selectNode(node, ast.Explist), ast.ExpOr)) {
+				this.scopeExpOr(exp);
+			}
+			this.pushScope();
+			for (let name of this.identIndices(selectNode(node, ast.Namelist))) {
+				this.nameScope(name.name, name.li);
+			}
+			this.scopeBlock(selectNode(node, ast.Block), true);
 			this.popScope();
 			break;
 		}
