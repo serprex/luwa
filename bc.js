@@ -93,7 +93,7 @@ function Assembler(lx, pcount, isdotdotdot, uplink) {
 	this.labgen = 0;
 	this.loops = [];
 	this.pcount = pcount;
-	this.lcount = pcount;
+	this.lcount = 0;
 	this.fcount = 0;
 	this.locals = [];
 	this.frees = [];
@@ -236,7 +236,7 @@ Assembler.prototype.getScope = function(name, li, chain = []) {
 }
 
 Assembler.prototype.gensert = function(node, ty) {
-	if ((node.type & 31) != ty) console.log(node, "Invalid type, expected ", ty);
+	if ((node.type & 31) != ty) throw [node, ty];
 }
 
 Assembler.prototype.genLoadIdent = function(scope) {
@@ -799,8 +799,10 @@ Assembler.prototype.scopeExp = function(node) {
 			switch (child.type & 31) {
 				case ast.Value:
 					this.scopeValue(child);
+					break;
 				case ast.Exp:
 					this.scopeExp(child);
+					break;
 			}
 		}
 	} else {
@@ -979,12 +981,18 @@ Assembler.prototype.scopeStat = function(node) {
 		case 13: {
 			let name = this.identIndex(node);
 			this.nameScope(names[i].name, names[i].li);
+			this.scopeFuncbody(selectNode(node, ast.Funcbody));
 			break;
 		}
 		case 14: {
-			let names = Array.from(this.identIndices(selectNode(node, ast.Namelist)));
-			for (let i=0; i<names.length; i++) {
-				this.nameScope(names[i].name, names[i].li);
+			for (let name of this.identIndices(selectNode(node, ast.Namelist))) {
+				this.nameScope(name.name, name.li);
+			}
+			let explist = selectNode(node, ast.Explist);
+			if (explist) {
+				for (let exp of selectNodes(explist, ast.ExpOr)) {
+					this.scopeExpOr(exp);
+				}
 			}
 			break;
 		}

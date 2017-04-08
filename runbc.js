@@ -15,14 +15,14 @@ Vm.prototype.readarg = function(stack, base) {
 	for (var i=0; i<this.func.pcount; i++) {
 		let freeid = this.func.local2free[i];
 		let val = base+i+1 < stack.length ? stack[base+i+1] : null;
-		if (freeid == undefined) {
+		if (freeid === undefined) {
 			this.locals[i] = val;
 		} else {
 			this.frees[freeid] = val;
 		}
 	}
 	if (this.func.isdotdotdot) {
-		this.dotdotdot = stack.slice(base + this.func.pcount);
+		this.dotdotdot = stack.slice(base + this.func.pcount + 1);
 	}
 	stack.length = base;
 }
@@ -346,10 +346,12 @@ function _run(vm, stack) {
 					// TODO inner calls
 				}
 				if (typeof subvm === 'function') {
-					return subvm(vm, arg);
+					return subvm(vm, stack, endstl);
 				} else {
 					subvm.readarg(stack, endstl);
 					vm = subvm;
+					bc = vm.func.bc;
+					lx = vm.func.lx;
 				}
 				break;
 			}
@@ -360,10 +362,13 @@ function _run(vm, stack) {
 				let endstl = stack.length - arg2 - 1;
 				let fu = stack[endstl];
 				if (typeof fu === 'function') {
-					fu(vm);
+					fu(vm, stack, endstl);
 				} else {
 					fu.readarg(stack, endstl);
 					_run(fu, stack);
+				}
+				while (stack.length < endstl + arg) {
+					stack.push(null);
 				}
 				stack.length = endstl + arg;
 				break;
@@ -393,4 +398,6 @@ function run(func) {
 	return stack;
 }
 
+exports.Vm = Vm;
+exports._run = _run;
 exports.run = run;
