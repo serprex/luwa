@@ -26,6 +26,24 @@ module.exports = function () {
 	var math = new Table();
 	env.set("math", math);
 	math.set("pi", Math.PI);
+	math.set("maxinteger", Math.pow(2, 53));
+	math.set("mininteger", -Math.pow(2, 53));
+	math.set("huge", Infinity);
+	math.set("abs", math_abs);
+	math.set("acos", math_acos);
+	math.set("asin", math_asin);
+	math.set("ceil", math_ceil);
+	math.set("cos", math_cos);
+	math.set("deg", math_deg);
+	math.set("exp", math_exp);
+	math.set("floor", math_floor);
+	math.set("rad", math_rad);
+	math.set("sin", math_sin);
+	math.set("sqrt", math_sqrt);
+	math.set("tan", math_tan);
+	math.set("tointeger", math_tointeger);
+	math.set("type", math_type);
+	math.set("ult", math_ult);
 
 	var coroutine = new Table();
 	env.set("coroutine", coroutine);
@@ -136,4 +154,82 @@ function table_pack(vm, stack, base) {
 	t.set("n", stack.length - base - 1);
 	stack.length = base + 1;
 	stack[base] = t;
+}
+
+function math_abs(vm, stack, base) {
+	stack[base] = Math.abs(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_acos(vm, stack, base) {
+	stack[base] = Math.acos(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_asin(vm, stack, base) {
+	stack[base] = Math.asin(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_ceil(vm, stack, base) {
+	stack[base] = Math.ceil(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_cos(vm, stack, base) {
+	stack[base] = Math.cos(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_deg(vm, stack, base) {
+	stack[base] = stack[base+1] * (180 / Math.PI);
+	stack.length = base + 1;
+}
+
+function math_exp(vm, stack, base) {
+	stack[base] = Math.exp(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_floor(vm, stack, base) {
+	stack[base] = Math.floor(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_rad(vm, stack, base) {
+	stack[base] = stack[base+1] * (Math.PI / 180);
+	stack.length = base + 1;
+}
+
+function math_sin(vm, stack, base) {
+	stack[base] = Math.sin(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_sqrt(vm, stack, base) {
+	stack[base] = Math.sqrt(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_tan(vm, stack, base) {
+	stack[base] = Math.tan(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_tointeger(vm, stack, base) {
+	let v = stack[base+1];
+	stack[base] = v === v|0 ? v : null;
+	stack.length = base + 1;
+}
+
+function math_type(vm, stack, base) {
+	let v = stack[base+1];
+	stack[base] = v === v|0 ? "integer" : "float";
+	stack.length = base + 1;
+}
+
+function math_ult(vm, stack, base) {
+	let u32 = new Uint32Array([stack[base+1], stack[base+2]]);
+	stack[base] = u32[0] < u32[1];
+	stack.length = base + 1;
 }
