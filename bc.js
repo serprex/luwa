@@ -306,7 +306,12 @@ Assembler.prototype.genTable = function(node) {
 					this.push(TABLE_SET);
 					break;
 				case 2:
-					this.genExpOr(selectNode(field, ast.ExpOr), -1, 2);
+					if (i == fields.length - 1) {
+						this.genExpOr(selectNode(field, ast.ExpOr), -1, -1, 2);
+					} else {
+						this.genExpOr(selectNode(field, ast.ExpOr), 1);
+						this.push(APPEND);
+					}
 					break;
 			}
 		}
@@ -713,7 +718,7 @@ Assembler.prototype.genStat = function(node) {
 			let names = Array.from(this.identIndices(selectNode(node, ast.Namelist)));
 			this.push(FOR_NEXT, endlab, names.length);
 			for (let i = names.length - 1; i >= 0; i--) {
-				this.genStoreIdent(this.scopes[name.li]);
+				this.genStoreIdent(this.scopes[names[i].li]);
 			}
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.push(GOTO, lab0);
