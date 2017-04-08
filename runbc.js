@@ -359,7 +359,7 @@ function _run(vm, stack) {
 				break;
 			}
 			case opc.CALL: {
-				let endstl = stack.length - arg2 - 1;
+				let endstl = stack.length - arg3 - 1;
 				let fu = stack[endstl];
 				if (typeof fu === 'function') {
 					fu(vm, stack, endstl);

@@ -7,7 +7,11 @@ module.exports = function () {
 	var io = new Table();
 	env.set("io", io);
 	io.set("write", io_write);
-	io.set("clock", io_clock);
+
+	var os = new Table();
+	env.set("os", os);
+	os.set("clock", os_clock);
+	os.set("difftime", os_difftime);
 
 	var debug = new Table();
 	env.set("debug", debug);
@@ -36,6 +40,7 @@ module.exports = function () {
 	env.set("pcall", pcall);
 	env.set("error", error);
 	env.set("assert", assert);
+	env.set("print", print);
 	env.set("getmetatable", getmetatable);
 	env.set("setmetatable", setmetatable);
 	return env;
@@ -115,9 +120,14 @@ function io_write(vm, stack, base) {
 	stack.length = base;
 }
 
-function io_clock(vm, stack, base) {
+function os_clock(vm, stack, base) {
 	stack.length = base + 1;
 	stack[base] = new Date()/1000;
+}
+
+function os_difftime(vm, stack, base) {
+	stack[base] = readarg(stack, base, 1) - readarg(stack, base, 2);
+	stack.length = base + 1;
 }
 
 function table_pack(vm, stack, base) {
