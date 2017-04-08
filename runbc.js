@@ -184,8 +184,7 @@ function _run(vm, stack) {
 					vm.pc = labels[arg];
 				}
 				else {
-					vm.locals[arg2] = b;
-					stack.push(b+1, a);
+					stack.push(b+1, a, b);
 				}
 				break;
 			}
@@ -195,8 +194,7 @@ function _run(vm, stack) {
 					vm.pc = labels[arg];
 				}
 				else {
-					vm.locals[arg2] = c;
-					stack.push(ca, b, a);
+					stack.push(ca, b, a, c);
 				}
 				break;
 			}
@@ -377,10 +375,23 @@ function _run(vm, stack) {
 				break;
 			}
 			case opc.FOR_NEXT: {
-				for (let i=arg2-1; i >= 0; i--) {
-					vm.locals[vm.pc+i] = stack.pop();
+				let endstl = stack.length - 3;
+				let iter = stack[endstl], k = stack[endstl+1], v = stack[endstl+2];
+				if (typeof iter === 'function') {
+					iter(vm, stack, stack.length - 3);
+				} else {
+					iter.readarg(stack, stack.length - 3);
+					_run(iter, stack);
 				}
-				vm.pc += arg2
+				if (endstl >= stack.length || stack[endstl] === null) {
+					vm.pc = labels[arg];
+				} else {
+					while (stack.length < endstl + arg2) {
+						stack.push(null);
+					}
+					stack.length = endstl + arg2;
+					stack.splice(endstl, 0, iter, k, v);
+				}
 				break;
 			}
 		}

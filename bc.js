@@ -685,16 +685,17 @@ Assembler.prototype.genStat = function(node) {
 		case 10: {
 			let lab0 = this.genLabel(), endlab = this.genLabel();
 			this.pushLoop(endlab);
-			let name = this.filterMask(node, lex._ident);
 			let exps = Array.from(selectNodes(node, ast.ExpOr));
 			this.genExpOr(exps[0], 1);
 			this.genExpOr(exps[1], 1);
 			if (exps.length > 2) {
 				this.genExpOr(exps[2], 1);
-				this.push(LABEL, lab0, FOR3, endlab, name);
+				this.push(LABEL, lab0, FOR3, endlab);
 			} else {
-				this.push(LABEL, lab0, FOR2, endlab, name);
+				this.push(LABEL, lab0, FOR2, endlab);
 			}
+			let name = this.identIndex(node);
+			this.genStoreIdent(this.scopes[name.li]);
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.push(GOTO, lab0);
 			this.push(LABEL, endlab);
@@ -709,10 +710,10 @@ Assembler.prototype.genStat = function(node) {
 				this.genExpOr(exps[i], i > 2 ? 0 : i == exps.length - 1 ? 3 - i : 1);
 			}
 			this.push(FORTIFY, LABEL, lab0);
-			let names = Array.from(filterMasks(selectNode(node, ast.Namelist), lex._ident));
+			let names = Array.from(this.identIndices(selectNode(node, ast.Namelist)));
 			this.push(FOR_NEXT, endlab, names.length);
 			for (let i = names.length - 1; i >= 0; i--) {
-				this.push(names[i]);
+				this.genStoreIdent(this.scopes[name.li]);
 			}
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.push(GOTO, lab0);
