@@ -29,12 +29,6 @@ Vm.prototype.readarg = function(stack, base) {
 
 function _run(vm, stack) {
 	var bc = vm.func.bc, lx = vm.func.lx;
-	var labels = [];
-	for (var i=0; i<bc.length; i += (bc[i] >> 6) + 1) {
-		if (bc[i] == opc.LABEL) {
-			labels[bc[i+1]] = i;
-		}
-	}
 	while (true){
 		let op = bc[vm.pc], arg, arg2, arg3;
 		switch (op >> 6) {
@@ -178,7 +172,7 @@ function _run(vm, stack) {
 			case opc.FOR2: {
 				let a = stack.pop(), b = stack.pop();
 				if (b > a) {
-					vm.pc = labels[arg];
+					vm.pc = arg;
 				}
 				else {
 					stack.push(b+1, a, b);
@@ -188,7 +182,7 @@ function _run(vm, stack) {
 			case opc.FOR3: {
 				let a = stack.pop(), b = stack.pop(), c = stack.pop(), ca = c+a;
 				if (Math.abs(ca - b) > Math.abs(c - b) && b != c) {
-					vm.pc = labels[arg];
+					vm.pc = arg;
 				}
 				else {
 					stack.push(ca, b, a, c);
@@ -241,7 +235,7 @@ function _run(vm, stack) {
 				break;
 			}
 			case opc.GOTO: {
-				vm.pc = labels[arg];
+				vm.pc = arg;
 				break;
 			}
 			case opc.LOAD_LOCAL: {
@@ -282,12 +276,12 @@ function _run(vm, stack) {
 			}
 			case opc.JIF: {
 				let a = stack.pop();
-				if (a !== false && a !== null) vm.pc = labels[arg];
+				if (a !== false && a !== null) vm.pc = arg;
 				break;
 			}
 			case opc.JIFNOT: {
 				let a = stack.pop();
-				if (a === false || a === null) vm.pc = labels[arg];
+				if (a === false || a === null) vm.pc = arg;
 				break;
 			}
 			case opc.LOAD_METH: {
@@ -302,7 +296,7 @@ function _run(vm, stack) {
 				let a = stack.pop();
 				if (a !== false && a !== null) {
 					stack.push(a);
-					vm.pc = labels[arg];
+					vm.pc = arg;
 				}
 				break;
 			}
@@ -310,7 +304,7 @@ function _run(vm, stack) {
 				let a = stack.pop();
 				if (a === false || a === null) {
 					stack.push(a);
-					vm.pc = labels[arg];
+					vm.pc = arg;
 				}
 				break;
 			}
@@ -389,7 +383,7 @@ function _run(vm, stack) {
 					_run(iter, stack);
 				}
 				if (endstl == stack.length || stack[endstl] === null) {
-					vm.pc = labels[arg];
+					vm.pc = arg;
 					stack.length = endstl;
 				} else {
 					while (stack.length < endstl + arg2) {
