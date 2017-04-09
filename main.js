@@ -10,8 +10,8 @@ function readline() {
 		ret += String.fromCharCode(buf[0]);
 	}
 }
-fs.readFile(process.argv[process.argv.length-1], 'utf8', (err, board) => {
-	lua.runSource(board, { "": {
+fs.readFile(process.argv[process.argv.length-1], 'utf8', (err, src) => {
+	lua.runSource(src, { "": {
 		p: x => process.stdout.write(x + " "),
 		q: x => process.stdout.write(String.fromCharCode(x)),
 		i: () => readline()|0,

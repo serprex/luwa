@@ -303,9 +303,8 @@ Assembler.prototype.genIndex = function(node, store) {
 Assembler.prototype.genTable = function(node) {
 	this.gensert(node, ast.Tableconstructor);
 	this.push(MAKE_TABLE);
-	let list = selectNode(node, ast.Fieldlist);
-	if (list) {
-		let fields = Array.from(selectNodes(list, ast.Field));
+	let fields = Array.from(selectNodes(node, ast.Field));
+	if (fields.length) {
 		for (let i=0; i<fields.length; i++) {
 			let field = fields[i];
 			switch (field.type >> 5) {
@@ -860,8 +859,7 @@ Assembler.prototype.scopeValue = function(node) {
 
 Assembler.prototype.scopeTable = function(node) {
 	this.gensert(node, ast.Tableconstructor);
-	let list = selectNode(node, ast.Fieldlist);
-	for (let field of selectNodes(list, ast.Field)) {
+	for (let field of selectNodes(node, ast.Field)) {
 		for (let exp of selectNodes(field, ast.ExpOr)) {
 			this.scopeExpOr(exp);
 		}

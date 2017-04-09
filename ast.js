@@ -18,17 +18,16 @@ const Block = exports.Block = 0,
 	Funcbody = exports.Funcbody = 13,
 	Parlist = exports.Parlist = 14,
 	Tableconstructor = exports.Tableconstructor = 15,
-	Fieldlist = exports.Fieldlist = 16,
-	Field = exports.Field = 17,
-	Fieldsep = exports.Fieldsep = 18,
-	Binop = exports.Binop = 19,
-	Unop = exports.Unop = 20,
-	Value = exports.Value = 21,
-	Index = exports.Index = 22,
-	Call = exports.Call = 23,
-	Suffix = exports.Suffix = 24,
-	ExpOr = exports.ExpOr = 25,
-	ExpAnd = exports.ExpAnd = 26;
+	Field = exports.Field = 16,
+	Fieldsep = exports.Fieldsep = 17,
+	Binop = exports.Binop = 18,
+	Unop = exports.Unop = 19,
+	Value = exports.Value = 20,
+	Index = exports.Index = 21,
+	Call = exports.Call = 22,
+	Suffix = exports.Suffix = 23,
+	ExpOr = exports.ExpOr = 24,
+	ExpAnd = exports.ExpAnd = 25;
 
 function*name(lx, x, p) {
 	var t = x.next(p);
@@ -132,8 +131,7 @@ sf(Funcbody, s(lex._pl), maybe(o(Parlist)), s(lex._pr), o(Block), s(lex._end));
 of(Parlist,
 	seq(o(Namelist), maybe(seq(s(lex._comma), s(lex._dotdotdot)))),
 	s(lex._dotdotdot));
-sf(Tableconstructor, s(lex._cl), maybe(o(Fieldlist)), s(lex._cr));
-sf(Fieldlist, o(Field), many(seq(o(Fieldsep), o(Field))), maybe(o(Fieldsep)));
+sf(Tableconstructor, s(lex._cl), maybe(seq(o(Field), many(seq(o(Fieldsep), o(Field))), maybe(o(Fieldsep)))), s(lex._cr));
 of(Field,
 	seq(s(lex._sl), o(ExpOr), s(lex._sr), s(lex._set), o(ExpOr)),
 	seq(name, s(lex._set), o(ExpOr)),
