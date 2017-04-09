@@ -18,10 +18,17 @@ module.exports = function () {
 
 	var string = new Table();
 	env.set("string", string);
+	string.set("char", utf8_char);
+	string.set("len", string_len);
+	string.set("lower", string_lower);
+	string.set("upper", string_upper);
 
 	var table = new Table();
 	env.set("table", table);
+	table.set("concat", table_concat);
 	table.set("pack", table_pack);
+	table.set("remove", table_remove);
+	table.set("unpack", table_unpack);
 
 	var math = new Table();
 	env.set("math", math);
@@ -53,15 +60,17 @@ module.exports = function () {
 
 	var utf8 = new Table();
 	env.set("utf8", utf8);
+	utf8.set("char", utf8_char);
 
+	env.set("assert", assert);
+	env.set("error", error);
 	env.set("ipairs", ipairs);
 	env.set("pairs", pairs);
 	env.set("next", next);
 	env.set("type", type);
 	env.set("pcall", pcall);
-	env.set("error", error);
-	env.set("assert", assert);
 	env.set("print", print);
+	env.set("select", select);
 	env.set("getmetatable", getmetatable);
 	env.set("setmetatable", setmetatable);
 	return env;
@@ -73,6 +82,14 @@ const obj = require("./obj"),
 
 function readarg(stack, base, i) {
 	return base + i < stack.length ? stack[base+i] : null;
+}
+
+function assert(vm, stack, base) {
+	if (cond) throw val;
+}
+
+function error(vm, stack, base) {
+	throw val;
 }
 
 function pairs(vm, stack, base) {
@@ -136,17 +153,16 @@ function pcall(vm, stack, base) {
 	stack.splice(base, 0, true);
 }
 
-function error(vm, stack, base) {
-	throw val;
-}
-
-function assert(vm, stack, base) {
-	if (cond) throw val;
-}
-
 function print(vm, stack, base) {
 	console.log(stack.slice(base+1));
 	stack.length = base;
+}
+
+function select(vm, stack, base) {
+	let i = readarg(stack, base, 1);
+	if (typeof i != "number") throw "select #1: expected number";
+	stack[base] = readarg(stack, base, i+1);
+	stack.length = base + 1;
 }
 
 function getmetatable(vm, stack, base) {
@@ -169,8 +185,8 @@ function io_write(vm, stack, base) {
 }
 
 function os_clock(vm, stack, base) {
-	stack.length = base + 1;
 	stack[base] = new Date()/1000;
+	stack.length = base + 1;
 }
 
 function os_difftime(vm, stack, base) {
@@ -178,12 +194,84 @@ function os_difftime(vm, stack, base) {
 	stack.length = base + 1;
 }
 
+function string_len(vm, stack, base) {
+	let s = readarg(stack, base, 1);
+	if (typeof s != "string") throw "string.lower #1: Expected string";
+	stack[base] = s.length;
+	stack.length = base + 1;
+}
+
+function string_lower(vm, stack, base) {
+	let s = readarg(stack, base, 1);
+	if (typeof s != "string") throw "string.lower #1: Expected string";
+	stack[base] = s.toLowerCase();
+	stack.length = base + 1;
+}
+
+function string_upper(vm, stack, base) {
+	let s = readarg(stack, base, 1);
+	if (typeof s != "string") throw "string.upper #1: Expected string";
+	stack[base] = s.toUpperCase();
+	stack.length = base + 1;
+}
+
+function table_concat(vm, stack, base) {
+	let t = readarg(stack, base, 1);
+	if (!(t instanceof Table)) throw "table.concat #1: expected table";
+	if (!t.array.length) return '';
+	let sep = readarg(stack, base, 2);
+	if (sep === null) sep = '';
+	let i = readarg(stack, base, 3);
+	if (i === null) i = 1;
+	let j = readarg(stack, base, 4);
+	if (j === null) j = t.array.length - 1;
+	if (i > j) return '';
+	let ret = '';
+	while (i <= j) {
+		let val = t.array[i];
+		if (typeof val != "number" && typeof val != "string") throw "Expected sequence of numbers & strings";
+		ret += t.array[i];
+	}
+	stack[base] = ret;
+	stack.length = base + 1;
+}
+
 function table_pack(vm, stack, base) {
 	let t = new Table();
 	t.array = stack.slice(base + 1);
 	t.set("n", stack.length - base - 1);
-	stack.length = base + 1;
 	stack[base] = t;
+	stack.length = base + 1;
+}
+
+function table_unpack(vm, stack, base) {
+	let t = readarg(stack, base, 1);
+	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
+	let i = readarg(stack, base, 2) || 1;
+	let j = readarg(stack, base, 3) || t.array.length - 1;
+	stack.length = base;
+	while (i<=j) stack.push(t.array[i++]);
+}
+
+function table_remove(vm, stack, base) {
+	let t = readarg(stack, base, 1);
+	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
+	let i = readarg(stack, base, 2);
+	if (i)|| (t.array.length && t.array.length - 1);
+	if (i === null) {
+		t.array.pop();
+		stack.length = base;
+	} else {
+		if (typeof i != "number") throw "table.unpack #2: expected number";
+		if (t.array.length == 0 && i === 0) {
+			stack.length = base;
+		} else if (i > 0 && i < t.array.length) {
+			stack[base] = t.array.splice(i, 1)[0];
+			stack.length = base + 1;
+		} else {
+			throw "position out of bounds";
+		}
+	}
 }
 
 function math_abs(vm, stack, base) {
@@ -261,5 +349,16 @@ function math_type(vm, stack, base) {
 function math_ult(vm, stack, base) {
 	let u32 = new Uint32Array([stack[base+1], stack[base+2]]);
 	stack[base] = u32[0] < u32[1];
+	stack.length = base + 1;
+}
+
+function utf8_char(vm, stack, base) {
+	let ret = "";
+	for (var i = base+1; i<stack.length; i++) {
+		// TODO reject invalid character codes
+		if (typeof stack[i] != "number") throw "utf8.char: Expects numbers";
+		ret += String.fromCharCode(stack[i]);
+	}
+	stack[base] = ret;
 	stack.length = base + 1;
 }
