@@ -21,4 +21,6 @@ env.js | exports a function which returns the default `_ENV`
 func.js | ast.js's Assembler can be boiled down to func.js's Func, which is what runbc uses in conjuction with a stack to interpret
 main.js | this should be fixed up to be a node frontend
 obj.js | where metatable logic will go. Metatables are maintained as a [WeakMap](https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/WeakMap) of objects to metatables
+table.js | table type
+thread.js | thread type returned by `coroutine.create`
 ui.js | index.html's js logic

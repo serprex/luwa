@@ -56,11 +56,11 @@ const NOP = exports.NOP = 0,
 	FOR2 = exports.FOR2 = 81,
 	FOR3 = exports.FOR3 = 82,
 	LOAD_FUNC = exports.LOAD_FUNC = 83,
-	VARG_CALL = exports.VARG_CALL = 129,
 	FOR_NEXT = exports.FOR_NEXT = 130,
 	RETURN_CALL = exports.RETURN_CALL = 131,
 	APPEND_CALL = exports.APPEND_CALL = 132,
-	CALL = exports.CALL = 192;
+	CALL = exports.CALL = 192,
+	VARG_CALL = exports.VARG_CALL = 193;
 
 function *selectNodes(node, type) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
@@ -448,7 +448,7 @@ Assembler.prototype.genValue = function(node, vals, endvals, ret, calls) {
 			} else if (vals) {
 				if (calls) {
 					if (!ret) {
-						this.push(CALL_VARG, endvals);
+						this.push(VARG_CALL, endvals);
 					} else {
 						this.push(ret == 1 ? RETURN_VARG_CALL : APPEND_VARG_CALL);
 					}
