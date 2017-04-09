@@ -2,18 +2,17 @@ Luwa's end goal is to JIT to [WASM](https://webassembly.org). Right now it's a b
 
 I'll try avoid my usual stream of consciousness here, instead that's at [my devlog](https://patreon.com/serprex)
 
-index.html shows the pipeline:
-lex.js -> ast.js -> bc.js -> runbc.js
+luwa.js shows the pipeline: `lex.js` -> `ast.js` -> `bc.js` -> `runbc.js`
 
-lex.js is a linear scan, so I'll leave that as an exercise for the reader
+`lex.js` is a linear scan, so I'll leave that as an exercise for the reader
 
-ast.js is some adhoc parser combinator thing with generators. Combinators return the rightmost AST node. The rest of their function is left as an exercise to the reader
+`ast.js` is some adhoc parser combinator thing with generators. Combinators return the rightmost AST node. The rest of their function is left as an exercise to the reader
 AST is immutable during the parse phase so that backtracking has no cleanup
 Some post processing is done to convert from children pointing at parents to parents pointing at children
 
-bc.js runs two passes over the AST: scoping & codegen. I should probably split it into 2 files
+`bc.js` runs two passes over the AST: scoping & codegen. I should probably split it into 2 files
 
-runbc.js interprets the output of bc.js
+`runbc.js` interprets the output of `bc.js`
 
 ### Other js files
 File | Description
