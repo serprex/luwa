@@ -7,27 +7,24 @@ const Block = exports.Block = 0,
 	Retstat = exports.Retstat = 2,
 	Label = exports.Label = 3,
 	Funcname = exports.Funcname = 4,
-	Varlist = exports.Varlist = 5,
-	Var = exports.Var = 6,
-	Namelist = exports.Namelist = 7,
-	Explist = exports.Explist = 8,
-	Exp = exports.Exp = 9,
-	Prefix = exports.Prefix = 10,
-	Functioncall = exports.Functioncall = 11,
-	Args = exports.Args = 12,
-	Funcbody = exports.Funcbody = 13,
-	Parlist = exports.Parlist = 14,
-	Tableconstructor = exports.Tableconstructor = 15,
-	Field = exports.Field = 16,
-	Fieldsep = exports.Fieldsep = 17,
-	Binop = exports.Binop = 18,
-	Unop = exports.Unop = 19,
-	Value = exports.Value = 20,
-	Index = exports.Index = 21,
-	Call = exports.Call = 22,
-	Suffix = exports.Suffix = 23,
-	ExpOr = exports.ExpOr = 24,
-	ExpAnd = exports.ExpAnd = 25;
+	Var = exports.Var = 5,
+	Exp = exports.Exp = 6,
+	Prefix = exports.Prefix = 7,
+	Functioncall = exports.Functioncall = 8,
+	Args = exports.Args = 9,
+	Funcbody = exports.Funcbody = 10,
+	Parlist = exports.Parlist = 11,
+	Tableconstructor = exports.Tableconstructor = 12,
+	Field = exports.Field = 13,
+	Fieldsep = exports.Fieldsep = 14,
+	Binop = exports.Binop = 15,
+	Unop = exports.Unop = 16,
+	Value = exports.Value = 17,
+	Index = exports.Index = 18,
+	Call = exports.Call = 19,
+	Suffix = exports.Suffix = 20,
+	ExpOr = exports.ExpOr = 21,
+	ExpAnd = exports.ExpAnd = 22;
 
 function*name(lx, x, p) {
 	var t = x.next(p);
@@ -92,11 +89,14 @@ function of(o, ...args) {
 	}
 }
 
-const rules = [];
+const rules = [],
+	Explist = seq(o(ExpOr), many(seq(s(lex._comma), o(ExpOr)))),
+	Namelist = seq(name, many(seq(s(lex._comma), name))),
+	Varlist = seq(o(Var), many(seq(s(lex._comma), o(Var))));
 sf(Block, many(o(Stat)), maybe(o(Retstat)));
 of(Stat,
 	s(lex._semi),
-	seq(o(Varlist), s(lex._set), o(Explist)),
+	seq(Varlist, s(lex._set), Explist),
 	o(Functioncall),
 	o(Label),
 	s(lex._break),
@@ -106,30 +106,27 @@ of(Stat,
 	seq(s(lex._repeat), o(Block), s(lex._until), o(ExpOr)),
 	seq(s(lex._if), o(ExpOr), s(lex._then), o(Block), many(seq(s(lex._elseif), o(ExpOr), s(lex._then), o(Block))), maybe(seq(s(lex._else), o(Block))), s(lex._end)),
 	seq(s(lex._for), name, s(lex._set), o(ExpOr), s(lex._comma), o(ExpOr), maybe(seq(s(lex._comma), o(ExpOr))), s(lex._do), o(Block), s(lex._end)),
-	seq(s(lex._for), o(Namelist), s(lex._in), o(Explist), s(lex._do), o(Block), s(lex._end)),
+	seq(s(lex._for), Namelist, s(lex._in), Explist, s(lex._do), o(Block), s(lex._end)),
 	seq(s(lex._function), o(Funcname), o(Funcbody)),
 	seq(s(lex._local), s(lex._function), name, o(Funcbody)),
-	seq(s(lex._local), o(Namelist), maybe(seq(s(lex._set), o(Explist))))
+	seq(s(lex._local), Namelist, maybe(seq(s(lex._set), Explist)))
 );
-sf(Retstat, s(lex._return), maybe(o(Explist)), maybe(s(lex._semi)));
+sf(Retstat, s(lex._return), maybe(Explist), maybe(s(lex._semi)));
 sf(Label, s(lex._label), name, s(lex._label));
 sf(Funcname, name, many(seq(s(lex._dot), name)), maybe(s(lex._colon), name));
-sf(Varlist, o(Var), many(seq(s(lex._comma), o(Var))));
 of(Var, name, seq(o(Prefix), many(o(Suffix)), o(Index)));
-sf(Namelist, name, many(seq(s(lex._comma), name)));
-sf(Explist, o(ExpOr), many(seq(s(lex._comma), o(ExpOr))));
 of(ExpOr, seq(o(ExpAnd), many(seq(s(lex._or), o(ExpAnd)))));
 of(ExpAnd, seq(o(Exp), many(seq(s(lex._and), o(Exp)))));
 of(Exp, seq(o(Unop), o(Exp)), seq(o(Value), maybe(seq(o(Binop), o(Exp)))));
 of(Prefix, name, seq(s(lex._pl), o(ExpOr), s(lex._pr)));
 sf(Functioncall, o(Prefix), many(o(Suffix)), o(Call));
 of(Args,
-	seq(s(lex._pl), maybe(o(Explist)), s(lex._pr)),
+	seq(s(lex._pl), maybe(Explist), s(lex._pr)),
 	o(Tableconstructor),
 	slit);
 sf(Funcbody, s(lex._pl), maybe(o(Parlist)), s(lex._pr), o(Block), s(lex._end));
 of(Parlist,
-	seq(o(Namelist), maybe(seq(s(lex._comma), s(lex._dotdotdot)))),
+	seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))),
 	s(lex._dotdotdot));
 sf(Tableconstructor, s(lex._cl), maybe(seq(o(Field), many(seq(o(Fieldsep), o(Field))), maybe(o(Fieldsep)))), s(lex._cr));
 of(Field,

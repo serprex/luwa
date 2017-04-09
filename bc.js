@@ -355,9 +355,8 @@ Assembler.prototype.genArgs = function(node, ismeth, vals, endvals, ret, calls) 
 	calls = calls || [];
 	switch (node.type >> 5) {
 		case 0: {
-			let explist = selectNode(node, ast.Explist);
-			if (explist) {
-				let exps = Array.from(selectNodes(explist, ast.ExpOr));
+			let exps = Array.from(selectNodes(node, ast.ExpOr));
+			if (exps.length) {
 				calls.push(exps.length + ismeth - 1);
 				for (let i=0; i<exps.length - 1; i++) {
 					this.genExpOr(exps[i], 1);
@@ -627,8 +626,8 @@ Assembler.prototype.genStat = function(node) {
 		case 0: // ;
 			break;
 		case 1: { // varlist = explist
-			let vars = Array.from(selectNodes(selectNode(node, ast.Varlist), ast.Var)),
-				exps = Array.from(selectNodes(selectNode(node, ast.Explist), ast.ExpOr));
+			let vars = Array.from(selectNodes(node, ast.Var)),
+				exps = Array.from(selectNodes(node, ast.ExpOr));
 			for (let i=0; i<exps.length; i++) {
 				this.genExpOr(exps[i], i >= vars.length ? 0 : i == exps.length-1 ? vars.length-exps.length+1 : 1);
 			}
@@ -728,11 +727,11 @@ Assembler.prototype.genStat = function(node) {
 		case 11: {
 			let lab0 = this.getLabel(), endlab = this.getLabel();
 			this.pushLoop(endlab);
-			let exps = Array.from(selectNodes(selectNode(node, ast.Explist), ast.ExpOr));
+			let exps = Array.from(selectNodes(node, ast.ExpOr));
 			for (let i=0; i<exps.length; i++) {
 				this.genExpOr(exps[i], i > 2 ? 0 : i == exps.length - 1 ? 3 - i : 1);
 			}
-			let names = Array.from(this.identIndices(selectNode(node, ast.Namelist)));
+			let names = Array.from(this.identIndices(node));
 			this.setLabel(lab0);
 			this.pushGoto(FOR_NEXT, endlab);
 			this.push(names.length);
@@ -757,10 +756,9 @@ Assembler.prototype.genStat = function(node) {
 			break;
 		}
 		case 14: {
-			let explist = selectNode(node, ast.Explist);
-			let names = Array.from(this.identIndices(selectNode(node, ast.Namelist)));
-			if (explist) {
-				let exps = Array.from(selectNodes(explist, ast.ExpOr));
+			let exps = Array.from(selectNodes(node, ast.ExpOr));
+			let names = Array.from(this.identIndices(node));
+			if (exps.length) {
 				for (let i=0; i<exps.length; i++) {
 					this.genExpOr(exps[i], i >= names.length ? 0 : i == exps.length-1 ? names.length-exps.length+1 : 1);
 				}
@@ -779,9 +777,8 @@ Assembler.prototype.genStat = function(node) {
 
 Assembler.prototype.genRet = function(node) {
 	this.gensert(node, ast.Retstat);
-	let explist = selectNode(node, ast.Explist);
-	if (explist) {
-		let exps = Array.from(selectNodes(explist, ast.ExpOr)), i = 0;
+	let exps = Array.from(selectNodes(node, ast.ExpOr));
+	if (exps.length) {
 		for (let i = 0; i<exps.length-1; i++) {
 			this.genExpOr(exps[i], 1, 0);
 		}
@@ -910,8 +907,7 @@ Assembler.prototype.scopeFuncbody = function(node) {
 	this.gensert(node, ast.Funcbody);
 	// TODO handle parlist, add to func's locals
 	let parlist = selectNode(node, ast.Parlist);
-	let namelist = parlist && selectNode(parlist, ast.Namelist);
-	let names = namelist && Array.from(this.identIndices(namelist));
+	let names = parlist && Array.from(this.identIndices(parlist));
 	let dotdotdot = parlist && this.hasLiteral(parlist, lex._dotdotdot);
 	var subasm = new Assembler(this.lx, names ? names.length : 0, !!dotdotdot, this);
 	subasm.pushScope();
@@ -954,11 +950,8 @@ Assembler.prototype.scopeArgs = function(node) {
 	this.gensert(node, ast.Args);
 	switch (node.type >> 5) {
 		case 0: {
-			let explist = selectNode(node, ast.Explist);
-			if (explist) {
-				for (let exp of selectNodes(explist, ast.ExpOr)) {
-					this.scopeExpOr(exp);
-				}
+			for (let exp of selectNodes(node, ast.ExpOr)) {
+				this.scopeExpOr(exp);
 			}
 			break;
 		}
@@ -972,8 +965,8 @@ Assembler.prototype.scopeStat = function(node) {
 	this.gensert(node, ast.Stat);
 	switch (node.type >> 5) {
 		case 1:
-			let vars = Array.from(selectNodes(selectNode(node, ast.Varlist), ast.Var)),
-				exps = Array.from(selectNodes(selectNode(node, ast.Explist), ast.ExpOr));
+			let vars = Array.from(selectNodes(node, ast.Var)),
+				exps = Array.from(selectNodes(node, ast.ExpOr));
 			for (let i=0; i<exps.length; i++) {
 				this.scopeExpOr(exps[i]);
 			}
@@ -1021,11 +1014,11 @@ Assembler.prototype.scopeStat = function(node) {
 			break;
 		}
 		case 11: {
-			for (let exp of selectNodes(selectNode(node, ast.Explist), ast.ExpOr)) {
+			for (let exp of selectNodes(node, ast.ExpOr)) {
 				this.scopeExpOr(exp);
 			}
 			this.pushScope();
-			for (let name of this.identIndices(selectNode(node, ast.Namelist))) {
+			for (let name of this.identIndices(node)) {
 				this.nameScope(name.name, name.li);
 			}
 			this.scopeBlock(selectNode(node, ast.Block), true);
@@ -1044,14 +1037,11 @@ Assembler.prototype.scopeStat = function(node) {
 			break;
 		}
 		case 14: {
-			for (let name of this.identIndices(selectNode(node, ast.Namelist))) {
+			for (let name of this.identIndices(node)) {
 				this.nameScope(name.name, name.li);
 			}
-			let explist = selectNode(node, ast.Explist);
-			if (explist) {
-				for (let exp of selectNodes(explist, ast.ExpOr)) {
-					this.scopeExpOr(exp);
-				}
+			for (let exp of selectNodes(node, ast.ExpOr)) {
+				this.scopeExpOr(exp);
 			}
 			break;
 		}
@@ -1060,11 +1050,8 @@ Assembler.prototype.scopeStat = function(node) {
 
 Assembler.prototype.scopeRet = function(node) {
 	this.gensert(node, ast.Retstat);
-	let explist = selectNode(node, ast.Explist);
-	if (explist) {
-		for (let exp of selectNodes(explist, ast.ExpOr)) {
-			this.scopeExpOr(exp);
-		}
+	for (let exp of selectNodes(node, ast.ExpOr)) {
+		this.scopeExpOr(exp);
 	}
 }
 

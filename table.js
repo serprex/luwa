@@ -26,7 +26,8 @@ Table.prototype.add = function(val) {
 }
 
 Table.prototype.get = function(key) {
-	return (key|0) === key ? this.array[key] : this.hash.get(key);
+	let v = (key|0) === key ? this.array[key] : this.hash.get(key);
+	return v === undefined ? null : v;
 }
 
 Table.prototype.getlength = function() {
