@@ -44,6 +44,8 @@ module.exports = function () {
 	math.set("deg", math_deg);
 	math.set("exp", math_exp);
 	math.set("floor", math_floor);
+	math.set("log", math_log);
+	math.set("log10", math_log10);
 	math.set("rad", math_rad);
 	math.set("sin", math_sin);
 	math.set("sqrt", math_sqrt);
@@ -54,6 +56,9 @@ module.exports = function () {
 
 	var coroutine = new Table();
 	env.set("coroutine", coroutine);
+	coroutine.set("create", coroutine_create);
+	coroutine.set("resume", coroutine_resume);
+	coroutine.set("yield", coroutine_yield);
 
 	var packge = new Table();
 	env.set("package", packge);
@@ -78,6 +83,7 @@ module.exports = function () {
 
 const obj = require("./obj"),
 	Table = require("./table"),
+	Thread = require("./thread"),
 	runbc = require("./runbc");
 
 function readarg(stack, base, i) {
@@ -93,22 +99,22 @@ function error(vm, stack, base) {
 }
 
 function pairs(vm, stack, base) {
+	stack.length = base + 3;
 	stack[base] = next;
 	stack[base+2] = null;
-	stack.length = base + 3;
 }
 
 function ipairs(vm, stack, base) {
+	stack.length = base + 3;
 	stack[base] = inext;
 	stack[base+2] = 0;
-	stack.length = base + 3;
 }
 
 function inext(vm, stack, base) {
-	let t = stack[base+1], key = stack[base+2]++;
+	let t = stack[base+1], key = stack[base+2] + 1;
 	if (key < t.array.length) {
-		stack[base] = t.array[key];
-		stack[base + 1] = key;
+		stack[base] = key;
+		stack[base+1] = t.array[key];
 		stack.length = base + 2;
 	} else {
 		stack.length = base;
@@ -196,21 +202,21 @@ function os_difftime(vm, stack, base) {
 
 function string_len(vm, stack, base) {
 	let s = readarg(stack, base, 1);
-	if (typeof s != "string") throw "string.lower #1: Expected string";
+	if (typeof s != "string") throw "string.lower #1: expected string";
 	stack[base] = s.length;
 	stack.length = base + 1;
 }
 
 function string_lower(vm, stack, base) {
 	let s = readarg(stack, base, 1);
-	if (typeof s != "string") throw "string.lower #1: Expected string";
+	if (typeof s != "string") throw "string.lower #1: expected string";
 	stack[base] = s.toLowerCase();
 	stack.length = base + 1;
 }
 
 function string_upper(vm, stack, base) {
 	let s = readarg(stack, base, 1);
-	if (typeof s != "string") throw "string.upper #1: Expected string";
+	if (typeof s != "string") throw "string.upper #1: expected string";
 	stack[base] = s.toUpperCase();
 	stack.length = base + 1;
 }
@@ -229,7 +235,7 @@ function table_concat(vm, stack, base) {
 	let ret = '';
 	while (i <= j) {
 		let val = t.array[i];
-		if (typeof val != "number" && typeof val != "string") throw "Expected sequence of numbers & strings";
+		if (typeof val != "number" && typeof val != "string") throw "table.concat: expected sequence of numbers & strings";
 		ret += t.array[i];
 	}
 	stack[base] = ret;
@@ -257,7 +263,6 @@ function table_remove(vm, stack, base) {
 	let t = readarg(stack, base, 1);
 	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
 	let i = readarg(stack, base, 2);
-	if (i)|| (t.array.length && t.array.length - 1);
 	if (i === null) {
 		t.array.pop();
 		stack.length = base;
@@ -314,6 +319,18 @@ function math_floor(vm, stack, base) {
 	stack.length = base + 1;
 }
 
+function math_log(vm, stack, base) {
+	let n = readarg(stack, base, 1);
+	let b = readarg(stack, base, 2);
+	stack[base] = b === null ? Math.log(n) : Math.log(n, b);
+	stack.length = base + 1;
+}
+
+function math_log10(vm, stack, base) {
+	stack[base] = Math.log10(stack[base+1]);
+	stack.length = base + 1;
+}
+
 function math_rad(vm, stack, base) {
 	stack[base] = stack[base+1] * (Math.PI / 180);
 	stack.length = base + 1;
@@ -352,11 +369,32 @@ function math_ult(vm, stack, base) {
 	stack.length = base + 1;
 }
 
+function coroutine_create(vm, stack, base) {
+	var subvm = readarg(stack, base, 1);
+	var substack = stack.slice(base+1);
+	subvm.readarg(substack, 0);
+	stack[base] = new Thread(subvm, substack);
+	stack.length = base + 1;
+}
+
+function coroutine_resume(vm, stack, base) {
+	var thread = readarg(stack, base, 1);
+	if (!(thread instanceof Thread)) throw "coroutine.resume #1: expected thread"
+	for (let i=base+2; i<stack.length; i++) {
+		thread.stack.push(stack[i]);
+	}
+	// run vm with stack
+}
+
+function coroutine_yield(vm, stack, base) {
+	// TODO how do we return to resume?
+}
+
 function utf8_char(vm, stack, base) {
 	let ret = "";
 	for (var i = base+1; i<stack.length; i++) {
 		// TODO reject invalid character codes
-		if (typeof stack[i] != "number") throw "utf8.char: Expects numbers";
+		if (typeof stack[i] != "number") throw "utf8.char: expected numbers";
 		ret += String.fromCharCode(stack[i]);
 	}
 	stack[base] = ret;

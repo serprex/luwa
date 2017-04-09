@@ -30,7 +30,6 @@ const NOP = exports.NOP = 0,
 	UNARY_BNOT = exports.UNARY_BNOT = 26,
 	MAKE_TABLE = exports.MAKE_TABLE = 27,
 	APPEND = exports.APPEND = 28,
-	FORTIFY = exports.FORTIFY = 29,
 	TABLE_SET = exports.TABLE_SET = 30,
 	POP = exports.POP = 32,
 	LOAD_INDEX = exports.LOAD_INDEX = 35,
@@ -38,7 +37,6 @@ const NOP = exports.NOP = 0,
 	RETURN = exports.RETURN = 37,
 	RETURN_VARG = exports.RETURN_VARG = 38,
 	APPEND_VARG = exports.APPEND_VARG = 39,
-	STORE_INDEX2 = exports.STORE_INDEX2 = 40,
 	LOAD_NUM = exports.LOAD_NUM = 64,
 	LOAD_STR = exports.LOAD_STR = 65,
 	LOAD_DEREF = exports.LOAD_DEREF = 66,
@@ -714,14 +712,15 @@ Assembler.prototype.genStat = function(node) {
 			for (let i=0; i<exps.length; i++) {
 				this.genExpOr(exps[i], i > 2 ? 0 : i == exps.length - 1 ? 3 - i : 1);
 			}
-			this.push(FORTIFY, LABEL, lab0);
 			let names = Array.from(this.identIndices(selectNode(node, ast.Namelist)));
+			this.push(LABEL, lab0);
 			this.push(FOR_NEXT, endlab, names.length);
 			for (let i = names.length - 1; i >= 0; i--) {
 				this.genStoreIdent(this.scopes[names[i].li]);
 			}
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.push(GOTO, lab0);
+			this.push(LABEL, endlab);
 			this.popLoop();
 			break;
 		}

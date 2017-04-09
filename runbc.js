@@ -175,9 +175,6 @@ function _run(vm, stack) {
 				stack.push(new Table());
 				break;
 			}
-			case opc.FORTIFY: {
-				break;
-			}
 			case opc.FOR2: {
 				let a = stack.pop(), b = stack.pop();
 				if (b > a) {
@@ -258,6 +255,15 @@ function _run(vm, stack) {
 			case opc.RETURN: {
 				return;
 			}
+			case opc.RETURN_VARG: {
+				Array.prototype.push.apply(stack, this.dotdotdot);
+				return;
+			}
+			case opc.APPEND_VARG: {
+				let t = stack[stack.length - 1];
+				Array.prototype.push.apply(t.array, this.dotdotdot);
+				break;
+			}
 			case opc.LOAD_VARG: {
 				for (let i=0; i<arg; i++) {
 					if (i < this.dotdotdot.length) {
@@ -286,8 +292,7 @@ function _run(vm, stack) {
 			}
 			case opc.LOAD_METH: {
 				let a = stack.pop();
-				stack.push(a.get(lx.sir[arg]));
-				stack.push(a);
+				stack.push(a.get(lx.sir[arg]), a);
 				break;
 			}
 			case opc.STORE_METH: {
@@ -358,12 +363,12 @@ function _run(vm, stack) {
 			}
 			case opc.CALL: {
 				let endstl = stack.length - arg3 - 1;
-				let fu = stack[endstl];
-				if (typeof fu === 'function') {
-					fu(vm, stack, endstl);
+				let subvm = stack[endstl];
+				if (typeof subvm === 'function') {
+					subvm(vm, stack, endstl);
 				} else {
-					fu.readarg(stack, endstl);
-					_run(fu, stack);
+					subvm.readarg(stack, endstl);
+					_run(subvm, stack);
 				}
 				while (stack.length < endstl + arg) {
 					stack.push(null);
@@ -378,19 +383,20 @@ function _run(vm, stack) {
 				let endstl = stack.length - 3;
 				let iter = stack[endstl], k = stack[endstl+1], v = stack[endstl+2];
 				if (typeof iter === 'function') {
-					iter(vm, stack, stack.length - 3);
+					iter(vm, stack, endstl);
 				} else {
-					iter.readarg(stack, stack.length - 3);
+					iter.readarg(stack, endstl);
 					_run(iter, stack);
 				}
-				if (endstl >= stack.length || stack[endstl] === null) {
+				if (endstl == stack.length || stack[endstl] === null) {
 					vm.pc = labels[arg];
+					stack.length = endstl;
 				} else {
 					while (stack.length < endstl + arg2) {
 						stack.push(null);
 					}
 					stack.length = endstl + arg2;
-					stack.splice(endstl, 0, iter, k, v);
+					stack.splice(endstl, 0, iter, k, stack[endstl]);
 				}
 				break;
 			}
