@@ -295,10 +295,7 @@ function _run(vm, stack) {
 			}
 			case opc.LOAD_METH: {
 				let a = stack.pop();
-				stack.push(a.get(lx.sir[arg]), a);
-				break;
-			}
-			case opc.STORE_METH: {
+				stack.push(a.get(lx.ssr[arg]), a);
 				break;
 			}
 			case opc.JIF_OR_POP: {

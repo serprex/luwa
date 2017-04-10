@@ -113,7 +113,7 @@ of(Stat,
 );
 sf(Retstat, s(lex._return), maybe(Explist), maybe(s(lex._semi)));
 sf(Label, s(lex._label), name, s(lex._label));
-sf(Funcname, name, many(seq(s(lex._dot), name)), maybe(s(lex._colon), name));
+sf(Funcname, name, many(seq(s(lex._dot), name)), maybe(seq(s(lex._colon), name)));
 of(Var, name, seq(o(Prefix), many(o(Suffix)), o(Index)));
 of(ExpOr, seq(o(ExpAnd), many(seq(s(lex._or), o(ExpAnd)))));
 of(ExpAnd, seq(o(Exp), many(seq(s(lex._and), o(Exp)))));
@@ -186,6 +186,7 @@ function parse(lx) {
 			return b0;
 		}
 	}
+	throw "Invalid syntax";
 }
 
 exports.parse = parse;

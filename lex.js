@@ -64,8 +64,8 @@ const digit = /^\d$/;
 const alphascore = /^[a-zA-Z_]$/;
 const alphanumscore = /^\w$/;
 function Lex(src) {
-	this.ss = { _ENV: 0 };
-	this.ssr = ["_ENV"];
+	this.ss = { _ENV: 0, self: 1 };
+	this.ssr = ["_ENV", "self"];
 	this.sn = {};
 	this.snr = [];
 	const ss = this.ss, ssr = this.ssr, sn = this.sn, snr = this.snr;

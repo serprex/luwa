@@ -48,7 +48,6 @@ const NOP = exports.NOP = 0,
 	JIF = exports.JIF = 73,
 	JIFNOT = exports.JIFNOT = 74,
 	LOAD_METH = exports.LOAD_METH = 75,
-	STORE_METH = exports.STORE_METH = 76,
 	JIF_OR_POP = exports.JIF_OR_POP = 77,
 	JIFNOT_OR_POP = exports.JIFNOT_OR_POP = 78,
 	RETURN_VARG_CALL = exports.RETURN_VARG_CALL = 79,
@@ -409,12 +408,11 @@ Assembler.prototype.genFuncname = function(node) {
 		this.genStoreIdent(scope);
 	} else {
 		this.genLoadIdent(scope);
-		let colon = this.hasLiteral(node, lex._colon);
 		for (var i=1; i<names.length - 1; i++) {
 			this.push(LOAD_STR, names[i], LOAD_INDEX);
 		}
-		this.push(LOAD_STR, names[names.length - 1].val(this.lx) & 0xffffff);
-		this.push(colon ? STORE_METH : STORE_INDEX);
+		this.push(LOAD_STR, names[names.length - 1]);
+		this.push(STORE_INDEX);
 	}
 }
 
@@ -903,14 +901,17 @@ Assembler.prototype.scopeVar = function(node) {
 	}
 }
 
-Assembler.prototype.scopeFuncbody = function(node) {
+Assembler.prototype.scopeFuncbody = function(node, ismeth = false) {
 	this.gensert(node, ast.Funcbody);
 	// TODO handle parlist, add to func's locals
 	let parlist = selectNode(node, ast.Parlist);
 	let names = parlist && Array.from(this.identIndices(parlist));
 	let dotdotdot = parlist && this.hasLiteral(parlist, lex._dotdotdot);
-	var subasm = new Assembler(this.lx, names ? names.length : 0, !!dotdotdot, this);
+	var subasm = new Assembler(this.lx, ismeth + (names ? names.length : 0), !!dotdotdot, this);
 	subasm.pushScope();
+	if (ismeth) {
+		subasm.nameScope(1, -2); // self
+	}
 	if (names) {
 		for (let name of names) {
 			subasm.nameScope(name.name, name.li);
@@ -1026,7 +1027,8 @@ Assembler.prototype.scopeStat = function(node) {
 			break;
 		}
 		case 12: {
-			this.scopeFuncbody(selectNode(node, ast.Funcbody));
+			let colon = this.hasLiteral(selectNode(node, ast.Funcname), lex._colon);
+			this.scopeFuncbody(selectNode(node, ast.Funcbody), colon);
 			this.scopeFuncname(selectNode(node, ast.Funcname));
 			break;
 		}
@@ -1069,7 +1071,7 @@ Assembler.prototype.scopeBlock = function(node, nolocal = false) {
 function assemble(lx, root) {
 	var asm = new Assembler(lx, 0, false, null);
 	asm.pushScope();
-	asm.nameScope(0, -1);
+	asm.nameScope(0, -1); // _ENV
 	asm.scopeBlock(root);
 	asm.popScope();
 	asm.genBlock(root);
