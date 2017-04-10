@@ -72,6 +72,8 @@ module.exports = function () {
 	env.set("ipairs", ipairs);
 	env.set("pairs", pairs);
 	env.set("next", next);
+	env.set("tonumber", tonumber);
+	env.set("tostring", tostring);
 	env.set("type", type);
 	env.set("pcall", pcall);
 	env.set("print", print);
@@ -114,7 +116,7 @@ function inext(vm, stack, base) {
 	let t = stack[base+1], key = stack[base+2] + 1;
 	if (key < t.array.length) {
 		stack[base] = key;
-		stack[base+1] = t.array[key];
+		stack[base+1] = key in t.array ? t.array[key] : null;
 		stack.length = base + 2;
 	} else {
 		stack.length = base;
@@ -122,7 +124,75 @@ function inext(vm, stack, base) {
 }
 
 function next(vm, stack, base) {
-	// TODO
+	let t = readarg(stack, base, 1), key = readarg(stack, base, 2);
+	if (!(t instanceof Table)) {
+		throw "next #1: expected table";
+	}
+	if (key === null) {
+		if (t.keys.length) {
+			let k = t.keys[0];
+			stack[base] = t.get(k);
+			stack[base+1] = k;
+			stack.length = base + 2;
+		} else {
+			stack[base] = null;
+			stack.length = base + 1;
+		}
+	} else {
+		let ki = t.keyidx.get(key);
+		if (ki === null) {
+			throw "next: table iteration corrupted";
+		} else if (ki+1 >= t.keys.length) {
+			stack[base] = null;
+			stack.length = base + 1;
+		} else {
+			let k = t.keys[++ki];
+			stack[base] = k;
+			stack[base+1] = ki + 1 >= t.keys.length ? null : t.get(k);
+			stack.length = base + 2;
+		}
+	}
+}
+
+function tonumber(vm, stack, base) {
+	let e = readarg(stack, base, 1), base = readarg(stack, base, 2);
+	if (base === null) {
+		if (typeof e == "number") {
+			stack[base] = e;
+		} else if (typeof e == "string") {
+			stack[base] = parseFloat(e);
+			if (Number.isNaN(stack[base])) {
+				stack[base] = null;
+			}
+		} else {
+			throw "tonumber #1: expected number or string";
+		}
+	} else if (typeof base == "number") {
+		if (base < 2 || base > 36) {
+			stack[base] = null;
+		} else if(typeof e == "string") {
+			stack[base] = parseInt(e, base);
+		} else {
+			throw "tonumber #1: expected string";
+		}
+	} else {
+		throw "tonumber #2: expected number";
+	}
+	stack.length = base + 1;
+}
+
+function tostring(vm, stack, base) {
+	let v = readarg(stack, base, 1);
+	let __tostring = obj.metaget(v, "__tostring");
+	stack.length = base;
+	if (__tostring) {
+		stack.push(__tostring, v);
+		runbc.callObj(vm, __tostring, stack, base);
+		if (stack.length == base) return stack.push(null);
+	} else {
+		stack[base] = v === null ? "nil" : v + "";
+	}
+	stack.length = base + 1;
 }
 
 function type(vm, stack, base) {
@@ -136,8 +206,8 @@ function type(vm, stack, base) {
 			case "boolean":stack[base] = "boolean";return;
 			case "function":stack[base] = "function";return;
 			case "object":
-				stack[base] = obj instanceof Table ? "table"
-					: "userdata";
+				stack[base] = obj instanceof Table ? "table" :
+					obj instanceof Thread ? "thread" : "userdata";
 		}
 	}
 }
@@ -166,8 +236,12 @@ function print(vm, stack, base) {
 
 function select(vm, stack, base) {
 	let i = readarg(stack, base, 1);
-	if (typeof i != "number") throw "select #1: expected number";
-	stack[base] = readarg(stack, base, i+1);
+	if (i === '#') {
+		stack[base] = stack.length - base - 1;
+	} else {
+		if (typeof i != "number") throw "select #1: expected number";
+		stack[base] = readarg(stack, base, i+1);
+	}
 	stack.length = base + 1;
 }
 

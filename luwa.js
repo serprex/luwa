@@ -41,5 +41,7 @@ function pushArray(sink, data) {
 
 exports.runSource = function(source, imp){
 	var l, a, b;
+	console.time("lua");
 	console.log(l = new lex.Lex(source), a = ast.parse(l), b = bc.assemble(l, a), runbc.run(b));
+	console.timeEnd("lua");
 }

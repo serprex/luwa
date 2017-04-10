@@ -485,5 +485,6 @@ function run(func) {
 }
 
 exports.Vm = Vm;
+exports.callObj = callObj;
 exports._run = _run;
 exports.run = run;
