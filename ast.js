@@ -13,18 +13,16 @@ const Block = exports.Block = 0,
 	Functioncall = exports.Functioncall = 8,
 	Args = exports.Args = 9,
 	Funcbody = exports.Funcbody = 10,
-	Parlist = exports.Parlist = 11,
-	Tableconstructor = exports.Tableconstructor = 12,
-	Field = exports.Field = 13,
-	Fieldsep = exports.Fieldsep = 14,
-	Binop = exports.Binop = 15,
-	Unop = exports.Unop = 16,
-	Value = exports.Value = 17,
-	Index = exports.Index = 18,
-	Call = exports.Call = 19,
-	Suffix = exports.Suffix = 20,
-	ExpOr = exports.ExpOr = 21,
-	ExpAnd = exports.ExpAnd = 22;
+	Tableconstructor = exports.Tableconstructor = 11,
+	Field = exports.Field = 12,
+	Binop = exports.Binop = 13,
+	Unop = exports.Unop = 14,
+	Value = exports.Value = 15,
+	Index = exports.Index = 16,
+	Call = exports.Call = 17,
+	Suffix = exports.Suffix = 18,
+	ExpOr = exports.ExpOr = 19,
+	ExpAnd = exports.ExpAnd = 20;
 
 function*name(lx, x, p) {
 	var t = x.next(p);
@@ -81,10 +79,17 @@ var maybe = f => function*(lx, x, p) {
 };
 function of(o, ...args) {
 	rules[o] = function*(lx, x, p){
-		let i = o;
+		p = x.spawn(o, p);
 		for (let a of args) {
-			yield *a(lx, x, x.spawn(i, p));
-			i += 32;
+			yield *a(lx, x, p);
+			p.type += 32;
+		}
+	}
+}
+function oof(...args) {
+	return function*(lx, x, p){
+		for (let a of args) {
+			yield *a(lx, x, p);
 		}
 	}
 }
@@ -92,7 +97,8 @@ function of(o, ...args) {
 const rules = [],
 	Explist = seq(o(ExpOr), many(seq(s(lex._comma), o(ExpOr)))),
 	Namelist = seq(name, many(seq(s(lex._comma), name))),
-	Varlist = seq(o(Var), many(seq(s(lex._comma), o(Var))));
+	Varlist = seq(o(Var), many(seq(s(lex._comma), o(Var)))),
+	Fieldsep = oof(s(lex._comma), s(lex._semi));
 sf(Block, many(o(Stat)), maybe(o(Retstat)));
 of(Stat,
 	s(lex._semi),
@@ -124,16 +130,12 @@ of(Args,
 	seq(s(lex._pl), maybe(Explist), s(lex._pr)),
 	o(Tableconstructor),
 	slit);
-sf(Funcbody, s(lex._pl), maybe(o(Parlist)), s(lex._pr), o(Block), s(lex._end));
-of(Parlist,
-	seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))),
-	s(lex._dotdotdot));
-sf(Tableconstructor, s(lex._cl), maybe(seq(o(Field), many(seq(o(Fieldsep), o(Field))), maybe(o(Fieldsep)))), s(lex._cr));
+sf(Funcbody, s(lex._pl), maybe(oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(Block), s(lex._end));
+sf(Tableconstructor, s(lex._cl), maybe(seq(o(Field), many(seq(Fieldsep, o(Field))), maybe(Fieldsep))), s(lex._cr));
 of(Field,
 	seq(s(lex._sl), o(ExpOr), s(lex._sr), s(lex._set), o(ExpOr)),
 	seq(name, s(lex._set), o(ExpOr)),
 	o(ExpOr));
-of(Fieldsep, s(lex._comma), s(lex._semi));
 of(Binop,
 	s(lex._plus), s(lex._minus), s(lex._mul), s(lex._div), s(lex._idiv), s(lex._pow), s(lex._mod),
 	s(lex._band), s(lex._bnot), s(lex._bor), s(lex._rsh), s(lex._lsh), s(lex._dotdot),

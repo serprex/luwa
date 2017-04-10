@@ -904,18 +904,15 @@ Assembler.prototype.scopeVar = function(node) {
 Assembler.prototype.scopeFuncbody = function(node, ismeth = false) {
 	this.gensert(node, ast.Funcbody);
 	// TODO handle parlist, add to func's locals
-	let parlist = selectNode(node, ast.Parlist);
-	let names = parlist && Array.from(this.identIndices(parlist));
-	let dotdotdot = parlist && this.hasLiteral(parlist, lex._dotdotdot);
-	var subasm = new Assembler(this.lx, ismeth + (names ? names.length : 0), !!dotdotdot, this);
+	let names = Array.from(this.identIndices(node));
+	let dotdotdot = this.hasLiteral(node, lex._dotdotdot);
+	var subasm = new Assembler(this.lx, ismeth + names.length, !!dotdotdot, this);
 	subasm.pushScope();
 	if (ismeth) {
 		subasm.nameScope(1, -2); // self
 	}
-	if (names) {
-		for (let name of names) {
-			subasm.nameScope(name.name, name.li);
-		}
+	for (let name of names) {
+		subasm.nameScope(name.name, name.li);
 	}
 	subasm.scopeBlock(selectNode(node, ast.Block), true);
 	subasm.popScope();

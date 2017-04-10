@@ -259,18 +259,18 @@ function _run(vm, stack) {
 				return;
 			}
 			case opc.RETURN_VARG: {
-				Array.prototype.push.apply(stack, this.dotdotdot);
+				Array.prototype.push.apply(stack, vm.dotdotdot);
 				return;
 			}
 			case opc.APPEND_VARG: {
 				let t = stack[stack.length - 1];
-				Array.prototype.push.apply(t.array, this.dotdotdot);
+				Array.prototype.push.apply(t.array, vm.dotdotdot);
 				break;
 			}
 			case opc.LOAD_VARG: {
 				for (let i=0; i<arg; i++) {
-					if (i < this.dotdotdot.length) {
-						stack.push(this.dotdotdot[i]);
+					if (i < vm.dotdotdot.length) {
+						stack.push(vm.dotdotdot[i]);
 					} else {
 						stack.push(null);
 					}
