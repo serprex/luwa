@@ -16,12 +16,7 @@ module.exports = function () {
 	var debug = new Table();
 	env.set("debug", debug);
 
-	var string = new Table();
 	env.set("string", string);
-	string.set("char", utf8_char);
-	string.set("len", string_len);
-	string.set("lower", string_lower);
-	string.set("upper", string_upper);
 
 	var table = new Table();
 	env.set("table", table);
@@ -63,9 +58,7 @@ module.exports = function () {
 	var packge = new Table();
 	env.set("package", packge);
 
-	var utf8 = new Table();
 	env.set("utf8", utf8);
-	utf8.set("char", utf8_char);
 
 	env.set("assert", assert);
 	env.set("error", error);
@@ -86,11 +79,11 @@ module.exports = function () {
 const obj = require("./obj"),
 	Table = require("./table"),
 	Thread = require("./thread"),
-	runbc = require("./runbc");
+	runbc = require("./runbc"),
+	string = require("./string"),
+	utf8 = require("./utf8"),
+	util = require("./util");
 
-function readarg(stack, base, i) {
-	return base + i < stack.length ? stack[base+i] : null;
-}
 
 function assert(vm, stack, base) {
 	if (cond) throw val;
@@ -124,7 +117,7 @@ function inext(vm, stack, base) {
 }
 
 function next(vm, stack, base) {
-	let t = readarg(stack, base, 1), key = readarg(stack, base, 2);
+	let t = util.readarg(stack, base+1), key = util.readarg(stack, base+2);
 	if (!(t instanceof Table)) {
 		throw "next #1: expected table";
 	}
@@ -155,7 +148,7 @@ function next(vm, stack, base) {
 }
 
 function tonumber(vm, stack, base) {
-	let e = readarg(stack, base, 1), base = readarg(stack, base, 2);
+	let e = util.readarg(stack, base+1), base = util.readarg(stack, base+2);
 	if (base === null) {
 		if (typeof e == "number") {
 			stack[base] = e;
@@ -182,7 +175,7 @@ function tonumber(vm, stack, base) {
 }
 
 function tostring(vm, stack, base) {
-	let v = readarg(stack, base, 1);
+	let v = util.readarg(stack, base+1);
 	let __tostring = obj.metaget(v, "__tostring");
 	stack.length = base;
 	if (__tostring) {
@@ -235,24 +228,24 @@ function print(vm, stack, base) {
 }
 
 function select(vm, stack, base) {
-	let i = readarg(stack, base, 1);
+	let i = util.readarg(stack, base+1);
 	if (i === '#') {
 		stack[base] = stack.length - base - 1;
 	} else {
 		if (typeof i != "number") throw "select #1: expected number";
-		stack[base] = readarg(stack, base, i+1);
+		stack[base] = util.readarg(stack, base+i+1);
 	}
 	stack.length = base + 1;
 }
 
 function getmetatable(vm, stack, base) {
-	let arg = readarg(stack, base, 1);
+	let arg = util.readarg(stack, base+1);
 	stack.length = base + 1;
 	stack[base] = obj.getmetatable(arg);
 }
 
 function setmetatable(vm, stack, base) {
-	let arg2 = readarg(stack, base, 2);
+	let arg2 = util.readarg(stack, base+2);
 	stack.length = base + 1;
 	obj.setmetatable(stack[base], arg2);
 }
@@ -270,40 +263,19 @@ function os_clock(vm, stack, base) {
 }
 
 function os_difftime(vm, stack, base) {
-	stack[base] = readarg(stack, base, 1) - readarg(stack, base, 2);
-	stack.length = base + 1;
-}
-
-function string_len(vm, stack, base) {
-	let s = readarg(stack, base, 1);
-	if (typeof s != "string") throw "string.lower #1: expected string";
-	stack[base] = s.length;
-	stack.length = base + 1;
-}
-
-function string_lower(vm, stack, base) {
-	let s = readarg(stack, base, 1);
-	if (typeof s != "string") throw "string.lower #1: expected string";
-	stack[base] = s.toLowerCase();
-	stack.length = base + 1;
-}
-
-function string_upper(vm, stack, base) {
-	let s = readarg(stack, base, 1);
-	if (typeof s != "string") throw "string.upper #1: expected string";
-	stack[base] = s.toUpperCase();
+	stack[base] = util.readarg(stack, base+1) - util.readarg(stack, base+2);
 	stack.length = base + 1;
 }
 
 function table_concat(vm, stack, base) {
-	let t = readarg(stack, base, 1);
+	let t = util.readarg(stack, base+1);
 	if (!(t instanceof Table)) throw "table.concat #1: expected table";
 	if (!t.array.length) return '';
-	let sep = readarg(stack, base, 2);
+	let sep = util.readarg(stack, base+2);
 	if (sep === null) sep = '';
-	let i = readarg(stack, base, 3);
+	let i = util.readarg(stack, base+3);
 	if (i === null) i = 1;
-	let j = readarg(stack, base, 4);
+	let j = util.readarg(stack, base+4);
 	if (j === null) j = t.array.length - 1;
 	if (i > j) return '';
 	let ret = '';
@@ -325,18 +297,18 @@ function table_pack(vm, stack, base) {
 }
 
 function table_unpack(vm, stack, base) {
-	let t = readarg(stack, base, 1);
+	let t = util.readarg(stack, base+1);
 	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
-	let i = readarg(stack, base, 2) || 1;
-	let j = readarg(stack, base, 3) || t.array.length - 1;
+	let i = util.readargor(stack, base+2, 1);
+	let j = util.readargor(stack, base+3, t.array.length - 1);
 	stack.length = base;
 	while (i<=j) stack.push(t.array[i++]);
 }
 
 function table_remove(vm, stack, base) {
-	let t = readarg(stack, base, 1);
+	let t = util.readarg(stack, base+1);
 	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
-	let i = readarg(stack, base, 2);
+	let i = util.readarg(stack, base+2);
 	if (i === null) {
 		t.array.pop();
 		stack.length = base;
@@ -394,8 +366,8 @@ function math_floor(vm, stack, base) {
 }
 
 function math_log(vm, stack, base) {
-	let n = readarg(stack, base, 1);
-	let b = readarg(stack, base, 2);
+	let n = util.readarg(stack, base+1);
+	let b = util.readarg(stack, base+2);
 	stack[base] = b === null ? Math.log(n) : Math.log(n, b);
 	stack.length = base + 1;
 }
@@ -444,7 +416,7 @@ function math_ult(vm, stack, base) {
 }
 
 function coroutine_create(vm, stack, base) {
-	var subvm = readarg(stack, base, 1);
+	var subvm = util.readarg(stack, base+1);
 	var substack = stack.slice(base+1);
 	subvm.readarg(substack, 0);
 	stack[base] = new Thread(subvm, substack);
@@ -452,7 +424,7 @@ function coroutine_create(vm, stack, base) {
 }
 
 function coroutine_resume(vm, stack, base) {
-	var thread = readarg(stack, base, 1);
+	var thread = util.readarg(stack, base+1);
 	if (!(thread instanceof Thread)) throw "coroutine.resume #1: expected thread"
 	for (let i=base+2; i<stack.length; i++) {
 		thread.stack.push(stack[i]);
@@ -462,15 +434,4 @@ function coroutine_resume(vm, stack, base) {
 
 function coroutine_yield(vm, stack, base) {
 	// TODO how do we return to resume?
-}
-
-function utf8_char(vm, stack, base) {
-	let ret = "";
-	for (var i = base+1; i<stack.length; i++) {
-		// TODO reject invalid character codes
-		if (typeof stack[i] != "number") throw "utf8.char: expected numbers";
-		ret += String.fromCharCode(stack[i]);
-	}
-	stack[base] = ret;
-	stack.length = base + 1;
 }

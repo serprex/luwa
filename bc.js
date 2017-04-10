@@ -649,7 +649,7 @@ Assembler.prototype.genStat = function(node) {
 			else this.pushGoto(GOTO, scope);
 			break;
 		}
-		case 5: { // TODO transform into jump offset
+		case 5: {
 			let name = this.filterMask(node, lex._ident);
 			this.pushGoto(GOTO, this.namedlabels[name]);
 			break;
@@ -903,7 +903,6 @@ Assembler.prototype.scopeVar = function(node) {
 
 Assembler.prototype.scopeFuncbody = function(node, ismeth = false) {
 	this.gensert(node, ast.Funcbody);
-	// TODO handle parlist, add to func's locals
 	let names = Array.from(this.identIndices(node));
 	let dotdotdot = this.hasLiteral(node, lex._dotdotdot);
 	var subasm = new Assembler(this.lx, ismeth + names.length, !!dotdotdot, this);

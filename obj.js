@@ -1,11 +1,20 @@
-const metas = new WeakMap();
+const metas = new WeakMap(),
+	Table = require("./table");
 
-exports.metaget = (x, prop) => {
-	let t = metas.get(x);
+
+const stringMetatable = new Table();
+stringMetatable.set("__index", require("./string"));
+
+exports.metaget = metaget;
+function metaget(x, prop) {
+	let t = getmetatable(x);
 	return t && (t.get(prop) || null);
 }
 
-exports.getmetatable = x => metas.get(x) || null;
+function getmetatable(x) {
+	return typeof x == "string" ? stringMetatable : metas.get(x) || null;
+}
+exports.getmetatable = getmetatable;
 
 exports.setmetatable = (x, y) => {
 	if (x && typeof x === "object" && typeof y === "object") {
@@ -14,6 +23,15 @@ exports.setmetatable = (x, y) => {
 	}
 }
 
+exports.index = function index(x, key) {
+	let v = x instanceof Table ? x.get(key) : null;
+	if (v === null) {
+		let __index = metaget(x, "__index");
+		if (__index) return index(__index, key);
+	}
+	return v;
+}
+
 exports.add = (x, y) => {
-	
-};
+
+}

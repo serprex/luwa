@@ -1,6 +1,7 @@
 "use strict";
 const opc = require("./bc"),
 	env = require("./env"),
+	obj = require("./obj"),
 	Table = require("./table");
 
 function Vm(stack, func) {
@@ -166,7 +167,11 @@ function _run(vm, stack) {
 			}
 			case opc.UNARY_HASH: {
 				let a = stack.pop();
-				stack.push(a.getlength());
+				if (typeof a == 'string') {
+					stack.push(a.length);
+				} else {
+					stack.push(a.getlength());
+				}
 				break;
 			}
 			case opc.UNARY_BNOT: {
@@ -295,7 +300,7 @@ function _run(vm, stack) {
 			}
 			case opc.LOAD_METH: {
 				let a = stack.pop();
-				stack.push(a.get(lx.ssr[arg]), a);
+				stack.push(obj.index(a, lx.ssr[arg]), a);
 				break;
 			}
 			case opc.JIF_OR_POP: {
