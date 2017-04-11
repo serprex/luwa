@@ -21,8 +21,10 @@ module.exports = function () {
 	var table = new Table();
 	env.set("table", table);
 	table.set("concat", table_concat);
+	table.set("insert", table_insert);
 	table.set("pack", table_pack);
 	table.set("remove", table_remove);
+	table.set("sort", table_sort);
 	table.set("unpack", table_unpack);
 
 	var math = new Table();
@@ -34,6 +36,7 @@ module.exports = function () {
 	math.set("abs", math_abs);
 	math.set("acos", math_acos);
 	math.set("asin", math_asin);
+	math.set("atan", math_atan);
 	math.set("ceil", math_ceil);
 	math.set("cos", math_cos);
 	math.set("deg", math_deg);
@@ -41,6 +44,7 @@ module.exports = function () {
 	math.set("floor", math_floor);
 	math.set("log", math_log);
 	math.set("log10", math_log10);
+	math.set("modf", math_modf);
 	math.set("rad", math_rad);
 	math.set("sin", math_sin);
 	math.set("sqrt", math_sqrt);
@@ -148,8 +152,8 @@ function next(vm, stack, base) {
 }
 
 function tonumber(vm, stack, base) {
-	let e = util.readarg(stack, base+1), base = util.readarg(stack, base+2);
-	if (base === null) {
+	let e = util.readarg(stack, base+1), b = util.readarg(stack, base+2);
+	if (b === null) {
 		if (typeof e == "number") {
 			stack[base] = e;
 		} else if (typeof e == "string") {
@@ -160,11 +164,11 @@ function tonumber(vm, stack, base) {
 		} else {
 			throw "tonumber #1: expected number or string";
 		}
-	} else if (typeof base == "number") {
-		if (base < 2 || base > 36) {
+	} else if (typeof b == "number") {
+		if (b < 2 || b > 36) {
 			stack[base] = null;
 		} else if(typeof e == "string") {
-			stack[base] = parseInt(e, base);
+			stack[base] = parseInt(e, b);
 		} else {
 			throw "tonumber #1: expected string";
 		}
@@ -288,6 +292,23 @@ function table_concat(vm, stack, base) {
 	stack.length = base + 1;
 }
 
+function table_insert(vm, stack, base) {
+	if (base == stack.length - 2) {
+		let t = stack[base+1];
+		if (!(t instanceof Table)) throw "table.insert #1: expected table";
+		t.array.push(stack[base+2]);
+	} else if (base == stack.length - 3) {
+		let t = stack[base+1];
+		if (!(t instanceof Table)) throw "table.insert #1: expected table";
+		let idx = stack[base+2];
+		if (typeof idx != "number") throw "table.insert #2: expected number";
+		t.array.splice(stack[base+2], 0, stack[base+3]);
+	} else {
+		throw "table.insert: wrong number of arguments";
+	}
+	stack.length = base;
+}
+
 function table_pack(vm, stack, base) {
 	let t = new Table();
 	t.array = stack.slice(base + 1);
@@ -325,6 +346,16 @@ function table_remove(vm, stack, base) {
 	}
 }
 
+function table_sort(vm, stack, base) {
+	let t = readarg(stack, base+1), comp = readarg(stack, base+2);
+	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
+	if (comp === null) {
+		t.array.sort();
+	} else {
+		throw "TODO";
+	}
+}
+
 function math_abs(vm, stack, base) {
 	stack[base] = Math.abs(stack[base+1]);
 	stack.length = base + 1;
@@ -337,6 +368,12 @@ function math_acos(vm, stack, base) {
 
 function math_asin(vm, stack, base) {
 	stack[base] = Math.asin(stack[base+1]);
+	stack.length = base + 1;
+}
+
+function math_atan(vm, stack, base) {
+	let x = util.readarg(stack, base+1), y = util.readarg(stack, base+2);
+	stack[base] = y === null ? Math.atan(x) : Math.atan2(x, y);
 	stack.length = base + 1;
 }
 
@@ -375,6 +412,12 @@ function math_log(vm, stack, base) {
 function math_log10(vm, stack, base) {
 	stack[base] = Math.log10(stack[base+1]);
 	stack.length = base + 1;
+}
+
+function math_modf(vm, stack, base) {
+	stack[base+1] = stack[base]%1;
+	stack[base] >>= 0;
+	stack.length = base + 2;
 }
 
 function math_rad(vm, stack, base) {

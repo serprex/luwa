@@ -1,7 +1,8 @@
 "use strict";
-const Table = require("./table");
+const Table = require("./table"), util = require("./util");
 var utf8 = module.exports =  new Table();
 utf8.set("char", utf8_char);
+utf8.set("charpattern", "[\0-\x7f\xc2-\xf4][\x80-\xbf]*");
 
 function utf8_char(vm, stack, base) {
 	let ret = "";

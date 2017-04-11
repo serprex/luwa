@@ -31,12 +31,13 @@ const NOP = exports.NOP = 0,
 	MAKE_TABLE = exports.MAKE_TABLE = 27,
 	APPEND = exports.APPEND = 28,
 	TABLE_SET = exports.TABLE_SET = 30,
-	POP = exports.POP = 32,
 	LOAD_INDEX = exports.LOAD_INDEX = 35,
 	STORE_INDEX = exports.STORE_INDEX = 36,
 	RETURN = exports.RETURN = 37,
 	RETURN_VARG = exports.RETURN_VARG = 38,
 	APPEND_VARG = exports.APPEND_VARG = 39,
+	RETURN_VARG_CALL = exports.RETURN_VARG_CALL = 40,
+	APPEND_VARG_CALL = exports.APPEND_VARG_CALL = 41,
 	LOAD_NUM = exports.LOAD_NUM = 64,
 	LOAD_STR = exports.LOAD_STR = 65,
 	LOAD_DEREF = exports.LOAD_DEREF = 66,
@@ -45,21 +46,20 @@ const NOP = exports.NOP = 0,
 	LOAD_LOCAL = exports.LOAD_LOCAL = 69,
 	STORE_LOCAL = exports.STORE_LOCAL = 70,
 	LOAD_VARG = exports.LOAD_VARG = 71,
+	POP = exports.POP = 72,
 	JIF = exports.JIF = 73,
 	JIFNOT = exports.JIFNOT = 74,
 	LOAD_METH = exports.LOAD_METH = 75,
 	JIF_OR_POP = exports.JIF_OR_POP = 77,
 	JIFNOT_OR_POP = exports.JIFNOT_OR_POP = 78,
-	RETURN_VARG_CALL = exports.RETURN_VARG_CALL = 79,
-	APPEND_VARG_CALL = exports.APPEND_VARG_CALL = 80,
 	FOR2 = exports.FOR2 = 81,
 	FOR3 = exports.FOR3 = 82,
 	LOAD_FUNC = exports.LOAD_FUNC = 83,
-	FOR_NEXT = exports.FOR_NEXT = 130,
-	RETURN_CALL = exports.RETURN_CALL = 131,
-	APPEND_CALL = exports.APPEND_CALL = 132,
-	CALL = exports.CALL = 192,
-	VARG_CALL = exports.VARG_CALL = 193;
+	RETURN_CALL = exports.RETURN_CALL = 84,
+	APPEND_CALL = exports.APPEND_CALL = 85,
+	FOR_NEXT = exports.FOR_NEXT = 128,
+	CALL = exports.CALL = 129,
+	VARG_CALL = exports.VARG_CALL = 130;
 
 function *selectNodes(node, type) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
@@ -101,6 +101,7 @@ function Assembler(lx, pcount, isdotdotdot, uplink) {
 	this.namedlabels = [];
 	this.labelpos = [];
 	this.gotos = [];
+	this.fordepth = 0;
 }
 
 Assembler.prototype.hasLiteral = function(node, lit) {
@@ -151,17 +152,22 @@ Assembler.prototype.getLabel = function() {
 }
 
 Assembler.prototype.setLabel = function(lab) {
-	this.labelpos[lab] = this.bc.length;
+	this.labelpos[lab] = { pos: this.bc.length, fordepth: this.fordepth };
 }
 
-Assembler.prototype.pushGoto = function(op, lab) {
+Assembler.prototype.pushGoto = function(op, lab, stackcheck = false) {
+	if (stackcheck && this.fordepth) this.push(POP, 0);
 	this.push(op, 0);
-	return this.gotos.push(this.bc.length - 1, lab);
+	return this.gotos.push(this.bc.length - 1, lab, stackcheck ? this.fordepth : 0);
 }
 
 Assembler.prototype.genGoto = function(lab) {
-	for (var i=0; i<this.gotos.length; i+=2) {
-		this.bc[this.gotos[i]] = this.labelpos[this.gotos[i+1]];
+	for (var i=0; i<this.gotos.length; i+=3) {
+		let lpos = this.labelpos[this.gotos[i+1]];
+		this.bc[this.gotos[i]] = lpos.pos;
+		if (this.gotos[i+2]) {
+			this.bc[this.gotos[i]-2] = this.gotos[i+2] - lpos.fordepth;
+		}
 	}
 }
 
@@ -171,7 +177,7 @@ Assembler.prototype.pushLoop = function(lab) {
 }
 
 Assembler.prototype.popLoop = function() {
-	this.loops.pop();
+	this.setLabel(this.loops.pop());
 	return this.popLocal();
 }
 
@@ -483,13 +489,14 @@ const _precedence = [7, 7, 8, 8, 8, 9, 8, 5, 4, 3, 6, 6, 2, 1, 1, 1, 1, 1, 1],
 Assembler.prototype.handleRet = function(made, vals, endvals, ret, calls) {
 	if (~made) {
 		if (~vals) {
-			while (made > vals) {
-				this.push(POP);
-				made--;
-			}
-			while (made < vals) {
-				this.push(LOAD_NIL);
-				made++;
+			if (made > vals) {
+				this.push(POP, made - vals);
+				made = vals;
+			} else {
+				while (made < vals) {
+					this.push(LOAD_NIL);
+					made++;
+				}
 			}
 		}
 		if (calls) calls[calls.length - 1] += made;
@@ -646,12 +653,12 @@ Assembler.prototype.genStat = function(node) {
 		case 4: {
 			let scope = this.getLoop();
 			if (!scope) console.log("Break out of scope");
-			else this.pushGoto(GOTO, scope);
+			else this.pushGoto(GOTO, scope, true);
 			break;
 		}
 		case 5: {
 			let name = this.filterMask(node, lex._ident);
-			this.pushGoto(GOTO, this.namedlabels[name]);
+			this.pushGoto(GOTO, this.namedlabels[name], true);
 			break;
 		}
 		case 6:
@@ -665,7 +672,6 @@ Assembler.prototype.genStat = function(node) {
 			this.pushGoto(JIFNOT, lab1);
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.pushGoto(GOTO, lab0);
-			this.setLabel(lab1);
 			this.popLoop();
 			break;
 		}
@@ -676,7 +682,6 @@ Assembler.prototype.genStat = function(node) {
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.genExpOr(selectNode(node, ast.ExpOr), 1);
 			this.pushGoto(JIFNOT, lab0);
-			this.setLabel(lab1);
 			this.popLoop();
 			break;
 		}
@@ -714,11 +719,12 @@ Assembler.prototype.genStat = function(node) {
 				this.setLabel(lab0);
 				this.pushGoto(FOR2, endlab);
 			}
+			this.fordepth += exps.length;
 			let name = this.identIndex(node);
 			this.genStoreIdent(this.scopes[name.li]);
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.pushGoto(GOTO, lab0);
-			this.setLabel(endlab);
+			this.fordepth -= exps.length;
 			this.popLoop();
 			break;
 		}
@@ -732,13 +738,14 @@ Assembler.prototype.genStat = function(node) {
 			let names = Array.from(this.identIndices(node));
 			this.setLabel(lab0);
 			this.pushGoto(FOR_NEXT, endlab);
+			this.fordepth += 3;
 			this.push(names.length);
 			for (let i = names.length - 1; i >= 0; i--) {
 				this.genStoreIdent(this.scopes[names[i].li]);
 			}
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.pushGoto(GOTO, lab0);
-			this.setLabel(endlab);
+			this.fordepth -= 3;
 			this.popLoop();
 			break;
 		}
