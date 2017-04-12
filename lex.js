@@ -60,7 +60,7 @@ const _ident = exports._ident = 0x8000000;
 const _string = exports._string = 0x4000000;
 const _number = exports._number = 0x2000000;
 
-const digit = /^\d$/;
+const digit = /^\d$/, xdigit = /^[\da-fA-F]$/;
 const alphascore = /^[a-zA-Z_]$/;
 const alphanumscore = /^\w$/;
 function Lex(src) {
@@ -190,19 +190,22 @@ function Lex(src) {
 						case '"':s += '"';break;
 						case "'":s += "'";break;
 						case "x": {
-									  let c0 = src[i+1]||"x", c1 = src[i+2]||"x";
-									  s += String.fromCharCode(parseInt(c0 + c1, 16));
-									  i += /[0-9a-fA-F]/.test(c0) + /[0-9a-fA-F]/.test(c1);
-									  break;
-								  }
-						case "0":case "1":case "2":case "3":case "4":case "5":case "6":case "7": {
-								 let c1 = src[i+1]||"x", c2 = src[i+2]||"x";
-								 s += String.fromCharCode(parseInt(src[i]+c1+c2, 8));
-								 i += /[0-7]/.test(c1) + /[0-7]/.test(c2);
-								 break;
-							 }
-						default:
-								 return console.log("Invalid sequence");
+							let c0 = src[i+1]||"x", c1 = src[i+2]||"x";
+							let sval = parseInt(c0+c1, 16);
+							if (sval > 255) throw "Hexadecimal escape too large: " + sval;
+							s += String.fromCharCode(sval);
+							i += xdigit.test(c0) + xdigit.test(c1);
+							break;
+						}
+						case "0":case "1":case "2":case "3":case "4":case "5":case "6":case "7":case "8":case "9": {
+							let c1 = src[i+1]||"x", c2 = src[i+2]||"x";
+							let sval = parseInt(src[i]+c1+c2, 10);
+							if (sval > 255) throw "Decimal escape too large: " + sval;
+							s += String.fromCharCode(sval);
+							i += digit.test(c1) + digit.test(c2);
+							break;
+						}
+						default:return console.log("Invalid sequence");
 					}
 				} else if (c == '\n') {
 					return console.log('newline in string');
