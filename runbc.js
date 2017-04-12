@@ -28,16 +28,16 @@ Vm.prototype.readarg = function(stack, base) {
 	stack.length = base;
 }
 
-function callObj(vm, subvm, stack, base) {
+function*callObj(subvm, stack, base) {
 	if (typeof subvm === 'function') {
-		subvm(vm, stack, base);
+		yield*subvm(stack, base);
 	} else {
 		subvm.readarg(stack, base);
-		_run(subvm, stack);
+		yield*_run(subvm, stack);
 	}
 }
 
-function _run(vm, stack) {
+function*_run(vm, stack) {
 	var bc = vm.func.bc, lx = vm.func.lx;
 	while (true){
 		let op = bc[vm.pc], arg, arg2, arg3;
@@ -330,12 +330,12 @@ function _run(vm, stack) {
 				vm.pc += arg;
 				for (var i=1; i<arg; i++) {
 					endstl -=  bc[vm.pc-i] + 1;
-					let subvm = stack[endstl];
-					callObj(vm, subvm, stack, endstl);
+					let subvm = stack[endstl], sret;
+					yield*callObj(subvm, stack, endstl);
 				}
 				endstl -=  bc[vm.pc-arg] + 1;
 				let subvm = stack[endstl];
-				callObj(vm, subvm, stack, endstl);
+				yield*callObj(subvm, stack, endstl);
 				let table = stack[endstl - 1];
 				for (let i=endstl; i<stack.length; i++) {
 					table.add(stack[i]);
@@ -352,7 +352,7 @@ function _run(vm, stack) {
 					if (!i) {
 						Array.prototype.push.apply(stack, vm.dotdotdot);
 					}
-					callObj(vm, subvm, stack, endstl);
+					yield*callObj(subvm, stack, endstl);
 					endstl -=  bc[vm.pc-i-1] + 1;
 				}
 				endstl -=  bc[vm.pc-arg] + 1;
@@ -360,7 +360,7 @@ function _run(vm, stack) {
 				if (arg == 1) {
 					Array.prototype.push.apply(stack, vm.dotdotdot);
 				}
-				callObj(vm, subvm, stack, endstl);
+				yield*callObj(subvm, stack, endstl);
 				let table = stack[endstl - 1];
 				for (let i=endstl; i<stack.length; i++) {
 					table.add(stack[i]);
@@ -374,12 +374,12 @@ function _run(vm, stack) {
 				for (var i=1; i<arg; i++) {
 					endstl -=  bc[vm.pc-i] + 1;
 					let subvm = stack[endstl];
-					callObj(vm, subvm, stack, endstl);
+					yield*callObj(subvm, stack, endstl);
 				}
 				endstl -=  bc[vm.pc-arg] + 1;
 				let subvm = stack[endstl];
 				if (typeof subvm === 'function') {
-					return subvm(vm, stack, endstl);
+					return yield*subvm(stack, endstl);
 				} else {
 					vm = subvm;
 					vm.readarg(stack, endstl);
@@ -397,7 +397,7 @@ function _run(vm, stack) {
 					if (!i) {
 						Array.prototype.push.apply(stack, vm.dotdotdot);
 					}
-					callObj(vm, subvm, stack, endstl);
+					yield*callObj(subvm, stack, endstl);
 				}
 				endstl -=  bc[vm.pc-arg] + 1;
 				let subvm = stack[endstl];
@@ -406,7 +406,7 @@ function _run(vm, stack) {
 					arg = false;
 				}
 				if (typeof subvm === 'function') {
-					return subvm(vm, stack, endstl);
+					return yield*subvm(stack, endstl);
 				} else {
 					vm = subvm;
 					vm.readarg(stack, endstl);
@@ -421,11 +421,11 @@ function _run(vm, stack) {
 				for (var i=1; i<arg2; i++) {
 					endstl -=  bc[vm.pc-i] + 1;
 					let subvm = stack[endstl];
-					callObj(vm, subvm, stack, endstl);
+					yield*callObj(subvm, stack, endstl);
 				}
 				endstl -=  bc[vm.pc-arg2] + 1;
 				let subvm = stack[endstl];
-				callObj(vm, subvm, stack, endstl);
+				yield*callObj(subvm, stack, endstl);
 				while (stack.length < endstl + arg) {
 					stack.push(null);
 				}
@@ -441,14 +441,14 @@ function _run(vm, stack) {
 					if (!i) {
 						Array.prototype.push.apply(stack, vm.dotdotdot);
 					}
-					callObj(vm, subvm, stack, endstl);
+					yield*callObj(subvm, stack, endstl);
 				}
 				endstl -=  bc[vm.pc-arg2] + 1;
 				let subvm = stack[endstl];
 				if (arg == 1) {
-					Array.prototype.push.apply(subvm, vm.dotdotdot);
+					subvm.stack.push.apply(...vm.dotdotdot);
 				}
-				callObj(vm, subvm, stack, endstl);
+				yield*callObj(subvm, stack, endstl);
 				while (stack.length < endstl + arg) {
 					stack.push(null);
 				}
@@ -458,12 +458,7 @@ function _run(vm, stack) {
 			case opc.FOR_NEXT: {
 				let endstl = stack.length - 3;
 				let iter = stack[endstl], k = stack[endstl+1], v = stack[endstl+2];
-				if (typeof iter === 'function') {
-					iter(vm, stack, endstl);
-				} else {
-					iter.readarg(stack, endstl);
-					_run(iter, stack);
-				}
+				yield*callObj(iter, stack, endstl);
 				if (endstl == stack.length || stack[endstl] === null) {
 					vm.pc = arg;
 					stack.length = endstl;
@@ -491,7 +486,10 @@ function run(func) {
 	} else {
 		vm.locals[0] = e;
 	}
-	_run(vm, stack);
+	if (!_run(vm, stack).next().done) {
+		// TODO need to hit this sooner for coroutine.isyieldable
+		throw "coroutine.yield: Attempt to yield from outside a coroutine";
+	}
 	console.log("vm", vm, stack);
 	return stack;
 }

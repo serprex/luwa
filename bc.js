@@ -1037,7 +1037,7 @@ Assembler.prototype.scopeStat = function(node) {
 		}
 		case 13: {
 			let name = this.identIndex(node);
-			this.nameScope(names[i].name, names[i].li);
+			this.nameScope(name.name, name.li);
 			this.scopeFuncbody(selectNode(node, ast.Funcbody));
 			break;
 		}

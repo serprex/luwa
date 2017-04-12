@@ -32,6 +32,35 @@ exports.index = function index(x, key) {
 	return v;
 }
 
-exports.add = (x, y) => {
+exports.len = function len(x) {
+	if (typeof x == "string") {
+		return x.length;
+	} else if (x instanceof Table) {
+		let __len = metaget(x, "__len");
+		return __len(x);
+	} else throw "# expected string or table";
+}
 
+exports.numcoerce = x => {
+	return typeof x == "number" ? x :
+		typeof x == "string" ? +x : null;
+}
+
+exports.add = (x, y) => {
+	if (typeof x == "number" && typeof y == "number") {
+		return x + y;
+	} else {
+		let x__add = metaget(x, "__add");
+		if (x__add !== null) {
+			return x__add(x, y);
+		}
+		let y__add = metaget(y, "__add");
+		if (y__add !== null) {
+			return y__add(x, y);
+		}
+		throw "+: Incompatible types";
+	}
+}
+
+exports.sub = (x, y) => {
 }
