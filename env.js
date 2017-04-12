@@ -195,7 +195,7 @@ function*tostring(stack, base) {
 	stack.length = base;
 	if (__tostring) {
 		stack.push(__tostring, v);
-		runbc.callObj(__tostring, stack, base);
+		yield*runbc.callObj(__tostring, stack, base);
 		if (stack.length == base) return stack.push(null);
 	} else {
 		stack[base] = v === null ? "nil" : v + "";
@@ -233,7 +233,7 @@ function*pcall(stack, base) {
 }
 
 function*print(stack, base) {
-	console.log(stack.slice(base+1));
+	console.log(...stack.slice(base+1));
 	stack.length = base;
 }
 
@@ -288,7 +288,7 @@ function*setmetatable(stack, base) {
 
 function*io_write(stack, base) {
 	for (var i=base+1; i<stack.length; i++) {
-		console.log(stack[i]);
+		console.log(stack[i] + "");
 	}
 	stack.length = base;
 }
