@@ -4,7 +4,7 @@ const opc = require("./bc"),
 	obj = require("./obj"),
 	Table = require("./table");
 
-function Vm(stack, func) {
+function Vm(func) {
 	this.pc = 0;
 	this.func = func;
 	this.locals = [];
@@ -205,7 +205,7 @@ function*_run(vm, stack) {
 			}
 			case opc.LOAD_FUNC: {
 				let f = vm.func.fus[arg];
-				let subvm = new Vm(null, f);
+				let subvm = new Vm(f);
 				for (let i=0; i<f.fcount; i++) {
 					subvm.frees[i] = { value: null };
 				}
@@ -475,8 +475,8 @@ function*_run(vm, stack) {
 	}
 }
 
-function run(func) {
-	const stack = [], e = env(), vm = new Vm([], func);
+function init(func, stack, e = env()) {
+	const vm = new Vm(func);
 	for (let i=0; i<func.fcount; i++) {
 		vm.frees[i] = { value: null };
 	}
@@ -486,11 +486,16 @@ function run(func) {
 	} else {
 		vm.locals[0] = e;
 	}
+	return vm;
+}
+
+function run(func, e = env()) {
+	const stack = [], vm = init(func, stack, e);
 	if (!_run(vm, stack).next().done) {
 		// TODO need to hit this sooner for coroutine.isyieldable
 		throw "coroutine.yield: Attempt to yield from outside a coroutine";
 	}
-	console.log("vm", vm, stack);
+	//console.log("vm", vm, stack);
 	return stack;
 }
 

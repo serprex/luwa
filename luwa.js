@@ -39,6 +39,13 @@ function pushArray(sink, data) {
 	return Array.prototype.push.apply(sink, data);
 }
 
+exports.eval = function(line, e = require("./env")()) {
+	let l = new lex.Lex(line);
+	let a = ast.parse(l);
+	let b = bc.assemble(l, a);
+	return runbc.run(b, e);
+}
+
 exports.runSource = function(source, imp){
 	var l, a, b;
 	console.time("lua");
