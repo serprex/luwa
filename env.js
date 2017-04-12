@@ -57,7 +57,9 @@ module.exports = function () {
 	env.set("coroutine", coroutine);
 	coroutine.set("create", coroutine_create);
 	coroutine.set("resume", coroutine_resume);
+	coroutine.set("status", coroutine_status);
 	coroutine.set("yield", coroutine_yield);
+	coroutine.set("wrap", coroutine_wrap);
 
 	var packge = new Table();
 	env.set("package", packge);
@@ -93,11 +95,17 @@ const obj = require("./obj"),
 
 
 function*assert(stack, base) {
-	if (cond) throw val;
+	if (base + 1 == stack.length) throw "assert #1: expected value";
+	let cond = util.readarg(stack, base+1)
+	if (cond !== null && cond !== false) {
+		throw base+2 >= stack.length ? "Assertion failed!" : stack[base+2];
+	}
+	stack[base] = cond;
+	stack.length = base + 1;
 }
 
 function*error(stack, base) {
-	throw val;
+	throw util.readarg(stack, base+1);
 }
 
 function*pairs(stack, base) {
@@ -488,13 +496,35 @@ function*coroutine_create(stack, base) {
 }
 
 function*coroutine_resume(stack, base) {
-	var thread = util.readarg(stack, base+1);
-	if (!(thread instanceof Thread)) throw "coroutine.resume #1: expected thread"
-	yield*thread.resume(stack, base);
-	// run vm with stack
+	let thread = util.readarg(stack, base+1);
+	if (!(thread instanceof Thread)) throw "coroutine.resume #1: expected thread";
+	try {
+		yield*thread.resume(stack, base, base+2);
+		stack.splice(base, 0, true);
+	} catch (e) {
+		stack.length = base + 2;
+		stack[base] = false;
+		stack[base+1] = e;
+	}
+}
+
+function*coroutine_status(stack, base) {
+	let thread = util.readarg(stack, base+1);
+	if (!(thread instanceof Thread)) throw "coroutine.status #1: expected thread";
+	stack[base] = thread.status;
+	stack.length = base + 1;
 }
 
 function*coroutine_yield(stack, base) {
 	stack.splice(base, 1);
 	yield;
+}
+
+function coroutine_wrap(stack, base) {
+	let thread = util.readarg(stack, base+1);
+	if (!(thread instanceof Thread)) throw "coroutine.status #1: expected thread";
+	stack[base] = function*(stack, base){
+		yield*thread.resume(stack, base, base+1);
+	};
+	stack.length = base + 1;
 }

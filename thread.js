@@ -13,10 +13,10 @@ function Thread(stack, base) {
 		this.vm = runbc._run(vm, this.stack);
 	}
 }
-Thread.prototype.resume = function*(stack, base) {
+Thread.prototype.resume = function*(stack, base, pbase) {
 	let cbase = this.stack.length;
 	if (this.status == "running") {
-		this.stack.push(...stack.splice(base+2));
+		this.stack.push(...stack.splice(pbase));
 	}
 	stack.length = base;
 	let res = this.vm.next();
