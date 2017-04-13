@@ -29,15 +29,12 @@ const NOP = exports.NOP = 0,
 	UNARY_HASH = exports.UNARY_HASH = 25,
 	UNARY_BNOT = exports.UNARY_BNOT = 26,
 	MAKE_TABLE = exports.MAKE_TABLE = 27,
-	APPEND = exports.APPEND = 28,
 	TABLE_SET = exports.TABLE_SET = 30,
 	LOAD_INDEX = exports.LOAD_INDEX = 35,
 	STORE_INDEX = exports.STORE_INDEX = 36,
 	RETURN = exports.RETURN = 37,
 	RETURN_VARG = exports.RETURN_VARG = 38,
-	APPEND_VARG = exports.APPEND_VARG = 39,
 	RETURN_VARG_CALL = exports.RETURN_VARG_CALL = 40,
-	APPEND_VARG_CALL = exports.APPEND_VARG_CALL = 41,
 	LOAD_NUM = exports.LOAD_NUM = 64,
 	LOAD_STR = exports.LOAD_STR = 65,
 	LOAD_DEREF = exports.LOAD_DEREF = 66,
@@ -50,16 +47,19 @@ const NOP = exports.NOP = 0,
 	JIF = exports.JIF = 73,
 	JIFNOT = exports.JIFNOT = 74,
 	LOAD_METH = exports.LOAD_METH = 75,
+	APPEND = exports.APPEND = 76,
 	JIF_OR_POP = exports.JIF_OR_POP = 77,
 	JIFNOT_OR_POP = exports.JIFNOT_OR_POP = 78,
+	APPEND_VARG = exports.APPEND_VARG = 79,
+	APPEND_VARG_CALL = exports.APPEND_VARG_CALL = 80,
 	FOR2 = exports.FOR2 = 81,
 	FOR3 = exports.FOR3 = 82,
 	LOAD_FUNC = exports.LOAD_FUNC = 83,
 	RETURN_CALL = exports.RETURN_CALL = 84,
-	APPEND_CALL = exports.APPEND_CALL = 85,
 	FOR_NEXT = exports.FOR_NEXT = 128,
 	CALL = exports.CALL = 129,
-	VARG_CALL = exports.VARG_CALL = 130;
+	VARG_CALL = exports.VARG_CALL = 130,
+	APPEND_CALL = exports.APPEND_CALL = 131;
 
 function *selectNodes(node, type) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
@@ -310,6 +310,7 @@ Assembler.prototype.genTable = function(node) {
 	this.push(MAKE_TABLE);
 	let fields = Array.from(selectNodes(node, ast.Field));
 	if (fields.length) {
+		let appendix = 1;
 		for (let i=0; i<fields.length; i++) {
 			let field = fields[i];
 			switch (field.type >> 5) {
@@ -326,10 +327,10 @@ Assembler.prototype.genTable = function(node) {
 					break;
 				case 2:
 					if (i == fields.length - 1) {
-						this.genExpOr(selectNode(field, ast.ExpOr), -1, -1, 2);
+						this.genExpOr(selectNode(field, ast.ExpOr), -1, -1, ++appendix);
 					} else {
 						this.genExpOr(selectNode(field, ast.ExpOr), 1);
-						this.push(APPEND);
+						this.push(APPEND, appendix++);
 					}
 					break;
 			}
@@ -447,20 +448,23 @@ Assembler.prototype.genValue = function(node, vals, endvals, ret, calls) {
 			break;
 		case 5:
 			if (!this.isdotdotdot) {
-				console.log("Unexpected ...");
-				return;
+				throw "Unexpected ...";
 			} else if (vals) {
 				if (calls) {
 					if (!ret) {
 						this.push(VARG_CALL, endvals);
+					} else if (ret == 1) {
+						this.push(RETURN_VARG_CALL);
 					} else {
-						this.push(ret == 1 ? RETURN_VARG_CALL : APPEND_VARG_CALL);
+						this.push(APPEND_VARG_CALL, ret - 1);
 					}
 					this.push(calls.length, ...calls);
 				} else if (!ret) {
 					this.push(LOAD_VARG, vals);
+				} else if (ret == 1) {
+					this.push(RETURN_VARG);
 				} else {
-					this.push(ret == 1 ? RETURN_VARG : APPEND_VARG);
+					this.push(APPEND_VARG, ret - 1);
 				}
 			}
 			return;
@@ -503,18 +507,23 @@ Assembler.prototype.handleRet = function(made, vals, endvals, ret, calls) {
 	}
 	if (ret) {
 		if (calls) {
-			this.push(ret == 1 ? RETURN_CALL : APPEND_CALL, calls.length, ...calls);
+			if (ret == 1) {
+				this.push(RETURN_CALL, calls.length, ...calls);
+			} else {
+				this.push(APPEND_CALL, ret - 1, calls.length, ...calls);
+			}
+		} else if (ret == 1) {
+			this.push(RETURN);
 		} else {
-			this.push(ret == 1 ? RETURN : APPEND);
+			this.push(APPEND, ret - 1);
 		}
 	} else if (calls) {
 		this.push(CALL, endvals, calls.length, ...calls)
 	}
 }
 
-Assembler.prototype.genExpOr = function(node, vals, endvals = vals, ret = 0, calls = null) {
+Assembler.prototype.genExpOr = function(node, vals = 1, endvals = vals, ret = 0, calls = null) {
 	this.gensert(node, ast.ExpOr);
-	if (vals === undefined) console.log("genExpOr: vals undefined");
 	let exps = Array.from(selectNodes(node, ast.ExpAnd));
 	if (exps.length == 1) {
 		this.genExpAnd(exps[0], vals, endvals, ret, calls);
@@ -600,7 +609,7 @@ Assembler.prototype.genExp = function(node, vals, endvals, ret, calls) {
 					break;
 				case ast.Exp:
 					if (op.type >> 5) {
-						console.log("shunt error: returned binop exp");
+						throw "shunt error: returned binop exp";
 					} else this.genExp(op, 1, 0);
 					break;
 			}
@@ -652,7 +661,7 @@ Assembler.prototype.genStat = function(node) {
 		}
 		case 4: {
 			let scope = this.getLoop();
-			if (!scope) console.log("Break out of scope");
+			if (!scope) throw "Break out of scope";
 			else this.pushGoto(GOTO, scope, true);
 			break;
 		}
@@ -881,7 +890,7 @@ Assembler.prototype.scopePrefix = function(node) {
 Assembler.prototype.scopeIndex = function(node) {
 	this.gensert(node, ast.Index);
 	if (!(node.type >> 5)) {
-		this.scopeExpOr(node, selectNode(node, ast.ExpOr));
+		this.scopeExpOr(selectNode(node, ast.ExpOr));
 	}
 }
 

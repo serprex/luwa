@@ -122,9 +122,10 @@ function*ipairs(stack, base) {
 
 function*inext(stack, base) {
 	let t = stack[base+1], key = stack[base+2] + 1;
-	if (key < t.array.length) {
+	let v = t.get(key);
+	if (v !== null) {
 		stack[base] = key;
-		stack[base+1] = key in t.array ? t.array[key] : null;
+		stack[base+1] = v;
 		stack.length = base + 2;
 	} else {
 		stack.length = base;
@@ -256,7 +257,7 @@ function*rawlen(stack, base) {
 	if (typeof stack[base] == "string") {
 		stack[base] = stack[base].length;
 	} else if (stack[base] instanceof Table) {
-		stack[base] = stack[base].array.length;
+		stack[base] = stack[base].getlength();
 	} else {
 		throw "rawlen #1: expected string or table"
 	}
@@ -306,19 +307,19 @@ function*os_difftime(stack, base) {
 function*table_concat(stack, base) {
 	let t = util.readarg(stack, base+1);
 	if (!(t instanceof Table)) throw "table.concat #1: expected table";
-	if (!t.array.length) return '';
+	if (t.borders[0] === 0) return '';
 	let sep = util.readarg(stack, base+2);
 	if (sep === null) sep = '';
 	let i = util.readarg(stack, base+3);
 	if (i === null) i = 1;
 	let j = util.readarg(stack, base+4);
-	if (j === null) j = t.array.length - 1;
+	if (j === null) j = t.getlength();
 	if (i > j) return '';
 	let ret = '';
 	while (i <= j) {
-		let val = t.array[i];
+		let val = t.get(i);
 		if (typeof val != "number" && typeof val != "string") throw "table.concat: expected sequence of numbers & strings";
-		ret += t.array[i];
+		ret += val;
 	}
 	stack[base] = ret;
 	stack.length = base + 1;
@@ -328,13 +329,13 @@ function*table_insert(stack, base) {
 	if (base == stack.length - 2) {
 		let t = stack[base+1];
 		if (!(t instanceof Table)) throw "table.insert #1: expected table";
-		t.array.push(stack[base+2]);
+		t.set(t.getlength(), stack[base+2]);
 	} else if (base == stack.length - 3) {
 		let t = stack[base+1];
 		if (!(t instanceof Table)) throw "table.insert #1: expected table";
 		let idx = stack[base+2];
 		if (typeof idx != "number") throw "table.insert #2: expected number";
-		t.array.splice(stack[base+2], 0, stack[base+3]);
+		// TODO
 	} else {
 		throw "table.insert: wrong number of arguments";
 	}
@@ -343,7 +344,9 @@ function*table_insert(stack, base) {
 
 function*table_pack(stack, base) {
 	let t = new Table();
-	t.array = stack.slice(base + 1);
+	for (var i=base+1; i<stack.length; i++) {
+		t.set(i-base, stack[i]);
+	}
 	t.set("n", stack.length - base - 1);
 	stack[base] = t;
 	stack.length = base + 1;
@@ -353,9 +356,9 @@ function*table_unpack(stack, base) {
 	let t = util.readarg(stack, base+1);
 	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
 	let i = util.readargor(stack, base+2, 1);
-	let j = util.readargor(stack, base+3, t.array.length - 1);
+	let j = util.readargor(stack, base+3, t.getlength());
 	stack.length = base;
-	while (i<=j) stack.push(t.array[i++]);
+	while (i<=j) stack.push(t.get(i++));
 }
 
 function*table_remove(stack, base) {
@@ -363,14 +366,14 @@ function*table_remove(stack, base) {
 	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
 	let i = util.readarg(stack, base+2);
 	if (i === null) {
-		t.array.pop();
+		t.set(t.getlength(), null);
 		stack.length = base;
 	} else {
 		if (typeof i != "number") throw "table.unpack #2: expected number";
-		if (t.array.length == 0 && i === 0) {
+		if (t.borders[0] === 0 && i === 0) {
 			stack.length = base;
-		} else if (i > 0 && i < t.array.length) {
-			stack[base] = t.array.splice(i, 1)[0];
+		} else if (i > 0 && i <= t.getlength()) {
+			// TODO
 			stack.length = base + 1;
 		} else {
 			throw "position out of bounds";
@@ -382,7 +385,7 @@ function*table_sort(stack, base) {
 	let t = readarg(stack, base+1), comp = readarg(stack, base+2);
 	if (!(t instanceof Table)) throw "table.unpack #1: expected table";
 	if (comp === null) {
-		t.array.sort();
+		// TODO
 	} else {
 		throw "TODO";
 	}

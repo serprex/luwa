@@ -269,7 +269,9 @@ function*_run(vm, stack) {
 			}
 			case opc.APPEND_VARG: {
 				let t = stack[stack.length - 1];
-				Array.prototype.push.apply(t.array, vm.dotdotdot);
+				for (let i = 0; i < vm.dotdotdot.length; i++) {
+					t.set(arg + i, vm.dotdotdot[i]);
+				}
 				break;
 			}
 			case opc.LOAD_VARG: {
@@ -321,32 +323,32 @@ function*_run(vm, stack) {
 			}
 			case opc.APPEND: {
 				let a = stack.pop(), b = stack.pop();
-				b.add(a);
+				b.set(arg, a);
 				stack.push(b);
 				break;
 			}
 			case opc.APPEND_CALL: {
 				let endstl = stack.length;
-				vm.pc += arg;
-				for (var i=1; i<arg; i++) {
+				vm.pc += arg2;
+				for (var i=1; i<arg2; i++) {
 					endstl -=  bc[vm.pc-i] + 1;
 					let subvm = stack[endstl], sret;
 					yield*callObj(subvm, stack, endstl);
 				}
-				endstl -=  bc[vm.pc-arg] + 1;
+				endstl -=  bc[vm.pc-arg2] + 1;
 				let subvm = stack[endstl];
 				yield*callObj(subvm, stack, endstl);
 				let table = stack[endstl - 1];
 				for (let i=endstl; i<stack.length; i++) {
-					table.add(stack[i]);
+					table.set(i-endstl+arg, stack[i]);
 				}
 				stack.length = endstl;
 				break;
 			}
 			case opc.APPEND_VARG_CALL: {
 				let endstl = stack.length;
-				vm.pc += arg;
-				for (var i=1; i<arg; i++) {
+				vm.pc += arg2;
+				for (var i=1; i<arg2; i++) {
 					endstl -=  bc[vm.pc-i] + 1;
 					let subvm = stack[endstl];
 					if (!i) {
@@ -355,15 +357,15 @@ function*_run(vm, stack) {
 					yield*callObj(subvm, stack, endstl);
 					endstl -=  bc[vm.pc-i-1] + 1;
 				}
-				endstl -=  bc[vm.pc-arg] + 1;
+				endstl -=  bc[vm.pc-arg2] + 1;
 				let subvm = stack[endstl];
-				if (arg == 1) {
+				if (arg2 == 1) {
 					Array.prototype.push.apply(stack, vm.dotdotdot);
 				}
 				yield*callObj(subvm, stack, endstl);
 				let table = stack[endstl - 1];
 				for (let i=endstl; i<stack.length; i++) {
-					table.add(stack[i]);
+					table.set(i-endstl+arg, stack[i]);
 				}
 				stack.length = endstl;
 				break;
@@ -495,7 +497,7 @@ function run(func, e = env()) {
 		// TODO need to hit this sooner for coroutine.isyieldable
 		throw "coroutine.yield: Attempt to yield from outside a coroutine";
 	}
-	//console.log("vm", vm, stack);
+	console.log("vm", vm, stack);
 	return stack;
 }
 
