@@ -35,10 +35,6 @@ function pushString(v, str) {
 	}
 }
 
-function pushArray(sink, data) {
-	return Array.prototype.push.apply(sink, data);
-}
-
 exports.eval = function(line, e = require("./env")()) {
 	let l = new lex.Lex(line);
 	let a = ast.parse(l);

@@ -264,7 +264,7 @@ function*_run(vm, stack) {
 				return;
 			}
 			case opc.RETURN_VARG: {
-				Array.prototype.push.apply(stack, vm.dotdotdot);
+				stack.push(...vm.dotdotdot);
 				return;
 			}
 			case opc.APPEND_VARG: {
@@ -352,7 +352,7 @@ function*_run(vm, stack) {
 					endstl -=  bc[vm.pc-i] + 1;
 					let subvm = stack[endstl];
 					if (!i) {
-						Array.prototype.push.apply(stack, vm.dotdotdot);
+						stack.push(...vm.dotdotdot);
 					}
 					yield*callObj(subvm, stack, endstl);
 					endstl -=  bc[vm.pc-i-1] + 1;
@@ -360,7 +360,7 @@ function*_run(vm, stack) {
 				endstl -=  bc[vm.pc-arg2] + 1;
 				let subvm = stack[endstl];
 				if (arg2 == 1) {
-					Array.prototype.push.apply(stack, vm.dotdotdot);
+					stack.push(...vm.dotdotdot);
 				}
 				yield*callObj(subvm, stack, endstl);
 				let table = stack[endstl - 1];
@@ -397,14 +397,14 @@ function*_run(vm, stack) {
 					endstl -=  bc[vm.pc-i] + 1;
 					let subvm = stack[endstl];
 					if (!i) {
-						Array.prototype.push.apply(stack, vm.dotdotdot);
+						stack.push(...vm.dotdotdot);
 					}
 					yield*callObj(subvm, stack, endstl);
 				}
 				endstl -=  bc[vm.pc-arg] + 1;
 				let subvm = stack[endstl];
 				if (arg == 1) {
-					Array.prototype.push.apply(stack, vm.dotdotdot);
+					stack.push(...vm.dotdotdot);
 					arg = false;
 				}
 				if (typeof subvm === 'function') {
@@ -441,14 +441,14 @@ function*_run(vm, stack) {
 					endstl -=  bc[vm.pc-i] + 1;
 					let subvm = stack[endstl];
 					if (!i) {
-						Array.prototype.push.apply(stack, vm.dotdotdot);
+						stack.push(...vm.dotdotdot);
 					}
 					yield*callObj(subvm, stack, endstl);
 				}
 				endstl -=  bc[vm.pc-arg2] + 1;
 				let subvm = stack[endstl];
 				if (arg == 1) {
-					subvm.stack.push.apply(...vm.dotdotdot);
+					stack.push.apply(...vm.dotdotdot);
 				}
 				yield*callObj(subvm, stack, endstl);
 				while (stack.length < endstl + arg) {

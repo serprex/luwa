@@ -144,7 +144,7 @@ Assembler.prototype.identIndex = function(node) {
 	}
 }
 Assembler.prototype.push = function() {
-	return Array.prototype.push.apply(this.bc, arguments);
+	return this.bc.push(...arguments);
 }
 
 Assembler.prototype.getLabel = function() {
