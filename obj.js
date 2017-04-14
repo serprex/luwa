@@ -42,8 +42,7 @@ exports.len = function len(x) {
 }
 
 exports.numcoerce = x => {
-	return typeof x == "number" ? x :
-		typeof x == "string" ? +x : null;
+	return typeof x == "number" || (x=+x, x === x) ? x : null;
 }
 
 exports.add = (x, y) => {
@@ -52,11 +51,11 @@ exports.add = (x, y) => {
 	} else {
 		let x__add = metaget(x, "__add");
 		if (x__add !== null) {
-			return x__add(x, y);
+			yield*x__add(x, y);
 		}
 		let y__add = metaget(y, "__add");
 		if (y__add !== null) {
-			return y__add(x, y);
+			yield*y__add(x, y);
 		}
 		throw "+: Incompatible types";
 	}

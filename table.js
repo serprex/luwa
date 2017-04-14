@@ -79,5 +79,5 @@ Table.prototype.get = function(key) {
 }
 
 Table.prototype.getlength = function() {
-	return this.borders[this.borders.length-1];
+	return this.borders[0];
 }

@@ -148,29 +148,86 @@ function*_run(vm, stack) {
 			}
 			case opc.BIN_EQ: {
 				let a = stack.pop(), b = stack.pop();
-				stack.push(b == a);
+				if (a === b) {
+					stack.push(true);
+				} else if (!(a instanceof Table) || !(b instanceof Table)) {
+					stack.push(false);
+				} else {
+					let a__eq = obj.metaget(a, "__eq"),
+						b__eq = obj.metaget(b, "__eq");
+					if (a__eq == b__eq) {
+						let stl = stack.length;
+						stack.push(a__eq, a, b);
+						yield*callObj(vm, stack, stl);
+						stack.length = stl + 1;
+						stack[stl] = stack[stl] !== false && stack[stl] !== null;
+					} else {
+						stack.push(false);
+					}
+				}
 				break;
 			}
 			case opc.BIN_NEQ: {
 				let a = stack.pop(), b = stack.pop();
-				stack.push(b != a);
+				if (a === b) {
+					stack.push(false);
+				} else if (!(a instanceof Table) || !(b instanceof Table)) {
+					stack.push(true);
+				} else {
+					let a__eq = obj.metaget(a, "__eq"),
+						b__eq = obj.metaget(b, "__eq");
+					if (a__eq == b__eq) {
+						let stl = stack.length;
+						stack.push(a__eq, a, b);
+						yield*callObj(vm, stack, stl);
+						stack.length = stl + 1;
+						stack[stl] = stack[stl] === false || stack[stl] === null;
+					} else {
+						stack.push(true);
+					}
+				}
 				break;
 			}
 			case opc.UNARY_MINUS: {
-				stack.push(-stack.pop());
+				let a = stack.pop(), n = obj.numcoerce(a);
+				if (n !== null) {
+					stack.push(-n);
+				} else if (a instanceof Table) {
+					let __unm = obj.metaget(a, "__unm");
+					if (__unm) {
+						let stl = stack.length;
+						stack.push(__unm, a);
+						yield*callObj(vm, stack, stl);
+						stack.length = stl + 1;
+					} else {
+						throw "Attempted to negate table without __unm";
+					}
+				} else {
+					throw "Attempted to negate of non number";
+				}
 				break;
 			}
 			case opc.UNARY_NOT: {
 				let a = stack.pop();
-				stack.push(a !== false && a !== nil);
+				stack.push(a !== false && a !== null);
 				break;
 			}
 			case opc.UNARY_HASH: {
 				let a = stack.pop();
 				if (typeof a == 'string') {
 					stack.push(a.length);
+				} else if (a instanceof Table) {
+					let __len = obj.metaget(a, "__len");
+					if (__len) {
+						let stl = stack.length;
+						stack.push(__len, a);
+						yield*callObj(vm, stack, stl);
+						stack.length = stl + 1;
+					} else {
+						stack.push(a.getlength());
+					}
 				} else {
-					stack.push(a.getlength());
+					throw "Attempted to get length of non string, non table";
 				}
 				break;
 			}
