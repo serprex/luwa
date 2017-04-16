@@ -5,11 +5,13 @@ const opc = require("./bc"),
 	Table = require("./table");
 
 function Vm(func) {
-	this.pc = 0;
 	this.func = func;
 	this.locals = [];
 	this.frees = [];
 	this.dotdotdot = null;
+	for (let i=0; i<func.fcount; i++) {
+		this.frees[i] = { value: null };
+	}
 }
 
 Vm.prototype.readarg = function(stack, base) {
@@ -38,16 +40,10 @@ function*callObj(subvm, stack, base) {
 }
 
 function*_run(vm, stack) {
-	var bc = vm.func.bc, lx = vm.func.lx;
+	let bc = vm.func.bc, lx = vm.func.lx, pc = 0;
 	while (true){
-		let op = bc[vm.pc], arg, arg2, arg3;
-		switch (op >> 6) {
-			// thru
-			case 3:arg3 = bc[vm.pc+3];
-			case 2:arg2 = bc[vm.pc+2];
-			case 1:arg = bc[vm.pc+1];
-		}
-		vm.pc += (op >> 6) + 1;
+		let op = bc[pc], arg = bc[pc+1], arg2 = bc[pc+2];
+		pc += (op >> 6) + 1;
 		switch (op) {
 			case opc.LOAD_NIL: {
 				stack.push(null);
@@ -243,7 +239,7 @@ function*_run(vm, stack) {
 			case opc.FOR2: {
 				let a = stack.pop(), b = stack.pop();
 				if (b > a) {
-					vm.pc = arg;
+					pc = arg;
 				}
 				else {
 					stack.push(b+1, a, b);
@@ -253,7 +249,7 @@ function*_run(vm, stack) {
 			case opc.FOR3: {
 				let a = stack.pop(), b = stack.pop(), c = stack.pop(), ca = c+a;
 				if (Math.abs(ca - b) > Math.abs(c - b) && b != c) {
-					vm.pc = arg;
+					pc = arg;
 				}
 				else {
 					stack.push(ca, b, a, c);
@@ -263,9 +259,6 @@ function*_run(vm, stack) {
 			case opc.LOAD_FUNC: {
 				let f = vm.func.fus[arg];
 				let subvm = new Vm(f);
-				for (let i=0; i<f.fcount; i++) {
-					subvm.frees[i] = { value: null };
-				}
 				let freelist = vm.func.freelist[f.id];
 				if (freelist) {
 					for (let [ff, cf] of freelist) {
@@ -306,7 +299,7 @@ function*_run(vm, stack) {
 				break;
 			}
 			case opc.GOTO: {
-				vm.pc = arg;
+				pc = arg;
 				break;
 			}
 			case opc.LOAD_LOCAL: {
@@ -349,12 +342,12 @@ function*_run(vm, stack) {
 			}
 			case opc.JIF: {
 				let a = stack.pop();
-				if (a !== false && a !== null) vm.pc = arg;
+				if (a !== false && a !== null) pc = arg;
 				break;
 			}
 			case opc.JIFNOT: {
 				let a = stack.pop();
-				if (a === false || a === null) vm.pc = arg;
+				if (a === false || a === null) pc = arg;
 				break;
 			}
 			case opc.LOAD_METH: {
@@ -366,7 +359,7 @@ function*_run(vm, stack) {
 				let a = stack.pop();
 				if (a !== false && a !== null) {
 					stack.push(a);
-					vm.pc = arg;
+					pc = arg;
 				}
 				break;
 			}
@@ -374,7 +367,7 @@ function*_run(vm, stack) {
 				let a = stack.pop();
 				if (a === false || a === null) {
 					stack.push(a);
-					vm.pc = arg;
+					pc = arg;
 				}
 				break;
 			}
@@ -386,13 +379,13 @@ function*_run(vm, stack) {
 			}
 			case opc.APPEND_CALL: {
 				let endstl = stack.length;
-				vm.pc += arg2;
+				pc += arg2;
 				for (var i=1; i<arg2; i++) {
-					endstl -=  bc[vm.pc-i] + 1;
+					endstl -=  bc[pc-i] + 1;
 					let subvm = stack[endstl], sret;
 					yield*callObj(subvm, stack, endstl);
 				}
-				endstl -=  bc[vm.pc-arg2] + 1;
+				endstl -=  bc[pc-arg2] + 1;
 				let subvm = stack[endstl];
 				yield*callObj(subvm, stack, endstl);
 				let table = stack[endstl - 1];
@@ -404,17 +397,17 @@ function*_run(vm, stack) {
 			}
 			case opc.APPEND_VARG_CALL: {
 				let endstl = stack.length;
-				vm.pc += arg2;
+				pc += arg2;
 				for (var i=1; i<arg2; i++) {
-					endstl -=  bc[vm.pc-i] + 1;
+					endstl -=  bc[pc-i] + 1;
 					let subvm = stack[endstl];
 					if (!i) {
 						stack.push(...vm.dotdotdot);
 					}
 					yield*callObj(subvm, stack, endstl);
-					endstl -=  bc[vm.pc-i-1] + 1;
+					endstl -=  bc[pc-i-1] + 1;
 				}
-				endstl -=  bc[vm.pc-arg2] + 1;
+				endstl -=  bc[pc-arg2] + 1;
 				let subvm = stack[endstl];
 				if (arg2 == 1) {
 					stack.push(...vm.dotdotdot);
@@ -429,13 +422,13 @@ function*_run(vm, stack) {
 			}
 			case opc.RETURN_CALL: {
 				let endstl = stack.length;
-				vm.pc += arg;
+				pc += arg;
 				for (var i=1; i<arg; i++) {
-					endstl -=  bc[vm.pc-i] + 1;
+					endstl -=  bc[pc-i] + 1;
 					let subvm = stack[endstl];
 					yield*callObj(subvm, stack, endstl);
 				}
-				endstl -=  bc[vm.pc-arg] + 1;
+				endstl -=  bc[pc-arg] + 1;
 				let subvm = stack[endstl];
 				if (typeof subvm === 'function') {
 					return yield*subvm(stack, endstl);
@@ -444,21 +437,22 @@ function*_run(vm, stack) {
 					vm.readarg(stack, endstl);
 					bc = vm.func.bc;
 					lx = vm.func.lx;
+					pc = 0;
 				}
 				break;
 			}
 			case opc.RETURN_VARG_CALL: {
 				let endstl = stack.length;
-				vm.pc += arg;
+				pc += arg;
 				for (var i=1; i<arg; i++) {
-					endstl -=  bc[vm.pc-i] + 1;
+					endstl -=  bc[pc-i] + 1;
 					let subvm = stack[endstl];
 					if (!i) {
 						stack.push(...vm.dotdotdot);
 					}
 					yield*callObj(subvm, stack, endstl);
 				}
-				endstl -=  bc[vm.pc-arg] + 1;
+				endstl -=  bc[pc-arg] + 1;
 				let subvm = stack[endstl];
 				if (arg == 1) {
 					stack.push(...vm.dotdotdot);
@@ -471,18 +465,19 @@ function*_run(vm, stack) {
 					vm.readarg(stack, endstl);
 					bc = vm.func.bc;
 					lx = vm.func.lx;
+					pc = 0;
 				}
 				break;
 			}
 			case opc.CALL: {
 				let endstl = stack.length;
-				vm.pc += arg2;
+				pc += arg2;
 				for (var i=1; i<arg2; i++) {
-					endstl -=  bc[vm.pc-i] + 1;
+					endstl -=  bc[pc-i] + 1;
 					let subvm = stack[endstl];
 					yield*callObj(subvm, stack, endstl);
 				}
-				endstl -=  bc[vm.pc-arg2] + 1;
+				endstl -=  bc[pc-arg2] + 1;
 				let subvm = stack[endstl];
 				yield*callObj(subvm, stack, endstl);
 				while (stack.length < endstl + arg) {
@@ -493,16 +488,16 @@ function*_run(vm, stack) {
 			}
 			case opc.VARG_CALL: {
 				let endstl = stack.length;
-				vm.pc += arg2;
+				pc += arg2;
 				for (var i=1; i<arg2; i++) {
-					endstl -=  bc[vm.pc-i] + 1;
+					endstl -=  bc[pc-i] + 1;
 					let subvm = stack[endstl];
 					if (!i) {
 						stack.push(...vm.dotdotdot);
 					}
 					yield*callObj(subvm, stack, endstl);
 				}
-				endstl -=  bc[vm.pc-arg2] + 1;
+				endstl -=  bc[pc-arg2] + 1;
 				let subvm = stack[endstl];
 				if (arg == 1) {
 					stack.push.apply(...vm.dotdotdot);
@@ -519,7 +514,7 @@ function*_run(vm, stack) {
 				let iter = stack[endstl], k = stack[endstl+1], v = stack[endstl+2];
 				yield*callObj(iter, stack, endstl);
 				if (endstl == stack.length || stack[endstl] === null) {
-					vm.pc = arg;
+					pc = arg;
 					stack.length = endstl;
 				} else {
 					while (stack.length < endstl + arg2) {
@@ -536,9 +531,6 @@ function*_run(vm, stack) {
 
 function init(func, stack, e = env()) {
 	const vm = new Vm(func);
-	for (let i=0; i<func.fcount; i++) {
-		vm.frees[i] = { value: null };
-	}
 	let freeid = func.local2free[0];
 	if (freeid !== undefined) {
 		vm.frees[freeid].value = e;

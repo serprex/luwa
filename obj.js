@@ -44,22 +44,3 @@ exports.len = function len(x) {
 exports.numcoerce = x => {
 	return typeof x == "number" || (x=+x, x === x) ? x : null;
 }
-
-exports.add = (x, y) => {
-	if (typeof x == "number" && typeof y == "number") {
-		return x + y;
-	} else {
-		let x__add = metaget(x, "__add");
-		if (x__add !== null) {
-			yield*x__add(x, y);
-		}
-		let y__add = metaget(y, "__add");
-		if (y__add !== null) {
-			yield*y__add(x, y);
-		}
-		throw "+: Incompatible types";
-	}
-}
-
-exports.sub = (x, y) => {
-}

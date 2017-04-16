@@ -654,9 +654,14 @@ Assembler.prototype.genStat = function(node) {
 			this.genFuncCall(selectNode(node, ast.Functioncall), 0, 0);
 			break;
 		case 3: {
-			let lab = this.getLabel();
-			this.namedlabels[this.filterMask(node, lex._ident)] = lab;
-			this.setLabel(lab);
+			let lid = this.filterMask(node, lex._ident);
+			if (lid in this.namedlabels) {
+				throw "Duplicate label name";
+			} else {
+				let lab = this.getLabel();
+				this.namedlabels[lid] = lab;
+				this.setLabel(lab);
+			}
 			break;
 		}
 		case 4: {
@@ -932,7 +937,7 @@ Assembler.prototype.scopeFuncbody = function(node, ismeth = false) {
 	subasm.scopeBlock(selectNode(node, ast.Block), true);
 	subasm.popScope();
 	subasm.genBlock(selectNode(node, ast.Block));
-	subasm.push(RETURN);
+	subasm.push(RETURN, 0, 0);
 	subasm.genGoto();
 	this.fuli[node.li] = this.fus.length;
 	this.fus.push(new Func(subasm));
@@ -1087,7 +1092,7 @@ function assemble(lx, root) {
 	asm.scopeBlock(root);
 	asm.popScope();
 	asm.genBlock(root);
-	asm.push(RETURN);
+	asm.push(RETURN, 0, 0);
 	asm.genGoto();
 	return new Func(asm);
 }
