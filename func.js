@@ -11,6 +11,8 @@ function Func(asm) {
 	this.isdotdotdot = asm.isdotdotdot;
 	this.freelist = [];
 	this.local2free = asm.local2free;
+	this.traces = [];
+	this.traceid = 0;
 	for (let key in asm.frees) {
 		key = +key;
 		for (let [fid, val] of asm.frees[key]) {

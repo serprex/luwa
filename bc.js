@@ -5,25 +5,22 @@ const NOP = exports.NOP = 0,
 	LOAD_NIL = exports.LOAD_NIL = 1,
 	LOAD_FALSE = exports.LOAD_FALSE = 2,
 	LOAD_TRUE = exports.LOAD_TRUE = 3,
-	BIN_PLUS = exports.BIN_PLUS = 4,
-	BIN_MINUS = exports.BIN_MINUS = 5,
+	BIN_ADD = exports.BIN_ADD = 4,
+	BIN_SUB = exports.BIN_SUB = 5,
 	BIN_MUL = exports.BIN_MUL = 6,
 	BIN_DIV = exports.BIN_DIV = 7,
 	BIN_IDIV = exports.BIN_IDIV = 8,
 	BIN_POW = exports.BIN_POW = 9,
 	BIN_MOD = exports.BIN_MOD = 10,
 	BIN_BAND = exports.BIN_BAND = 11,
-	BIN_BNOT = exports.BIN_BNOT = 12,
+	BIN_BXOR = exports.BIN_BXOR = 12,
 	BIN_BOR = exports.BIN_BOR = 13,
-	BIN_RSH = exports.BIN_RSH = 14,
-	BIN_LSH = exports.BIN_LSH = 15,
-	BIN_DOTDOT = exports.BIN_DOTDOT = 16,
+	BIN_SHR = exports.BIN_SHR = 14,
+	BIN_SHL = exports.BIN_SHL = 15,
+	BIN_CONCAT = exports.BIN_CONCAT = 16,
 	BIN_LT = exports.BIN_LT = 17,
-	BIN_LTE = exports.BIN_LTE = 18,
-	BIN_GT = exports.BIN_GT = 19,
-	BIN_GTE = exports.BIN_GTE = 20,
+	BIN_LE = exports.BIN_LE = 18,
 	BIN_EQ = exports.BIN_EQ = 21,
-	BIN_NEQ = exports.BIN_NEQ = 22,
 	UNARY_MINUS = exports.UNARY_MINUS = 23,
 	UNARY_NOT = exports.UNARY_NOT = 24,
 	UNARY_HASH = exports.UNARY_HASH = 25,
@@ -583,25 +580,25 @@ Assembler.prototype.genExp = function(node, vals, endvals, ret, calls) {
 			switch (op.type & 31) {
 				case ast.Binop:
 					switch (op.type >> 5) {
-						case 0: this.push(BIN_PLUS); break; // plus
-						case 1: this.push(BIN_MINUS); break; // minus
-						case 2: this.push(BIN_MUL); break; // mul
-						case 3: this.push(BIN_DIV); break; // div
-						case 4: this.push(BIN_IDIV); break; // idiv
-						case 5: this.push(BIN_POW); break; // pow
-						case 6: this.push(BIN_MOD); break; // mod
-						case 7: this.push(BIN_BAND); break; // band
-						case 8: this.push(BIN_BNOT); break; // bnot
-						case 9: this.push(BIN_BOR); break; // bor
-						case 10: this.push(BIN_RSH); break; // rsh
-						case 11: this.push(BIN_LSH); break; // lsh
-						case 12: this.push(BIN_DOTDOT); break; // dotdot
-						case 13: this.push(BIN_LT); break; // lt
-						case 14: this.push(BIN_LTE); break; // lte
-						case 15: this.push(BIN_GT); break; // gt
-						case 16: this.push(BIN_GTE); break; // gte
-						case 17: this.push(BIN_EQ); break; // eq
-						case 18: this.push(BIN_NEQ); break; // neq
+						case 0: this.push(BIN_ADD); break; // +
+						case 1: this.push(BIN_SUB); break; // -
+						case 2: this.push(BIN_MUL); break; // *
+						case 3: this.push(BIN_DIV); break; // /
+						case 4: this.push(BIN_IDIV); break; // //
+						case 5: this.push(BIN_POW); break; // ^
+						case 6: this.push(BIN_MOD); break; // %
+						case 7: this.push(BIN_BAND); break; // &
+						case 8: this.push(BIN_BXOR); break; // ~
+						case 9: this.push(BIN_BOR); break; // |
+						case 10: this.push(BIN_SHR); break; // <<
+						case 11: this.push(BIN_SHL); break; // >>
+						case 12: this.push(BIN_CONCAT); break; // ..
+						case 13: this.push(BIN_LT); break; // <
+						case 14: this.push(BIN_LE); break; // <=
+						case 15: this.push(BIN_LE, UNARY_NOT); break; // >
+						case 16: this.push(BIN_LT, UNARY_NOT); break; // >=
+						case 17: this.push(BIN_EQ); break; // ==
+						case 18: this.push(BIN_EQ, UNARY_NOT); break; // ~=
 					}
 					break;
 				case ast.Value:

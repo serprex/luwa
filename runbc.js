@@ -30,12 +30,12 @@ Vm.prototype.readarg = function(stack, base) {
 	stack.length = base;
 }
 
-function*callObj(subvm, stack, base) {
+function callObj(subvm, stack, base) {
 	if (typeof subvm === 'function') {
-		yield*subvm(stack, base);
+		return subvm(stack, base);
 	} else {
 		subvm.readarg(stack, base);
-		yield*_run(subvm, stack);
+		return _run(subvm, stack);
 	}
 }
 
@@ -57,12 +57,12 @@ function*_run(vm, stack) {
 				stack.push(true);
 				break;
 			}
-			case opc.BIN_PLUS: {
+			case opc.BIN_ADD: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b + a);
 				break;
 			}
-			case opc.BIN_MINUS: {
+			case opc.BIN_SUB: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b - a);
 				break;
@@ -97,7 +97,7 @@ function*_run(vm, stack) {
 				stack.push(b & a);
 				break;
 			}
-			case opc.BIN_BNOT: {
+			case opc.BIN_BXOR: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b ^ a);
 				break;
@@ -107,17 +107,17 @@ function*_run(vm, stack) {
 				stack.push(b | a);
 				break;
 			}
-			case opc.BIN_RSH: {
+			case opc.BIN_SHR: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b >> a);
 				break;
 			}
-			case opc.BIN_LSH: {
+			case opc.BIN_SHL: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b << a);
 				break;
 			}
-			case opc.BIN_DOTDOT: {
+			case opc.BIN_CONCAT: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b.toString() + a.toString());
 				break;
@@ -130,16 +130,6 @@ function*_run(vm, stack) {
 			case opc.BIN_LTE: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b <= a);
-				break;
-			}
-			case opc.BIN_GT: {
-				let a = stack.pop(), b = stack.pop();
-				stack.push(b > a);
-				break;
-			}
-			case opc.BIN_GTE: {
-				let a = stack.pop(), b = stack.pop();
-				stack.push(b >= a);
 				break;
 			}
 			case opc.BIN_EQ: {
@@ -159,27 +149,6 @@ function*_run(vm, stack) {
 						stack[stl] = stack[stl] !== false && stack[stl] !== null;
 					} else {
 						stack.push(false);
-					}
-				}
-				break;
-			}
-			case opc.BIN_NEQ: {
-				let a = stack.pop(), b = stack.pop();
-				if (a === b) {
-					stack.push(false);
-				} else if (!(a instanceof Table) || !(b instanceof Table)) {
-					stack.push(true);
-				} else {
-					let a__eq = obj.metaget(a, "__eq"),
-						b__eq = obj.metaget(b, "__eq");
-					if (a__eq == b__eq) {
-						let stl = stack.length;
-						stack.push(a__eq, a, b);
-						yield*callObj(vm, stack, stl);
-						stack.length = stl + 1;
-						stack[stl] = stack[stl] === false || stack[stl] === null;
-					} else {
-						stack.push(true);
 					}
 				}
 				break;
@@ -529,7 +498,7 @@ function*_run(vm, stack) {
 	}
 }
 
-function init(func, stack, e = env()) {
+function init(func, e = env()) {
 	const vm = new Vm(func);
 	let freeid = func.local2free[0];
 	if (freeid !== undefined) {
@@ -541,7 +510,7 @@ function init(func, stack, e = env()) {
 }
 
 function run(func, e = env()) {
-	const stack = [], vm = init(func, stack, e);
+	const stack = [], vm = init(func, e);
 	if (!_run(vm, stack).next().done) {
 		// TODO need to hit this sooner for coroutine.isyieldable
 		throw "coroutine.yield: Attempt to yield from outside a coroutine";

@@ -1,5 +1,4 @@
-const metas = new WeakMap(),
-	Table = require("./table");
+const Table = require("./table");
 
 
 const stringMetatable = new Table();
@@ -12,13 +11,13 @@ function metaget(x, prop) {
 }
 
 function getmetatable(x) {
-	return typeof x == "string" ? stringMetatable : metas.get(x) || null;
+	return typeof x == "string" ? stringMetatable : x.metatable;
 }
 exports.getmetatable = getmetatable;
 
 exports.setmetatable = (x, y) => {
 	if (x && typeof x === "object" && typeof y === "object") {
-		metas.set(x, y);
+		x.metatable = y;
 		return x;
 	}
 }

@@ -6,6 +6,7 @@ function Table() {
 	this.rm = new Set();
 	this.borders = [0];
 	this.hash = new Map();
+	this.metatable = null;
 }
 
 Table.prototype.hasborder = function(key) {
