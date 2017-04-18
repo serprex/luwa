@@ -7,7 +7,7 @@
     "type": "git",
     "url": "https://github.com/serprex/luwa"
   },
-  "scripts": { "test": "./test.js" },
+  "scripts": { "test": "./_test.js" },
   "main": "./luwa.js",
   "bin": "./main.js",
   "license": "MIT"

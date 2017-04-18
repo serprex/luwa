@@ -1,5 +1,5 @@
 language: node_js
 node_js: "node"
-script: ./scripts/tests.js
+script: ./_test.js
 notifications:
  email: false
