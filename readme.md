@@ -4,7 +4,7 @@ Luwa's end goal is to JIT to [WASM](https://webassembly.org). Right now it's a b
 
 I'll try avoid my usual stream of consciousness here, instead that's at [my devlog](https://patreon.com/serprex)
 
-luwa.js shows the pipeline: `lex.js` -> `ast.js` -> `bc.js` -> `runbc.js`
+`luwa.js` shows the pipeline: `lex.js` -> `ast.js` -> `bc.js` -> `runbc.js`
 
 `lex.js` is a linear scan, so I'll leave that as an exercise for the reader
 
@@ -19,10 +19,13 @@ Some post processing is done to convert from children pointing at parents to par
 ### Other js files
 File | Description
 --- | ---
+\_test.js | unit tests
 env.js | exports a function which returns the default `_ENV`
 func.js | ast.js's Assembler can be boiled down to func.js's Func, which is what runbc uses in conjuction with a stack to interpret
 main.js | this should be fixed up to be a node frontend
 obj.js | where metatable logic will go. Metatables are maintained as a [WeakMap](https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/WeakMap) of objects to metatables
+string.js | string library
 table.js | table type
 thread.js | thread type returned by `coroutine.create`
 ui.js | index.html's js logic
+uf8.js | this'll matter more once strings are Uint8Arrays
