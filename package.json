@@ -1,0 +1,14 @@
+{
+  "name": "luwa",
+  "version": "0.0.1",
+  "description": "Lua WASM JIT",
+  "readme": "readme.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/serprex/luwa"
+  },
+  "scripts": { "test": "./test.js" },
+  "main": "./luwa.js",
+  "bin": "./main.js",
+  "license": "MIT"
+}
