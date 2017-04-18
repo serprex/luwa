@@ -127,9 +127,19 @@ function*_run(vm, stack) {
 				stack.push(b < a);
 				break;
 			}
-			case opc.BIN_LTE: {
+			case opc.BIN_LE: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b <= a);
+				break;
+			}
+			case opc.BIN_GT: {
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b > a);
+				break;
+			}
+			case opc.BIN_GE: {
+				let a = stack.pop(), b = stack.pop();
+				stack.push(b >= a);
 				break;
 			}
 			case opc.BIN_EQ: {

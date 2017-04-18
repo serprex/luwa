@@ -20,6 +20,8 @@ const NOP = exports.NOP = 0,
 	BIN_CONCAT = exports.BIN_CONCAT = 16,
 	BIN_LT = exports.BIN_LT = 17,
 	BIN_LE = exports.BIN_LE = 18,
+	BIN_GT = exports.BIN_GT = 19,
+	BIN_GE = exports.BIN_GE = 20,
 	BIN_EQ = exports.BIN_EQ = 21,
 	UNARY_MINUS = exports.UNARY_MINUS = 23,
 	UNARY_NOT = exports.UNARY_NOT = 24,
@@ -595,8 +597,8 @@ Assembler.prototype.genExp = function(node, vals, endvals, ret, calls) {
 						case 12: this.push(BIN_CONCAT); break; // ..
 						case 13: this.push(BIN_LT); break; // <
 						case 14: this.push(BIN_LE); break; // <=
-						case 15: this.push(BIN_LE, UNARY_NOT); break; // >
-						case 16: this.push(BIN_LT, UNARY_NOT); break; // >=
+						case 15: this.push(BIN_GT); break; // >
+						case 16: this.push(BIN_GE); break; // >=
 						case 17: this.push(BIN_EQ); break; // ==
 						case 18: this.push(BIN_EQ, UNARY_NOT); break; // ~=
 					}
