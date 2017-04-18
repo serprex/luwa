@@ -1,4 +1,7 @@
-const lua = require("./luwa"),
+#!/bin/node
+
+const assert = require("assert"),
+	lua = require("./luwa"),
 	e = require("./env")();
 
 lua.eval("x = 3 * 5 + 2", e);
