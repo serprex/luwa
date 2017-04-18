@@ -1,4 +1,4 @@
-#!/bin/node
+#!/usr/bin/env node
 
 const assert = require("assert"),
 	lua = require("./luwa"),
