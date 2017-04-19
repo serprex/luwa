@@ -1,4 +1,10 @@
 "use strict";
+
+exports.Vm = Vm;
+exports.callObj = callObj;
+exports._run = _run;
+exports.run = run;
+
 const opc = require("./bc"),
 	env = require("./env"),
 	obj = require("./obj"),
@@ -42,127 +48,126 @@ function callObj(subvm, stack, base) {
 
 function*_run(vm, stack) {
 	let bc = vm.func.bc, lx = vm.func.lx, pc = 0;
-	let trset = new trace.TraceSet(), trblk = trset.traces[0];
+	let trctx = new trace.Context(), trcur = new trace.Cursor(trctx);
 	while (true){
 		let op = bc[pc], arg = bc[pc+1], arg2 = bc[pc+2];
-		const oldpc = pc;
 		pc += (op >> 6) + 1;
 		switch (op) {
 			case opc.LOAD_NIL: {
 				stack.push(null);
-				trblk.incr(oldpc, 0, trace.nil);
+				trcur.trace(pc, 0, trace.nil);
 				break;
 			}
 			case opc.LOAD_FALSE: {
 				stack.push(false);
-				trblk.incr(oldpc, 0, trace.bool);
+				trcur.trace(pc, 0, trace.bool);
 				break;
 			}
 			case opc.LOAD_TRUE: {
 				stack.push(true);
-				trblk.incr(oldpc, 0, trace.bool);
+				trcur.trace(pc, 0, trace.bool);
 				break;
 			}
 			case opc.BIN_ADD: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b + a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_SUB: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b - a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_MUL: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b * a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_DIV: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b / a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_IDIV: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b / a | 0);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_POW: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(Math.pow(b, a));
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_MOD: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b % a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_BAND: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b & a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_BXOR: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b ^ a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_BOR: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b | a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_SHR: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b >> a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_SHL: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b << a);
-				trblk.incr(oldpc, 2, trace.num);
+				trcur.trace(pc, 2, trace.num);
 				break;
 			}
 			case opc.BIN_CONCAT: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b.toString() + a.toString());
-				trblk.incr(oldpc, 2, trace.str);
+				trcur.trace(pc, 2, trace.str);
 				break;
 			}
 			case opc.BIN_LT: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b < a);
-				trblk.incr(oldpc, 2, trace.bool);
+				trcur.trace(pc, 2, trace.bool);
 				break;
 			}
 			case opc.BIN_LE: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b <= a);
-				trblk.incr(oldpc, 2, trace.bool);
+				trcur.trace(pc, 2, trace.bool);
 				break;
 			}
 			case opc.BIN_GT: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b > a);
-				trblk.incr(oldpc, 2, trace.bool);
+				trcur.trace(pc, 2, trace.bool);
 				break;
 			}
 			case opc.BIN_GE: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b >= a);
-				trblk.incr(oldpc, 2, trace.bool);
+				trcur.trace(pc, 2, trace.bool);
 				break;
 			}
 			case opc.BIN_EQ: {
@@ -184,14 +189,14 @@ function*_run(vm, stack) {
 						stack.push(false);
 					}
 				}
-				trblk.incr(oldpc, 2, trace.bool);
+				trcur.trace(pc, 2, trace.bool);
 				break;
 			}
 			case opc.UNARY_MINUS: {
 				let a = stack.pop(), n = obj.numcoerce(a);
 				if (n !== null) {
 					stack.push(-n);
-					trblk.incr(oldpc, 1, trace.num);
+					trcur.trace(pc, 1, trace.num);
 				} else if (a instanceof Table) {
 					let __unm = obj.metaget(a, "__unm");
 					if (__unm) {
@@ -199,7 +204,7 @@ function*_run(vm, stack) {
 						stack.push(__unm, a);
 						yield*callObj(vm, stack, stl);
 						stack.length = stl + 1;
-						trblk.incr(oldpc, 1, trace.any);
+						trcur.trace(pc, 1, trace.any);
 					} else {
 						throw "Attempted to negate table without __unm";
 					}
@@ -211,14 +216,14 @@ function*_run(vm, stack) {
 			case opc.UNARY_NOT: {
 				let a = stack.pop();
 				stack.push(a !== false && a !== null);
-				trblk.incr(oldpc, 1, trace.bool);
+				trcur.trace(pc, 1, trace.bool);
 				break;
 			}
 			case opc.UNARY_HASH: {
 				let a = stack.pop();
 				if (typeof a == 'string') {
 					stack.push(a.length);
-					trblk.incr(oldpc, 1, trace.int);
+					trcur.trace(pc, 1, trace.int);
 				} else if (a instanceof Table) {
 					let __len = obj.metaget(a, "__len");
 					if (__len) {
@@ -226,10 +231,10 @@ function*_run(vm, stack) {
 						stack.push(__len, a);
 						yield*callObj(vm, stack, stl);
 						stack.length = stl + 1;
-						trblk.incr(oldpc, 1, trace.any);
+						trcur.trace(pc, 1, trace.any);
 					} else {
 						stack.push(a.getlength());
-						trblk.incr(oldpc, 1, trace.int);
+						trcur.trace(pc, 1, trace.int);
 					}
 				} else {
 					throw "Attempted to get length of non string, non table";
@@ -239,40 +244,36 @@ function*_run(vm, stack) {
 			case opc.UNARY_BNOT: {
 				let a = stack.pop();
 				stack.push(~a);
-				trblk.incr(oldpc, 1, trace.int);
+				trcur.trace(pc, 1, trace.int);
 				break;
 			}
 			case opc.MAKE_TABLE: {
 				stack.push(new Table());
-				trblk.incr(oldpc, 0, trace.table);
+				trcur.trace(pc, 0, trace.table);
 				break;
 			}
 			case opc.FOR2: {
 				let a = stack.pop(), b = stack.pop();
-				trset.fork(trblk, pc, arg);
 				if (b > a) {
-					trblk.incr2(oldpc, 2);
 					pc = arg;
+					trcur.trace(pc, 2);
 				}
 				else {
-					trblk.incr1(oldpc, 2, trace.num, trace.num, trace.num);
+					trcur.trace(pc, 2, trace.num, trace.num, trace.num);
 					stack.push(b+1, a, b);
 				}
-				trblk = trset.traces[pc];
 				break;
 			}
 			case opc.FOR3: {
 				let a = stack.pop(), b = stack.pop(), c = stack.pop(), ca = c+a;
-				trset.fork(trblk, pc, arg);
 				if (Math.abs(ca - b) > Math.abs(c - b) && b != c) {
-					trblk.incr2(oldpc, 3);
 					pc = arg;
+					trcur.trace(pc, 3);
 				}
 				else {
-					trblk.incr1(oldpc, 3, trace.num, trace.num, trace.num, trace.num);
+					trcur.trace(pc, 3, trace.num, trace.num, trace.num, trace.num);
 					stack.push(ca, b, a, c);
 				}
-				trblk = trset.traces[pc];
 				break;
 			}
 			case opc.LOAD_FUNC: {
@@ -285,58 +286,58 @@ function*_run(vm, stack) {
 					}
 				}
 				stack.push(subvm);
-				trblk.incr(oldpc, 0, trace.func|trace.jsfunc);
+				trcur.trace(pc, 0, trace.func|trace.jsfunc);
 				break;
 			}
 			case opc.POP: {
 				stack.length -= arg;
-				trblk.incr(oldpc, arg);
+				trcur.trace(pc, arg);
 				break;
 			}
 			case opc.LOAD_INDEX: {
 				let a = stack.pop(), b = stack.pop();
 				stack.push(b.get(a));
+				trcur.trace(pc, 2, trace.any);
 				break;
 			}
 			case opc.STORE_INDEX: {
 				let a = stack.pop(), b = stack.pop(), c = stack.pop();
 				b.set(a, c); // TODO should be c.set(b, a)
+				trcur.trace(pc, 3);
 				break;
 			}
 			case opc.LOAD_NUM: {
 				stack.push(lx.snr[arg]);
-				trblk.incr(oldpc, 0, trace.num);
+				trcur.trace(pc, 0, trace.num);
 				break;
 			}
 			case opc.LOAD_STR: {
 				stack.push(lx.ssr[arg]);
-				trblk.incr(oldpc, 0, trace.str);
+				trcur.trace(pc, 0, trace.str);
 				break;
 			}
 			case opc.LOAD_DEREF: {
 				stack.push(vm.frees[arg].value);
-				trblk.incr(oldpc, 0, trace.any);
+				trcur.trace(pc, 0, trace.any);
 				break;
 			}
 			case opc.STORE_DEREF: {
 				vm.frees[arg].value = stack.pop();
-				trblk.incr(oldpc, 1);
+				trcur.trace(pc, 1);
 				break;
 			}
 			case opc.GOTO: {
-				trset.fork(trblk, arg);
-				trblk = trset.traces[arg];
 				pc = arg;
 				break;
 			}
 			case opc.LOAD_LOCAL: {
 				stack.push(vm.locals[arg]);
-				trblk.incr(oldpc, 0, trace.any);
+				trcur.trace(pc, 0, trace.any);
 				break;
 			}
 			case opc.STORE_LOCAL: {
 				vm.locals[arg] = stack.pop();
-				trblk.incr(oldpc, 1);
+				trcur.trace(pc, 1);
 				break;
 			}
 			case opc.RETURN: {
@@ -363,31 +364,33 @@ function*_run(vm, stack) {
 						stack.push(null);
 					}
 				}
-				trblk.incr(oldpc, 0, tr);
+				trcur.trace(pc, 0, tr);
 				break;
 			}
 			case opc.TABLE_SET: {
 				let a = stack.pop(), b = stack.pop(), c = stack.pop();
 				c.set(b, a);
 				stack.push(c);
-				trblk.incr(oldpc, 2);
+				trcur.trace(pc, 2);
 				break;
 			}
 			case opc.JIF: {
 				let a = stack.pop();
 				if (a !== false && a !== null) pc = arg;
+				trcur.trace(pc, 1);
 				break;
 			}
 			case opc.JIFNOT: {
 				let a = stack.pop();
 				if (a === false || a === null) pc = arg;
+				trcur.trace(pc, 1);
 				break;
 			}
 			case opc.LOAD_METH: {
 				let a = stack.pop();
 				stack.push(obj.index(a, lx.ssr[arg]), a);
 				// TODO propagate type of a
-				trblk.incr(oldpc, 2, trace.func|trace.jsfunc, trace.any);
+				trcur.trace(pc, 2, trace.func|trace.jsfunc, trace.any);
 				break;
 			}
 			case opc.JIF_OR_POP: {
@@ -395,7 +398,7 @@ function*_run(vm, stack) {
 				if (a !== false && a !== null) {
 					stack.push(a);
 					pc = arg;
-				}
+				} else trcur.trace(pc, 1);
 				break;
 			}
 			case opc.JIFNOT_OR_POP: {
@@ -403,36 +406,35 @@ function*_run(vm, stack) {
 				if (a === false || a === null) {
 					stack.push(a);
 					pc = arg;
-				}
+				} else trcur.trace(pc, 1);
 				break;
 			}
 			case opc.APPEND: {
 				let a = stack.pop(), b = stack.pop();
 				b.set(arg, a);
 				stack.push(b);
-				trblk.incr(oldpc, 1);
+				trcur.trace(pc, 1);
 				break;
 			}
 			case opc.APPEND_CALL: {
-				let endstl = stack.length;
+				let endstl = stack.length, startstl = endstl;
 				pc += arg2;
 				for (var i=1; i<arg2; i++) {
 					endstl -=  bc[pc-i] + 1;
-					let subvm = stack[endstl], sret;
-					yield*callObj(subvm, stack, endstl);
+					yield*callObj(stack[endstl], stack, endstl);
 				}
 				endstl -=  bc[pc-arg2] + 1;
-				let subvm = stack[endstl];
-				yield*callObj(subvm, stack, endstl);
+				yield*callObj(stack[endstl], stack, endstl);
 				let table = stack[endstl - 1];
 				for (let i=endstl; i<stack.length; i++) {
 					table.set(i-endstl+arg, stack[i]);
 				}
 				stack.length = endstl;
+				trcur.trace(pc, startstl - endstl, trace.table);
 				break;
 			}
 			case opc.APPEND_VARG_CALL: {
-				let endstl = stack.length;
+				let endstl = stack.length, startstl = endstl;
 				pc += arg2;
 				for (var i=1; i<arg2; i++) {
 					endstl -=  bc[pc-i] + 1;
@@ -454,6 +456,7 @@ function*_run(vm, stack) {
 					table.set(i-endstl+arg, stack[i]);
 				}
 				stack.length = endstl;
+				trcur.trace(pc, startstl - endstl, trace.table);
 				break;
 			}
 			case opc.RETURN_CALL: {
@@ -520,10 +523,11 @@ function*_run(vm, stack) {
 					stack.push(null);
 				}
 				stack.length = endstl + arg;
+				trcur.traceStack(pc, startstl - endstl, stack, endstl);
 				break;
 			}
 			case opc.VARG_CALL: {
-				let endstl = stack.length;
+				let endstl = stack.length, startstl = endstl;
 				pc += arg2;
 				for (var i=1; i<arg2; i++) {
 					endstl -=  bc[pc-i] + 1;
@@ -543,6 +547,7 @@ function*_run(vm, stack) {
 					stack.push(null);
 				}
 				stack.length = endstl + arg;
+				trcur.traceStack(pc, startstl - endstl, stack, endstl);
 				break;
 			}
 			case opc.FOR_NEXT: {
@@ -552,12 +557,14 @@ function*_run(vm, stack) {
 				if (endstl == stack.length || stack[endstl] === null) {
 					pc = arg;
 					stack.length = endstl;
+					trcur.trace(pc, 3);
 				} else {
 					while (stack.length < endstl + arg2) {
 						stack.push(null);
 					}
 					stack.length = endstl + arg2;
 					stack.splice(endstl, 0, iter, k, stack[endstl]);
+					trcur.traceStack(pc, 3, stack, endstl);
 				}
 				break;
 			}
@@ -585,8 +592,3 @@ function run(func, e = env()) {
 	console.log("vm", vm, stack);
 	return stack;
 }
-
-exports.Vm = Vm;
-exports.callObj = callObj;
-exports._run = _run;
-exports.run = run;
