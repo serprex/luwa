@@ -1,4 +1,6 @@
 "use strict";
+module.exports = Func;
+const trace = require("./trace");
 
 function Func(asm) {
 	this.id = asm.id;
@@ -11,8 +13,7 @@ function Func(asm) {
 	this.isdotdotdot = asm.isdotdotdot;
 	this.freelist = [];
 	this.local2free = asm.local2free;
-	this.traces = [];
-	this.traceid = 0;
+	this.trace = new trace.Context();
 	for (let key in asm.frees) {
 		key = +key;
 		for (let [fid, val] of asm.frees[key]) {
@@ -22,4 +23,4 @@ function Func(asm) {
 	}
 }
 
-module.exports = Func;
+

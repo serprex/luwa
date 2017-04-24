@@ -13,6 +13,7 @@ const thread = exports.thread = 256;
 exports.getType = getType;
 exports.Context = Context;
 exports.Cursor = Cursor;
+exports.Edge = Edge;
 exports.Id = Id;
 
 const Vm = require("./runbc").Vm;

@@ -48,8 +48,8 @@ function callObj(subvm, stack, base) {
 
 function*_run(vm, stack) {
 	let bc = vm.func.bc, lx = vm.func.lx, pc = 0;
-	let trctx = new trace.Context(), trcur = new trace.Cursor(trctx);
-	while (true){
+	let trctx = vm.func.trace, trcur = new trace.Cursor(trctx);
+	while (true) {
 		let op = bc[pc], arg = bc[pc+1], arg2 = bc[pc+2];
 		pc += (op >> 6) + 1;
 		switch (op) {
@@ -341,10 +341,12 @@ function*_run(vm, stack) {
 				break;
 			}
 			case opc.RETURN: {
+				trcur.traceStack(pc, -1, stack, 0);
 				return;
 			}
 			case opc.RETURN_VARG: {
 				stack.push(...vm.dotdotdot);
+				trcur.traceStack(pc, -1, stack, 0);
 				return;
 			}
 			case opc.APPEND_VARG: {
@@ -469,6 +471,7 @@ function*_run(vm, stack) {
 				}
 				endstl -=  bc[pc-arg] + 1;
 				let subvm = stack[endstl];
+				trcur.trace(pc, startstl - endstl);
 				if (typeof subvm === 'function') {
 					return yield*subvm(stack, endstl);
 				} else {
@@ -476,6 +479,8 @@ function*_run(vm, stack) {
 					vm.readarg(stack, endstl);
 					bc = vm.func.bc;
 					lx = vm.func.lx;
+					trctx = vm.func.trace;
+					trcur = new trace.Cursor(trctx);
 					pc = 0;
 				}
 				break;
@@ -504,6 +509,8 @@ function*_run(vm, stack) {
 					vm.readarg(stack, endstl);
 					bc = vm.func.bc;
 					lx = vm.func.lx;
+					trctx = vm.func.trace;
+					trcur = new trace.Cursor(trctx);
 					pc = 0;
 				}
 				break;
