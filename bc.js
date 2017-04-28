@@ -160,16 +160,6 @@ Assembler.prototype.pushGoto = function(op, lab, stackcheck = false) {
 	return this.gotos.push(this.bc.length - 1, lab, stackcheck ? this.fordepth : 0);
 }
 
-Assembler.prototype.genGoto = function(lab) {
-	for (var i=0; i<this.gotos.length; i+=3) {
-		let lpos = this.labelpos[this.gotos[i+1]];
-		this.bc[this.gotos[i]] = lpos.pos;
-		if (this.gotos[i+2]) {
-			this.bc[this.gotos[i]-2] = this.gotos[i+2] - lpos.fordepth;
-		}
-	}
-}
-
 Assembler.prototype.pushLoop = function(lab) {
 	this.loops.push(lab);
 	return this.pushLocal();
@@ -937,7 +927,6 @@ Assembler.prototype.scopeFuncbody = function(node, ismeth = false) {
 	subasm.popScope();
 	subasm.genBlock(selectNode(node, ast.Block));
 	subasm.push(RETURN, 0, 0);
-	subasm.genGoto();
 	this.fuli[node.li] = this.fus.length;
 	this.fus.push(new Func(subasm));
 }
@@ -1092,7 +1081,6 @@ function assemble(lx, root) {
 	asm.popScope();
 	asm.genBlock(root);
 	asm.push(RETURN, 0, 0);
-	asm.genGoto();
 	return new Func(asm);
 }
 

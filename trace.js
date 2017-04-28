@@ -66,6 +66,12 @@ function Cursor(ctx) {
 	this.id = null;
 }
 
+Cursor.prototype.clone = function() {
+	var c = new Cursor(this.ctx);
+	c.id = this.id;
+	return c;
+}
+
 Cursor.prototype.traceStack = function(idx, pop, stack, base) {
 	return this.trace(idx, pop, ...stack.slice(base));
 }
@@ -81,11 +87,13 @@ Cursor.prototype.trace = function(idx, pop, ...types) {
 		for (let h of head) {
 			if (h.tail === nid) {
 				h.count++;
-				return;
+				return h;
 			}
 		}
 	}
-	head.push(new Edge(id, nid, 1));
+	let h = new Edge(id, nid, 1);
+	head.push(h);
+	return h;
 }
 
 function Id(idx, pop, types) {
