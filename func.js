@@ -4,7 +4,8 @@ const trace = require("./trace");
 
 function Func(asm) {
 	this.id = asm.id;
-	this.lx = asm.lx;
+	this.sn = asm.lx.snr;
+	this.ss = asm.lx.ssr;
 	this.bc = asm.bc;
 	this.fus = asm.fus;
 	this.pcount = asm.pcount;

@@ -47,7 +47,7 @@ function callObj(subvm, stack, base) {
 }
 
 function*_run(vm, stack) {
-	let bc = vm.func.bc, lx = vm.func.lx, pc = 0;
+	let bc = vm.func.bc, pc = 0;
 	let trctx = vm.func.trace, trcur = new trace.Cursor(trctx);
 	while (true) {
 		let op = bc[pc], arg = bc[pc+1], arg2 = bc[pc+2];
@@ -307,12 +307,12 @@ function*_run(vm, stack) {
 				break;
 			}
 			case opc.LOAD_NUM: {
-				stack.push(lx.snr[arg]);
+				stack.push(vm.func.sn[arg]);
 				trcur.trace(pc, 0, trace.num);
 				break;
 			}
 			case opc.LOAD_STR: {
-				stack.push(lx.ssr[arg]);
+				stack.push(vm.func.ss[arg]);
 				trcur.trace(pc, 0, trace.str);
 				break;
 			}
@@ -390,7 +390,7 @@ function*_run(vm, stack) {
 			}
 			case opc.LOAD_METH: {
 				let a = stack.pop();
-				stack.push(obj.index(a, lx.ssr[arg]), a);
+				stack.push(obj.index(a, vm.func.ss[arg]), a);
 				// TODO propagate type of a
 				trcur.trace(pc, 2, trace.func|trace.jsfunc, trace.any);
 				break;
@@ -478,7 +478,6 @@ function*_run(vm, stack) {
 					vm = subvm;
 					vm.readarg(stack, endstl);
 					bc = vm.func.bc;
-					lx = vm.func.lx;
 					trctx = vm.func.trace;
 					trcur = new trace.Cursor(trctx);
 					pc = 0;
@@ -508,7 +507,6 @@ function*_run(vm, stack) {
 					vm = subvm;
 					vm.readarg(stack, endstl);
 					bc = vm.func.bc;
-					lx = vm.func.lx;
 					trctx = vm.func.trace;
 					trcur = new trace.Cursor(trctx);
 					pc = 0;

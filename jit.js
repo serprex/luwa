@@ -46,7 +46,7 @@ exports.compile = function(func, pc, trctx, trcur, imps) {
 	let localmap = [], localc = 1,
 		blockmap = [], blocks = [], blockc = 0;
 	let heads = trctx.heads.get(trcur.id);
-	let bc = func.bc, lx = func.lx;
+	let bc = func.bc;
 	function getLocal(local) {
 		let a = localmap[local];
 		if (a === undefined) {
@@ -88,7 +88,7 @@ exports.compile = function(func, pc, trctx, trcur, imps) {
 					break;
 				case opc.LOAD_NUM:
 					block.push(0x41);
-					varint(block, lx.snr[arg]);
+					varint(block, func.sn[arg]);
 					break;
 				case opc.STORE_LOCAL:
 					block.push(0x21);
