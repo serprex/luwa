@@ -1,28 +1,28 @@
 "use strict";
 const kw = {};
 const rekey = exports.rekey = /^(and|break|do|else|elseif|end|false|for|function|goto|if|in|local|nil|not|or|repeat|return|then|true|until|while)$/;
-const _and = kw["and"] = exports._and = 1;
-const _break = kw["break"] = exports._break = 2;
-const _do = kw["do"] = exports._do = 3;
-const _else = kw["else"] = exports._else = 4;
-const _elseif = kw["elseif"] = exports._elseif = 5;
-const _end = kw["end"] = exports._end = 6;
-const _false = kw["false"] = exports._false = 7;
-const _for = kw["for"] = exports._for = 8;
-const _function = kw["function"] = exports._function = 9;
-const _goto = kw["goto"] = exports._goto = 10;
-const _if = kw["if"] = exports._if = 11;
-const _in = kw["in"] = exports._in = 12;
-const _local = kw["local"] = exports._local = 13;
-const _nil = kw["nil"] = exports._nil = 14;
-const _not = kw["not"] = exports._not = 15;
-const _or = kw["or"] = exports._or = 16;
-const _repeat = kw["repeat"] = exports._repeat = 17;
-const _return = kw["return"] = exports._return = 18;
-const _then = kw["then"] = exports._then = 19;
-const _true = kw["true"] = exports._true = 20;
-const _until = kw["until"] = exports._until = 21;
-const _while = kw["while"] = exports._while = 22;
+const _and = kw.and = exports._and = 1;
+const _break = kw.break = exports._break = 2;
+const _do = kw.do = exports._do = 3;
+const _else = kw.else = exports._else = 4;
+const _elseif = kw.elseif = exports._elseif = 5;
+const _end = kw.end = exports._end = 6;
+const _false = kw.false = exports._false = 7;
+const _for = kw.for = exports._for = 8;
+const _function = kw.function = exports._function = 9;
+const _goto = kw.goto = exports._goto = 10;
+const _if = kw.if = exports._if = 11;
+const _in = kw.in = exports._in = 12;
+const _local = kw.local = exports._local = 13;
+const _nil = kw.nil = exports._nil = 14;
+const _not = kw.not = exports._not = 15;
+const _or = kw.or = exports._or = 16;
+const _repeat = kw.repeat = exports._repeat = 17;
+const _return = kw.return = exports._return = 18;
+const _then = kw.then = exports._then = 19;
+const _true = kw.true = exports._true = 20;
+const _until = kw.until = exports._until = 21;
+const _while = kw.while = exports._while = 22;
 const _plus = exports._plus = 23;
 const _minus = exports._minus = 24;
 const _mul = exports._mul = 25;
@@ -64,12 +64,12 @@ const digit = /^\d$/, xdigit = /^[\da-fA-F]$/;
 const alphascore = /^[a-zA-Z_]$/;
 const alphanumscore = /^\w$/;
 function Lex(src) {
-	this.ss = { _ENV: 0, self: 1 };
 	this.ssr = ["_ENV", "self"];
-	this.sn = {};
 	this.snr = [];
-	const ss = this.ss, ssr = this.ssr, sn = this.sn, snr = this.snr;
-	const lex = [];
+	const ssr = this.ssr, snr = this.snr;
+	const lex = [], sm = new Map();
+	sm.set("_ENV", 0);
+	sm.set("self", 1);
 	let ch;
 	for (let i=0; i<src.length; i++){
 		switch (ch = src[i]) {
@@ -80,11 +80,11 @@ function Lex(src) {
 				i--;
 				if (rekey.test(ident)) {
 					lex.push(kw[ident]);
-				} else if (ident in ss) {
-					lex.push(_ident | ss[ident]);
+				} else if (sm.has(ident)) {
+					lex.push(_ident | sm.get(ident));
 				} else {
 					lex.push(_ident | ssr.length);
-					ss[ident] = ssr.length;
+					sm.set(ident, ssr.length);
 					ssr.push(ident);
 				}
 			} else if (!/^\s$/.test(ch)) {
@@ -164,11 +164,11 @@ function Lex(src) {
 						return console.log("Unterminated string " + n);
 					}
 					let s = src.slice(i0, i);
-					if (s in ss) {
-						lex.push(_string | ss[s]);
+					if (sm.has(s)) {
+						lex.push(_string | sm.get(s));
 					} else {
 						lex.push(_string | ssr.length);
-						ss[s] = ssr.length;
+						sm.set(s, ssr.length);
 						ssr.push(s);
 					}
 					break;
@@ -215,11 +215,11 @@ function Lex(src) {
 					s += c;
 				}
 			}
-			if (s in ss) {
-				lex.push(_string | ss[s]);
+			if (sm.has(s)) {
+				lex.push(_string | sm.get(s));
 			} else {
 				lex.push(_string | ssr.length);
-				ss[s] = ssr.length;
+				sm.set(s, ssr.length);
 				ssr.push(s);
 			}
 			break;
@@ -266,11 +266,11 @@ function Lex(src) {
 				if (ch == '0' && (src[i] == 'x' || src[i] == 'X')) {
 					while (/[\da-fA-F]/.test(src[i+1])) i++;
 					let n = parseInt(src.slice(i0 + 2, i+1));
-					if (n in sn) {
-						lex.push(_number | sn[n]);
+					if (sm.has(n)) {
+						lex.push(_number | sm.get(n));
 					} else {
 						lex.push(_number | snr.length);
-						sn[n] = snr.length;
+						sm.set(n, snr.length);
 						snr.push(n);
 					}
 				} else {
@@ -285,11 +285,11 @@ function Lex(src) {
 						ident += n;
 						i++;
 					}
-					if (val in sn) {
-						lex.push(_number | sn[val]);
+					if (sm.has(val)) {
+						lex.push(_number | sm.get(val));
 					} else {
 						lex.push(_number | snr.length);
-						sn[val] = snr.length;
+						sm.set(val, snr.length);
 						snr.push(val);
 					}
 				}
