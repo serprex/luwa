@@ -96,13 +96,14 @@ function Lex(src) {
 			if (src[i+1] == '-') {
 				if (src[i+2] == '[') {
 					let n = ']';
-					while (src[i+n.length] == '=') n += '=';
-					if (src[i+n.length] == '[') {
+					while (src[i+2+n.length] == '=') n += '=';
+					if (src[i+2+n.length] == '[') {
 						n += ']';
 						i = src.indexOf(n, i);
-						if (i == -1) {
+						if (!~i) {
 							return console.log("Unterminated comment " + n);
 						}
+						i += n.length;
 						break;
 					}
 				}
@@ -182,6 +183,7 @@ function Lex(src) {
 					switch (src[++i]) {
 						case 'a':s == String.fromCharCode(7);break;
 						case 'b':s += '\b';break;
+						case 'f':s += '\f';break;
 						case '\n':case 'n':s += '\n';break;
 						case '\r':case 'r':s += '\r';break;
 						case 't':s += '\t';break;
@@ -205,7 +207,7 @@ function Lex(src) {
 							i += digit.test(c1) + digit.test(c2);
 							break;
 						}
-						default:return console.log("Invalid sequence");
+						default:return console.log(i, "Invalid sequence");
 					}
 				} else if (c == '\n') {
 					return console.log('newline in string');
