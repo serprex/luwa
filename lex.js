@@ -1,4 +1,5 @@
 "use strict";
+const util = require("./util");
 const kw = {};
 const rekey = exports.rekey = /^(and|break|do|else|elseif|end|false|for|function|goto|if|in|local|nil|not|or|repeat|return|then|true|until|while)$/;
 const _and = kw.and = exports._and = 1;
@@ -56,9 +57,9 @@ const _comma = exports._comma = 52;
 const _dot = exports._dot = 53;
 const _dotdot = exports._dotdot = 54;
 const _dotdotdot = exports._dotdotdot = 55;
-const _ident = exports._ident = 0x8000000;
-const _string = exports._string = 0x4000000;
-const _number = exports._number = 0x2000000;
+const _ident = exports._ident = 64;
+const _string = exports._string = 128;
+const _number = exports._number = 192;
 
 const digit = /^\d$/, xdigit = /^[\da-fA-F]$/;
 const alphascore = /^[a-zA-Z_]$/;
@@ -70,20 +71,22 @@ function Lex(src) {
 	const lex = [], sm = new Map();
 	sm.set("_ENV", 0);
 	sm.set("self", 1);
-	let ch;
 	for (let i=0; i<src.length; i++){
+		let ch;
 		switch (ch = src[i]) {
 		default:
 			if (alphascore.test(ch)) {
-				var ident = ch;
+				let ident = ch;
 				for (i=i+1; i<src.length && alphanumscore.test(src[i]); i++) ident += src[i];
 				i--;
 				if (rekey.test(ident)) {
 					lex.push(kw[ident]);
 				} else if (sm.has(ident)) {
-					lex.push(_ident | sm.get(ident));
+					lex.push(_ident);
+					util.varuint(lex, sm.get(ident));
 				} else {
-					lex.push(_ident | ssr.length);
+					lex.push(_ident);
+					util.varuint(lex, ssr.length);
 					sm.set(ident, ssr.length);
 					ssr.push(ident);
 				}
@@ -154,7 +157,7 @@ function Lex(src) {
 			if (src[i+1] != '[' && src[i+1] != '=') {
 				lex.push(_sl);
 			} else {
-				var n = ']';
+				let n = ']';
 				while (src[i+n.length] == '=') n += '=';
 				if (src[i+n.length] == '[') {
 					n += ']';
@@ -164,10 +167,11 @@ function Lex(src) {
 						return console.log("Unterminated string " + n);
 					}
 					let s = src.slice(i0, i);
+					lex.push(_string);
 					if (sm.has(s)) {
-						lex.push(_string | sm.get(s));
+						util.varuint(lex, sm.get(s));
 					} else {
-						lex.push(_string | ssr.length);
+						util.varuint(ssr.length);
 						sm.set(s, ssr.length);
 						ssr.push(s);
 					}
@@ -215,10 +219,11 @@ function Lex(src) {
 					s += c;
 				}
 			}
+			lex.push(_string);
 			if (sm.has(s)) {
-				lex.push(_string | sm.get(s));
+				util.varuint(lex, sm.get(s));
 			} else {
-				lex.push(_string | ssr.length);
+				util.varuint(lex, ssr.length);
 				sm.set(s, ssr.length);
 				ssr.push(s);
 			}
@@ -261,15 +266,16 @@ function Lex(src) {
 				break;
 			}
 		case '0':case '1':case '2':case '3':case '4':case '5':case '6':case '7':case '8':case '9': {
-				var val = ch == '.' ? 0 : parseFloat(ch), ident = ch, e = false, p = ch == '.', i0 = i;
+				let val = ch == '.' ? 0 : parseFloat(ch), ident = ch, e = false, p = ch == '.', i0 = i;
 				i++;
+				lex.push(_number);
 				if (ch == '0' && (src[i] == 'x' || src[i] == 'X')) {
 					while (/[\da-fA-F]/.test(src[i+1])) i++;
 					let n = parseInt(src.slice(i0 + 2, i+1));
 					if (sm.has(n)) {
-						lex.push(_number | sm.get(n));
+						util.varuint(lex, sm.get(val));
 					} else {
-						lex.push(_number | snr.length);
+						util.varuint(lex, snr.length);
 						sm.set(n, snr.length);
 						snr.push(n);
 					}
@@ -286,9 +292,9 @@ function Lex(src) {
 						i++;
 					}
 					if (sm.has(val)) {
-						lex.push(_number | sm.get(val));
+						util.varuint(lex, sm.get(val));
 					} else {
-						lex.push(_number | snr.length);
+						util.varuint(lex, snr.length);
 						sm.set(val, snr.length);
 						snr.push(val);
 					}
@@ -299,7 +305,7 @@ function Lex(src) {
 		}
 	}
 	lex.push(0);
-	this.lex = new Uint32Array(lex);
+	this.lex = new Uint8Array(lex);
 }
 
 exports.Lex = Lex;

@@ -1,5 +1,6 @@
 "use strict";
-const lex = require("./lex");
+const lex = require("./lex"),
+	util = require("./util");
 
 // Thanks lua-users.org/lists/lua-l/2010-12/msg00699.html
 const Block = exports.Block = 0,
@@ -25,25 +26,24 @@ const Block = exports.Block = 0,
 	ExpAnd = exports.ExpAnd = 20;
 
 function*name(lx, x, p) {
-	var t = x.next(p);
-	if (t.val(lx) & lex._ident)
-		yield t;
+	let t = x.next(p);
+	if (t.val(lx) === lex._ident)
+		yield t.skipint(lx);
 };
 function*number(lx, x, p) {
-	var t = x.next(p);
-	if (t.val(lx) & lex._number)
-		yield t;
+	let t = x.next(p);
+	if (t.val(lx) === lex._number)
+		yield t.skipint(lx);
 };
 function*slit(lx, x, p) {
-	var t = x.next(p);
-	if (t.val(lx) & lex._string)
-		yield t;
+	let t = x.next(p);
+	if (t.val(lx) === lex._string)
+		yield t.skipint(lx);
 };
 const _s = [], s = r => _s[r] || (_s[r] = function*(lx, x, p) {
-	var t = x.next(p);
-	if (t.val(lx) == r) {
+	let t = x.next(p);
+	if (t.val(lx) == r)
 		yield t;
-	}
 });
 const _o = [], o = n => _o[n] || (_o[n] = function*(lx, x, p) {
 	yield *rules[n](lx, x, p);
@@ -153,8 +153,9 @@ of(Call,
 	seq(s(lex._colon), name, o(Args)));
 of(Suffix, o(Call), o(Index));
 
-function Builder(li, mo, fa, ty) {
+function Builder(li, nx, mo, fa, ty) {
 	this.li = li;
+	this.nx = nx;
 	this.type = ty;
 	this.mother = mo;
 	this.father = fa;
@@ -163,19 +164,26 @@ function Builder(li, mo, fa, ty) {
 Builder.prototype.val = function(lx) {
 	return lx.lex[this.li];
 }
+Builder.prototype.skipint = function(lx) {
+	while (lx.lex[this.nx++] & 128);
+	return this;
+}
+Builder.prototype.int = function(lx) {
+	return util.readvaruint(lx.lex, this.li + 1);
+}
 Builder.prototype.next = function(p) {
-	return new Builder(this.li+1, ~this.type ? this.mother : this, p, -1);
+	return new Builder(this.nx, this.nx+1, ~this.type ? this.mother : this, p, -1);
 }
 Builder.prototype.spawn = function(ty, p) {
-	return new Builder(this.li, ~this.type ? this.mother : this, p, ty);
+	return new Builder(this.li, this.nx, ~this.type ? this.mother : this, p, ty);
 }
 
 function parse(lx) {
-	const root = new Builder(-1, null, null, -2);
+	const root = new Builder(-1, 0, null, null, -2);
 	for (let child of rules[Block](lx, root, root)) {
 		if (child.li == lx.lex.length - 2) {
 			do {
-				var father = child.father, prev_father = child;
+				let father = child.father, prev_father = child;
 				while (father) {
 					father.fathered.push(prev_father);
 					if (father.fathered.length > 1) break;

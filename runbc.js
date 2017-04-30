@@ -462,7 +462,7 @@ function*_run(vm, stack) {
 				break;
 			}
 			case opc.RETURN_CALL: {
-				let endstl = stack.length;
+				let endstl = stack.length, startstl = endstl;
 				pc += arg;
 				for (var i=1; i<arg; i++) {
 					endstl -=  bc[pc-i] + 1;
@@ -514,7 +514,7 @@ function*_run(vm, stack) {
 				break;
 			}
 			case opc.CALL: {
-				let endstl = stack.length;
+				let endstl = stack.length, startstl = endstl;
 				pc += arg2;
 				for (var i=1; i<arg2; i++) {
 					endstl -=  bc[pc-i] + 1;

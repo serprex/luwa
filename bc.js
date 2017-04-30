@@ -109,36 +109,36 @@ Assembler.prototype.hasLiteral = function(node, lit) {
 
 Assembler.prototype.filterMasks = function*(node, mask) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
-		let ch = node.fathered[i], v;
-		if (ch.type == -1 && (v = ch.val(this.lx)) & mask) {
-			yield v & 0xffffff;
+		let ch = node.fathered[i];
+		if (ch.type === -1 && ch.val(this.lx) === mask) {
+			yield ch.int(this.lx);
 		}
 	}
 }
 
 Assembler.prototype.filterMask = function(node, mask) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
-		let ch = node.fathered[i], v;
-		if (ch.type == -1 && (v = ch.val(this.lx)) & mask) {
-			return v & 0xffffff;
+		let ch = node.fathered[i];
+		if (ch.type === -1 && ch.val(this.lx) === mask) {
+			return ch.int(this.lx);
 		}
 	}
 }
 
 Assembler.prototype.identIndices = function*(node) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
-		let ch = node.fathered[i], v;
-		if (ch.type == -1 && (v = ch.val(this.lx)) & lex._ident) {
-			yield { name: v & 0xffffff, li: ch.li };
+		let ch = node.fathered[i];
+		if (ch.type === -1 && ch.val(this.lx) === lex._ident) {
+			yield { name: ch.int(this.lx), li: ch.li };
 		}
 	}
 }
 
 Assembler.prototype.identIndex = function(node) {
 	for (let i = node.fathered.length - 1; i >= 0; i--) {
-		let ch = node.fathered[i], v;
-		if (ch.type == -1 && (v = ch.val(this.lx)) & lex._ident) {
-			return { name: v & 0xffffff, li: ch.li };
+		let ch = node.fathered[i];
+		if (ch.type === -1 && ch.val(this.lx) === lex._ident) {
+			return { name: ch.int(this.lx), li: ch.li };
 		}
 	}
 }

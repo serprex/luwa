@@ -2,38 +2,10 @@
 
 const trace = require("./trace"),
 	Func = require("./func"),
-	opc = require("./bc");
+	opc = require("./bc"),
+	util = require("./util");
+const varint = util.varint, varuint = util.varuint;
 
-function varint (v, value) {
-	while (true) {
-		let b = value & 127;
-		value >>= 7;
-		if ((!value && ((b & 0x40) == 0)) || ((value == -1 && ((b & 0x40) == 0x40)))) {
-			return v.push(b);
-		}
-		else {
-			v.push(b | 128);
-		}
-	}
-}
-
-function varuint (v, value) {
-	while (true) {
-		let b = value & 127;
-		value >>= 7;
-		if (value) {
-			v.push(b | 128);
-		} else {
-			return v.push(b);
-		}
-	}
-}
-
-function pushString(v, str) {
-	for (let i=0; i<str.length; i++) {
-		v.push(str.charCodeAt(i));
-	}
-}
 
 /*
 local i = 0 # LOAD_NUM 0, STORE_LOCAL 1
