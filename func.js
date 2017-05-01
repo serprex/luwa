@@ -6,7 +6,7 @@ function Func(asm) {
 	this.id = asm.id;
 	this.sn = asm.lx.snr;
 	this.ss = asm.lx.ssr;
-	this.bc = asm.bc;
+	this.bc = new Uint32Array(asm.bc);
 	this.fus = asm.fus;
 	this.pcount = asm.pcount;
 	this.lcount = asm.lcount;
@@ -16,7 +16,7 @@ function Func(asm) {
 	this.local2free = asm.local2free;
 	this.trace = new trace.Context();
 	this.labels = new Set();
-	for (var i=0; i<asm.gotos.length; i+=3) {
+	for (let i=0; i<asm.gotos.length; i+=3) {
 		let lpos = asm.labelpos[asm.gotos[i+1]];
 		this.bc[asm.gotos[i]] = lpos.pos;
 		this.labels.add(lpos.pos);
