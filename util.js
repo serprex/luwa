@@ -40,6 +40,19 @@ function varuint (v, value) {
 	}
 }
 
+if (typeof TextEncoder === 'undefined') {
+	TextEncoder = function () {
+	};
+	TextEncoder.prototype.encode = function (s) {
+		let u8 = unescape(encodeURIComponent(s));
+		let ret = new Uint8Array(u8.length);
+		for (let i=0; i<ret.length; i++) {
+			ret[i] = u8.charCodeAt(i);
+		}
+		return ret;
+	}
+}
+
 const te = new TextEncoder();
 function pushString(v, str) {
 	v.push(...te.encode(str));

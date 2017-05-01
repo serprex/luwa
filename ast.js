@@ -181,7 +181,7 @@ Builder.prototype.spawn = function(ty, p) {
 function parse(lx) {
 	const root = new Builder(-1, 0, null, null, -2);
 	for (let child of rules[Block](lx, root, root)) {
-		if (child.li == lx.lex.length - 2) {
+		if (child.nx == lx.lex.length - 1) {
 			do {
 				let father = child.father, prev_father = child;
 				while (father) {
