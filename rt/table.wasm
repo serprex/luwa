@@ -1,0 +1,33 @@
+require alloc.wasm
+
+/*
+struct Hkv {
+	obj*key
+	obj*val
+	Hkv*next
+}
+
+struct Table {
+	i32 type
+	i32 ref
+	i32 len
+	obj*arr
+	i32 hlen
+	Hkv*hash
+	Table*meta
+}
+*/
+
+const sizeofHkv 12
+const sizeofTable 32
+
+func mktable
+void -> i32
+	i32.const sizeofTable
+	call malloc
+	ret
+
+func freetable
+x i32 -> void
+	load x
+	call 

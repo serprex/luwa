@@ -1,0 +1,5 @@
+func malloc
+sz i32 -> i32
+
+func free
+p i32 -> void

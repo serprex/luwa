@@ -1,0 +1,35 @@
+/*
+Header:
+i32 ref
+i8 type
+*/
+
+use alloc.wasm
+
+func incref
+x i32 -> void
+	load x
+	aread32
+	i32 1
+	i32.add
+	load x
+	awrite32
+	ret
+
+func decref
+x i32 -> void
+y i32
+	load x
+	read32
+	i32 1
+	i32.sub
+	tee y
+	if
+		load x
+		load y
+		awrite32
+	else
+		load x
+		call free
+	end
+	ret
