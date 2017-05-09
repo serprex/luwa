@@ -7,7 +7,7 @@ i8 type
 use alloc.wasm
 
 func incref
-x i32 -> void
+x i32 void
 	load x
 	aread32
 	i32 1
@@ -17,7 +17,7 @@ x i32 -> void
 	ret
 
 func decref
-x i32 -> void
+x i32 void
 y i32
 	load x
 	read32
