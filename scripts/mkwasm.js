@@ -6,6 +6,7 @@ if (process.argv.length<3) {
 }
 
 const fs = require("fs"), path = require("path");
+const util = require("../util"), varint = util.varint, varuint = util.varuint;
 
 function processModule(mod, n) {
 	if (n >= process.argv.length) {
@@ -33,8 +34,21 @@ processModule({
 	imports: [],
 	exports: [],
 	funcs: [],
+	memory: null,
+	start: null,
 	names: new Map(),
+	tymap: new Map(),
 }, 3);
+
+function gettype(mod, tysig) {
+	let sig = tysig.join();
+	let t = mod.tymap.get(sig);
+	if (t === undefined) {
+		mod.tymap.set(sig, t = mod.types.length);
+		mod.types.push(tysig.map(x => tymap[x]));
+	}
+	return t;
+}
 
 function mod_wasm(mod, data) {
 	const lines = data.split('\n');
@@ -46,18 +60,21 @@ function mod_wasm(mod, data) {
 		}
 		else if (/^func /.test(line)) {
 			let name = line.slice(5);
+			let tysig = line[i+1].split(/\s+/), line2 = line[i+2];
 			let fu = {
+				sig: null,
+				name: name,
 				locals: [],
 				code: [],
 			};
-			mod.names.set(name, mod.funcs.length);
-			let tysig = line[i+1].split(/\s+/), line2 = line[i+2];
 			let locals = new Map();
-			let ret = tysig[tysig.length - 1];
 			for (let j=0; j<tysig.length - 1; j += 2) {
 				locals.set(tysig[j], fu.locals.length);
 				fu.locals.push(tysig[j+1]);
 			}
+			let sig = fu.locals.slice();
+			sig.push(tysig[tysig.length - 1]);
+			fu.sig = gettype(mod, sig);
 			if (/^\s/.test(line2)) {
 				i += 2;
 			} else {
@@ -72,7 +89,6 @@ function mod_wasm(mod, data) {
 				let ln = line[i].trim().split(/\s+/);
 				fu.code.push(opmap[ln[0]] || (ln[0]|0));
 				// TODO implicit params
-				// TODO multibyte params
 				for (let j=1; j<ln.length; j++) {
 					let lv = locals.get(ln[j]);
 					fu.code.push(lv === undefined ? ln[j] : lv);
@@ -86,6 +102,7 @@ function mod_wasm(mod, data) {
 			mod.exports.push(line.slice(7));
 		}
 		else if (/^import /.test(line)) {
+			mod.imports.push(line.split(/\s+/));
 		}
 		else if (/^global /.test(line)) {
 			let [_global, mut, ty, name, val] = line.split(/\s+/);
@@ -99,8 +116,14 @@ function mod_wasm(mod, data) {
 			}
 			val = +val;
 			mut = mut == "mut";
-			names.set(name, mod.globals.length);
+			mod.names.set(name, mod.globals.length);
 			mod.globals.push([mut, ty]);
+		} else if (/^const /.test(line)) {
+			let [_const, name, val] = line.split(/\s+/);
+			mod.names.set(name, val);
+		} else if (/^start /.test(line)) {
+			if (mod.start) console.log("Duplicate start", mod.start, line);
+			mod.start = line.slice(6);
 		} else {
 			console.log("??", line);
 		}
@@ -108,6 +131,32 @@ function mod_wasm(mod, data) {
 }
 
 function mod_comp(mod) {
+	const fsig = [];
+	for (let i=0; i<mod.imports.length; i++) {
+		let [_import, kind, name, ...data] = mod.imports[i];
+		let [module, field] = name.split('.');
+		// map name
+		// map field?
+		// optional 'as X'?
+		// need to parse remaining..
+		switch (kind.slice(0, 3)) {
+			case "fun":
+				mod.names.set(name, fsig.length);
+				fsig.push(gettype(data.split(/\s+/)));
+				break;
+			case "tab":
+				break;
+			case "mem":
+				break;
+			case "glo":
+				break;
+		}
+	}
+	for (let i=0; i<mod.funcs.length; i++) {
+		let fu = mod.funcs[i];
+		mod.names.set(fu.name, fsig.length);
+		fsig.push(fu.sig);
+	}
 	for (let i=0; i<mod.funcs.length; i++) {
 		let fu = mod.funcs[i];
 		for (let j=0; j<fu.code.length; j++) {
@@ -118,8 +167,65 @@ function mod_comp(mod) {
 			}
 		}
 	}
+
+	const bc = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+	if (mod.types.length) {
+		bc.push(1);
+		const bcty = [];
+		varuint(bcty, mod.types.length);
+		for (let i=0; i<mod.types.length; i++) {
+			bcty.push(0x60);
+			let ty = mod.types[i];
+			if (ty.length == 0) {
+				bcty.push(0, 0);
+				continue;
+			}
+			let hasret = ty[ty.length-1] != 0x40;
+			let pcount = hasret ? ty.length - 1 : ty.length;
+			varuint(bcty, pcount);
+			for (let j=0; j<ty.length; j++) {
+				bcty.push(ty[j]);
+			}
+			if (hasret) {
+				bcty.push(1, ty[ty.length - 1]);
+			} else {
+				bcty.push(0);
+			}
+		}
+		varuint(bc, bcty.length);
+		bc.push(...bcty);
+	}
+	if (mod.funcs.length) {
+		bc.push(10);
+		const bcco = [];
+		varuint(bcco, mod.funcs.length);
+		for (let i=0; i<mod.funcs.length; i++) {
+			let fu = mod.funcs[i];
+			let cofu = [];
+			varuint(cofu, fu.locals.length);
+			// TODO RLE
+			for (let j=0; j<fu.locals.length; j++) {
+				varuint(cofu, 1);
+				cofu.push(fu.locals[j]);
+			}
+			varuint(bcco, cofu.length);
+			bcco.push(...cofu);
+		}
+		varuint(bc, bcco.length);
+		bc.push(...bcco);
+	}
+	return Buffer.from(body);
 }
 
+const tymap = {
+	i32: 0x7f,
+	i64: 0x7e,
+	f32: 0x7d,
+	f64: 0x7c,
+	anyfunc: 0x70,
+	func: 0x60,
+	void: 0x40,
+};
 const opmap = {
 	unreachable: 0x00,
 	nop: 0x01,
@@ -150,7 +256,9 @@ const opmap = {
 	set_global: 0x24,
 	storeg: 0x24,
 	"i32.load": 0x28,
+	read32: 0x28,
 	"i64.load": 0x29,
+	read64: 0x29,
 	"f32.load": 0x2a,
 	"f64.load": 0x2b,
 	"i32.load8_s": 0x2c,
