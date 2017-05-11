@@ -30,11 +30,17 @@ function processModule(mod, n) {
 
 processModule({
 	types: [],
-	globals: [],
+	global: [],
 	imports: [],
-	exports: [],
+	exports: {
+		func: new Set(),
+		table: new Set(),
+		memory: new Set(),
+		global: new Set(),
+	},
+	table: [],
 	funcs: [],
-	memory: null,
+	memory: [],
 	start: null,
 	names: new Map(),
 	tymap: new Map(),
@@ -54,6 +60,8 @@ function mod_wasm(mod, data) {
 	const lines = data.split('\n');
 	for (let i=0; i<lines.length; i++) {
 		let line = lines[i];
+		let expo = /^export (func|memory|table|global)/.test(line);
+		if (expo) line = line.slice(7);
 		if (/^use /.test(line)) continue;
 		else if (/^\/\*/.test(line)) {
 			while (!line[++i].test(/\*\/$/));
@@ -96,31 +104,31 @@ function mod_wasm(mod, data) {
 				i++;
 			}
 			i--;
-			mod.funcs.push(fu);
+			if (expo) mod.exports.func.add(mod.func.length);
+			mod.func.push(fu);
 		}
-		else if (/^export /.test(line)) {
-			mod.exports.push(line.slice(7));
+		else if (/^table /.test(line)) {
+			let tab = [];
+			while (/^\s+/.test(lines[i+1])) {
+				tab.push(lines[i+1].trim().split(/\s+/));
+				i++;
+			}
+			if (expo) mod.exports.table.add(mod.table.length);
+			mod.table.push(tab);
 		}
 		else if (/^import /.test(line)) {
 			mod.imports.push(line.split(/\s+/));
 		}
 		else if (/^global /.test(line)) {
-			let [_global, mut, ty, name, val] = line.split(/\s+/);
-			if (!val) {
-				val = "0";
-			}
-			if (!name) {
-				name = ty;
-				ty = mut;
-				mut = "mut";
-			}
-			val = +val;
-			mut = mut == "mut";
-			mod.names.set(name, mod.globals.length);
-			mod.globals.push([mut, ty]);
+			if (expo) mod.exports.global.add(mod.global.length);
+			mod.global.push(line.split(/\s+/));
 		} else if (/^const /.test(line)) {
 			let [_const, name, val] = line.split(/\s+/);
 			mod.names.set(name, val);
+		} else if (/^memory /.test(line)) {
+			let [_memory, ...mems] = line.split(/\s+/);
+			if (expo) mod.exports.memory.add(mod.memory.length);
+			mod.memory.push(...mems.map(x => ~x.indexOf(':') ? x.split(':').map(y => +y) : +x[0]));
 		} else if (/^start /.test(line)) {
 			if (mod.start) console.log("Duplicate start", mod.start, line);
 			mod.start = line.slice(6);
@@ -130,35 +138,78 @@ function mod_wasm(mod, data) {
 	}
 }
 
+/*
+// started on parser combinators.. might get by without
+function kw(s) {
+	return function*(ctx, x, p){
+		let t = x.next(p);
+		if (t && t.val(ctx) === s)
+			yield t;
+	}
+}
+function*num() {
+	let t = x.next(p);
+	if (t && /0x[0-9a-fA-F]+|[0-9]+/.test(t.val(ctx)))
+		yield t;
+}
+function*name() {
+	let t = x.next(p);
+	if (t && /[a-zA-Z_$].*/.test(t.val(ctx)))
+		yield t;
+}
+*/
+
 function mod_comp(mod) {
-	const fsig = [];
+	const fsig = [], tsig = [], msig = [], gsig = [];
 	for (let i=0; i<mod.imports.length; i++) {
 		let [_import, kind, name, ...data] = mod.imports[i];
 		let [module, field] = name.split('.');
-		// map name
-		// map field?
-		// optional 'as X'?
-		// need to parse remaining..
+		let dsplit = data.split(/\s+/);
 		switch (kind.slice(0, 3)) {
-			case "fun":
+			case "fun": {
 				mod.names.set(name, fsig.length);
-				fsig.push(gettype(data.split(/\s+/)));
+				fsig.push(gettype(dsplit));
 				break;
-			case "tab":
+			}
+			case "tab": {
+				mod.names.set(name, tsig.length);
+				tsig.push([0x40, data[0]|0, data.length < 2 ? -1 : data[1]|0]);
 				break;
-			case "mem":
+			}
+			case "mem": {
+				mod.names.set(name, msig.length);
+				msig.push([data[0]|0, data.length < 2 ? -1 : data[1]|0]);
 				break;
-			case "glo":
+			}
+			case "glo": {
+				mod.names.set(name, gsig.length);
+				gsig.push([tymap[data[0]], 0]);
 				break;
+			}
 		}
 	}
-	for (let i=0; i<mod.funcs.length; i++) {
-		let fu = mod.funcs[i];
+	for (let i=0; i<mod.globals.length; i++) {
+		let [_global, mut, ty, name, val] = mod.globals[i];
+		if (!val) {
+			val = "0";
+		}
+		if (!name) {
+			name = ty;
+			ty = mut;
+			mut = "mut";
+		}
+		val = +val;
+		mut = mut == "mut"?1:0;
+		mod.names.set(name, gsig.length);
+		mod.globals.push([ty, mut]);
+	}
+	for (let i=0; i<mod.func.length; i++) {
+		let fu = mod.func[i];
 		mod.names.set(fu.name, fsig.length);
 		fsig.push(fu.sig);
 	}
-	for (let i=0; i<mod.funcs.length; i++) {
-		let fu = mod.funcs[i];
+	for (let i=0; i<mod.func.length; i++) {
+		let fu = mod.func[i];
 		for (let j=0; j<fu.code.length; j++) {
 			let c = fu.code[j];
 			if (typeof c === "string") {
@@ -195,12 +246,21 @@ function mod_comp(mod) {
 		varuint(bc, bcty.length);
 		bc.push(...bcty);
 	}
-	if (mod.funcs.length) {
+	if (mod.start) {
+		bc.push(9);
+		let val = mod.names.get(mod.start);
+		if (val === undefined) val = mod.start|0;
+		let bcstart = [];
+		varuint(bcstart, val);
+		varuint(bc, bcstart.length);
+		bc.push(...bcstart);
+	}
+	if (mod.func.length) {
 		bc.push(10);
 		const bcco = [];
-		varuint(bcco, mod.funcs.length);
-		for (let i=0; i<mod.funcs.length; i++) {
-			let fu = mod.funcs[i];
+		varuint(bcco, mod.func.length);
+		for (let i=0; i<mod.func.length; i++) {
+			let fu = mod.func[i];
 			let cofu = [];
 			varuint(cofu, fu.locals.length);
 			// TODO RLE
