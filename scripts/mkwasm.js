@@ -10,19 +10,19 @@ const util = require("../util"), varint = util.varint, varuint = util.varuint, a
 
 function processModule(mod, n) {
 	if (n >= process.argv.length) {
-		fs.writeFile(process.argv[2], mod_comp(mod), 'w', () => {});
+		fs.writeFile(process.argv[2], mod_comp(mod), () => {});
 		return;
 	}
 	const f = process.argv[n], ext = path.extname(f);
-	const src = fs.createReadStream(process.argv[2]);
+	const src = fs.createReadStream(f);
 	let cb;
-	if (ext == ".wasm") {
-		cb = mod_wasm;
+	if (ext == ".wawa") {
+		cb = mod_wawa;
 	} else {
 		console.log("Unknown ext: " + ext);
 		return;
 	}
-	fs.readFile(process.argv[2], "utf8", (err, data) => {
+	fs.readFile(f, "utf8", (err, data) => {
 		cb(mod, data);
 		return processModule(mod, n+1);
 	});
@@ -39,9 +39,9 @@ processModule({
 		global: new Set(),
 	},
 	table: [],
-	funcs: [],
+	func: [],
 	memory: [],
-	start: null,
+	start: -1,
 	element: [],
 	data: [],
 	names: new Map(),
@@ -58,26 +58,27 @@ function gettype(mod, tysig) {
 	return t;
 }
 
-function mod_wasm(mod, data) {
+function mod_wawa(mod, data) {
 	const lines = data.split('\n');
 	for (let i=0; i<lines.length; i++) {
 		let line = lines[i];
+		if (line.match(/^\s*$/)) continue;
 		let expo = /^export (func|memory|table|global)/.test(line);
 		if (expo) line = line.slice(7);
 		if (/^use /.test(line)) continue;
 		else if (/^\/\*/.test(line)) {
-			while (!line[++i].test(/\*\/$/));
+			while (!lines[++i].test(/\*\/$/));
 		}
 		else if (/^func /.test(line)) {
 			let name = line.slice(5);
-			let tysig = line[i+1].split(/\s+/), line2 = line[i+2];
-			let fu = {
-				sig: null,
+			let tysig = lines[i+1].split(/\s+/), line2 = lines[i+2];
+			const fu = {
+				sig: -1,
 				name: name,
 				locals: [],
 				code: [],
 			};
-			let locals = new Map();
+			const locals = new Map();
 			for (let j=0; j<tysig.length - 1; j += 2) {
 				locals.set(tysig[j], fu.locals.length);
 				fu.locals.push(tysig[j+1]);
@@ -95,8 +96,8 @@ function mod_wasm(mod, data) {
 				}
 				i += 3;
 			}
-			while (/^\s+/.test(line[i])) {
-				let ln = line[i].trim().split(/\s+/);
+			while (/^\s+/.test(lines[i])) {
+				let ln = lines[i].trim().split(/\s+/);
 				fu.code.push(opmap[ln[0]] || (ln[0]|0));
 				// TODO implicit params
 				for (let j=1; j<ln.length; j++) {
@@ -132,7 +133,7 @@ function mod_wasm(mod, data) {
 			if (expo) mod.exports.memory.add(mod.memory.length);
 			mod.memory.push(...mems.map(x => pushLimit([], x)));
 		} else if (/^start /.test(line)) {
-			if (mod.start) console.log("Duplicate start", mod.start, line);
+			if (~mod.start) console.log("Duplicate start", mod.start, line);
 			mod.start = line.slice(6);
 		} else {
 			console.log("??", line);
@@ -147,27 +148,6 @@ function pushLimit(ret, lim) {
 	if (mx !== undefined) varuint(ret, mx|0);
 	return ret;
 }
-
-/*
-// started on parser combinators.. might get by without
-function kw(s) {
-	return function*(ctx, x, p){
-		let t = x.next(p);
-		if (t && t.val(ctx) === s)
-			yield t;
-	}
-}
-function*num() {
-	let t = x.next(p);
-	if (t && /0x[0-9a-fA-F]+|[0-9]+/.test(t.val(ctx)))
-		yield t;
-}
-function*name() {
-	let t = x.next(p);
-	if (t && /[a-zA-Z_$].*/.test(t.val(ctx)))
-		yield t;
-}
-*/
 
 function mod_comp(mod) {
 	const fsig = [], tsig = [], msig = [], gsig = [], bcimp = [];
@@ -192,7 +172,7 @@ function mod_comp(mod) {
 			case "tab": {
 				mod.names.set(name, tsig.length);
 				bcimp.push(1);
-				const ts = pushLimit([tymap[data[0]], data[1]);
+				const ts = pushLimit([tymap[data[0]], data[1]]);
 				tsig.push(ts);
 				bcimp.push(...ts);
 				break;
@@ -207,7 +187,7 @@ function mod_comp(mod) {
 			}
 			case "glo": {
 				mod.names.set(name, gsig.length);
-				const gs = [tymap[data[0], 0];
+				const gs = [tymap[data[0]], 0];
 				gsig.push(gs);
 				bcimp.push(3);
 				bcimp.push(...gs);
@@ -215,8 +195,8 @@ function mod_comp(mod) {
 			}
 		}
 	}
-	for (let i=0; i<mod.globals.length; i++) {
-		let [_global, mut, ty, name, val] = mod.globals[i];
+	for (let i=0; i<mod.global.length; i++) {
+		let [_global, mut, ty, name, val] = mod.global[i];
 		if (!val) {
 			val = "0";
 		}
@@ -228,7 +208,7 @@ function mod_comp(mod) {
 		val = +val;
 		mut = mut == "mut"?1:0;
 		mod.names.set(name, gsig.length);
-		mod.globals.push([ty, mut]);
+		mod.global.push([ty, mut]);
 	}
 	for (let i=0; i<mod.func.length; i++) {
 		let fu = mod.func[i];
@@ -300,7 +280,7 @@ function mod_comp(mod) {
 	if (mod.exports.length) {
 		bc.push(7);
 	}
-	if (mod.start) {
+	if (~mod.start) {
 		bc.push(8);
 		let val = mod.names.get(mod.start);
 		if (val === undefined) val = mod.start|0;
@@ -334,7 +314,7 @@ function mod_comp(mod) {
 	if (mod.data.length) {
 		bc.push(11);
 	}
-	return Buffer.from(body);
+	return Buffer.from(bc);
 }
 
 const tymap = {
@@ -405,7 +385,7 @@ const opmap = {
 	"i32.const": 0x41,
 	i32: 0x41,
 	"i64.const": 0x42,
-	i64: 0x42
+	i64: 0x42,
 	"f32.const": 0x43,
 	f32: 0x43,
 	"f64.const": 0x44,
