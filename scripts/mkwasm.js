@@ -6,7 +6,7 @@ if (process.argv.length<3) {
 }
 
 const fs = require("fs"), path = require("path");
-const util = require("../util"), varint = util.varint, varuint = util.varuint;
+const util = require("../util"), varint = util.varint, varuint = util.varuint, asUtf8 = util.asUtf8;
 
 function processModule(mod, n) {
 	if (n >= process.argv.length) {
@@ -42,6 +42,8 @@ processModule({
 	funcs: [],
 	memory: [],
 	start: null,
+	element: [],
+	data: [],
 	names: new Map(),
 	tymap: new Map(),
 }, 3);
@@ -128,7 +130,7 @@ function mod_wasm(mod, data) {
 		} else if (/^memory /.test(line)) {
 			let [_memory, ...mems] = line.split(/\s+/);
 			if (expo) mod.exports.memory.add(mod.memory.length);
-			mod.memory.push(...mems.map(x => ~x.indexOf(':') ? x.split(':').map(y => +y) : +x[0]));
+			mod.memory.push(...mems.map(x => pushLimit([], x)));
 		} else if (/^start /.test(line)) {
 			if (mod.start) console.log("Duplicate start", mod.start, line);
 			mod.start = line.slice(6);
@@ -136,6 +138,14 @@ function mod_wasm(mod, data) {
 			console.log("??", line);
 		}
 	}
+}
+
+function pushLimit(ret, lim) {
+	let [mn, mx] = lim.split(':');
+	ret.push(mx === undefined?0:1);
+	varuint(ret, mn|0);
+	if (mx !== undefined) varuint(ret, mx|0);
+	return ret;
 }
 
 /*
@@ -160,30 +170,47 @@ function*name() {
 */
 
 function mod_comp(mod) {
-	const fsig = [], tsig = [], msig = [], gsig = [];
+	const fsig = [], tsig = [], msig = [], gsig = [], bcimp = [];
+	varuint(bcimp, mod.imports.length);
 	for (let i=0; i<mod.imports.length; i++) {
 		let [_import, kind, name, ...data] = mod.imports[i];
 		let [module, field] = name.split('.');
-		let dsplit = data.split(/\s+/);
+		const dsplit = data.split(/\s+/);
+		varuint(bcimp, dsplit[0].length);
+		bcimp.push(...asUtf8(dsplit[0]));
+		varuint(bcimp, dsplit[1].length);
+		bcimp.push(...asUtf8(dsplit[1]));
 		switch (kind.slice(0, 3)) {
 			case "fun": {
 				mod.names.set(name, fsig.length);
-				fsig.push(gettype(dsplit));
+				const fty = gettype(dsplit);
+				fsig.push(fty);
+				bcimp.push(0);
+				varuint(bcimp, fty);
 				break;
 			}
 			case "tab": {
 				mod.names.set(name, tsig.length);
-				tsig.push([0x40, data[0]|0, data.length < 2 ? -1 : data[1]|0]);
+				bcimp.push(1);
+				const ts = pushLimit([tymap[data[0]], data[1]);
+				tsig.push(ts);
+				bcimp.push(...ts);
 				break;
 			}
 			case "mem": {
 				mod.names.set(name, msig.length);
-				msig.push([data[0]|0, data.length < 2 ? -1 : data[1]|0]);
+				const ms = pushLimit([], data[0]);
+				msig.push(ms);
+				bcimp.push(2);
+				bcimp.push(...ms);
 				break;
 			}
 			case "glo": {
 				mod.names.set(name, gsig.length);
-				gsig.push([tymap[data[0]], 0]);
+				const gs = [tymap[data[0], 0];
+				gsig.push(gs);
+				bcimp.push(3);
+				bcimp.push(...gs);
 				break;
 			}
 		}
@@ -246,14 +273,44 @@ function mod_comp(mod) {
 		varuint(bc, bcty.length);
 		bc.push(...bcty);
 	}
+	if (mod.imports.length) {
+		bc.push(2);
+		varuint(bc, bcimp.length);
+		bc.push(...bcimp);
+	}
+	if (mod.func.length) {
+		bc.push(3);
+		const bcfu = [];
+		varuint(bcfu, mod.func.length);
+		for (let i=0; i<mod.func.length; i++) {
+			varuint(bcfu, mod.func[i].sig);
+		}
+		varuint(bc, bcfu.length);
+		bc.push(...bcfu);
+	}
+	if (mod.table.length) {
+		bc.push(4);
+	}
+	if (mod.memory.length) {
+		bc.push(5);
+	}
+	if (mod.global.length) {
+		bc.push(6);
+	}
+	if (mod.exports.length) {
+		bc.push(7);
+	}
 	if (mod.start) {
-		bc.push(9);
+		bc.push(8);
 		let val = mod.names.get(mod.start);
 		if (val === undefined) val = mod.start|0;
 		let bcstart = [];
 		varuint(bcstart, val);
 		varuint(bc, bcstart.length);
 		bc.push(...bcstart);
+	}
+	if (mod.element.length) {
+		bc.push(9);
 	}
 	if (mod.func.length) {
 		bc.push(10);
@@ -273,6 +330,9 @@ function mod_comp(mod) {
 		}
 		varuint(bc, bcco.length);
 		bc.push(...bcco);
+	}
+	if (mod.data.length) {
+		bc.push(11);
 	}
 	return Buffer.from(body);
 }
