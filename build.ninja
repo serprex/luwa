@@ -1,3 +1,3 @@
 rule mkcjs
  command=mkcjs $out $in
-build quire.js:mkcjs ast.js bc.js env.js func.js jit.js lex.js luwa.js obj.js runbc.js string.js table.js thread.js trace.js utf8.js util.js
+build quire.js:mkcjs ast.js bc.js env.js func.js jit.js lex.js luwa.js obj.js rt.js runbc.js string.js table.js thread.js trace.js utf8.js util.js

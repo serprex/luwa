@@ -6,7 +6,6 @@ const trace = require("./trace"),
 	util = require("./util");
 const varint = util.varint, varuint = util.varuint;
 
-
 /*
 local i = 0 # LOAD_NUM 0, STORE_LOCAL 1
 while i < 10000 # $l, LOAD_LOCAL 1, LOAD_NUM 1, LT, JIFNOT $e

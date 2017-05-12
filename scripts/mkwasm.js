@@ -29,7 +29,7 @@ function processModule(mod, n) {
 }
 
 processModule({
-	types: [],
+	type: [],
 	global: [],
 	imports: [],
 	exports: {
@@ -52,8 +52,8 @@ function gettype(mod, tysig) {
 	let sig = tysig.join();
 	let t = mod.tymap.get(sig);
 	if (t === undefined) {
-		mod.tymap.set(sig, t = mod.types.length);
-		mod.types.push(tysig.map(x => tymap[x]));
+		mod.tymap.set(sig, t = mod.type.length);
+		mod.type.push(tysig.map(x => tymap[x]));
 	}
 	return t;
 }
@@ -227,21 +227,21 @@ function mod_comp(mod) {
 	}
 
 	const bc = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
-	if (mod.types.length) {
+	if (mod.type.length) {
 		bc.push(1);
 		const bcty = [];
-		varuint(bcty, mod.types.length);
-		for (let i=0; i<mod.types.length; i++) {
+		varuint(bcty, mod.type.length);
+		for (let i=0; i<mod.type.length; i++) {
 			bcty.push(0x60);
-			let ty = mod.types[i];
-			if (ty.length == 0) {
+			let ty = mod.type[i];
+			if (ty.length == 0 || (ty.length == 1 && ty[0] == 0x40)) {
 				bcty.push(0, 0);
 				continue;
 			}
 			let hasret = ty[ty.length-1] != 0x40;
-			let pcount = hasret ? ty.length - 1 : ty.length;
+			let pcount = ty.length - 1;
 			varuint(bcty, pcount);
-			for (let j=0; j<ty.length; j++) {
+			for (let j=0; j<pcount; j++) {
 				bcty.push(ty[j]);
 			}
 			if (hasret) {
