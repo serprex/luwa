@@ -75,6 +75,7 @@ function mod_wawa(mod, data) {
 			const fu = {
 				sig: -1,
 				name: name,
+				pcount: -1,
 				locals: [],
 				code: [],
 			};
@@ -83,6 +84,7 @@ function mod_wawa(mod, data) {
 				locals.set(tysig[j], fu.locals.length);
 				fu.locals.push(tysig[j+1]);
 			}
+			fu.pcount = fu.locals.length;
 			let sig = fu.locals.slice();
 			sig.push(tysig[tysig.length - 1]);
 			fu.sig = gettype(mod, sig);
@@ -299,11 +301,17 @@ function mod_comp(mod) {
 		for (let i=0; i<mod.func.length; i++) {
 			let fu = mod.func[i];
 			let cofu = [];
-			varuint(cofu, fu.locals.length);
+			varuint(cofu, fu.locals.length - fu.pcount);
 			// TODO RLE
-			for (let j=0; j<fu.locals.length; j++) {
+			for (let j=fu.pcount; j<fu.locals.length; j++) {
 				varuint(cofu, 1);
-				cofu.push(fu.locals[j]);
+				cofu.push(tymap[fu.locals[j]]);
+			}
+			for (let j=0; j<fu.code.length; j++) {
+				let c = fu.code[j];
+				if (typeof c === "string") c = mod.names.get(c);
+				// TODO sometimes we need to varuint, or floatencode
+				cofu.push(c);
 			}
 			varuint(bcco, cofu.length);
 			bcco.push(...cofu);
