@@ -151,15 +151,14 @@ function mod_comp(mod) {
 	for (let i=0; i<mod.imports.length; i++) {
 		let [_import, kind, name, ...data] = mod.imports[i];
 		let [module, field] = name.split('.');
-		const dsplit = data.split(/\s+/);
-		varuint(bcimp, dsplit[0].length);
-		bcimp.push(...asUtf8(dsplit[0]));
-		varuint(bcimp, dsplit[1].length);
-		bcimp.push(...asUtf8(dsplit[1]));
+		varuint(bcimp, module.length);
+		bcimp.push(...asUtf8(module));
+		varuint(bcimp, field.length);
+		bcimp.push(...asUtf8(field));
 		switch (kind.slice(0, 3)) {
 			case "fun": {
 				mod.names.set(name, fsig.length);
-				const fty = gettype(dsplit);
+				const fty = gettype(data);
 				fsig.push(fty);
 				bcimp.push(0);
 				varuint(bcimp, fty);
@@ -293,8 +292,7 @@ function mod_comp(mod) {
 		const bcco = [];
 		varuint(bcco, mod.func.length);
 		for (let i=0; i<mod.func.length; i++) {
-			let fu = mod.func[i];
-			let cofu = [];
+			const fu = mod.func[i], cofu = [];
 			varuint(cofu, fu.locals.length - fu.pcount);
 			// TODO RLE
 			for (let j=fu.pcount; j<fu.locals.length; j++) {
@@ -310,6 +308,7 @@ function mod_comp(mod) {
 					opf(fu, mod, cofu, ln);
 				}
 			}
+			cofu.push(0x0b);
 			varuint(bcco, cofu.length);
 			bcco.push(...cofu);
 		}
@@ -530,8 +529,8 @@ setopimm(relative_depth, "br", "br_if");
 opimm[opmap.br_table] = br_table;
 opimm[opmap.call] = function_index;
 opimm[opmap.call_indirect] = call_indirect;
-setopimm(local_index, get_local, set_local, tee_local);
-setopimm(global_index, get_global, set_global);
+setopimm(local_index, "get_local", "set_local", "tee_local");
+setopimm(global_index, "get_global", "set_global");
 setopimm(memory_immediate, "i32.load", "i64.load", "f32.load", "f64.load",
 	"i32.load8_s", "i32.load8_u", "i32.load16_s", "i32.load16_u",
 	"i64.load8_s", "i64.load8_u", "i64.load16_s", "i64.load16_u", "i64.load32_s", "i64.load32_u",
@@ -558,9 +557,12 @@ function br_table(fu, mod, bc, ln) {
 	}
 }
 function block_type(fu, mod, bc, ln) {
-	let ty = tymap[ln[1]];
-	if (ty === undefined) ty = ln[1]|0;
-	bc.push(ty);
+	if (ln.length == 1) bc.push(0x40);
+	else {
+		let ty = tymap[ln[1]];
+		if (ty === undefined) ty = ln[1]|0;
+		bc.push(ty);
+	}
 }
 function function_index(fu, mod, bc, ln) {
 	varuint(bc, mod.names.get(ln[1]));
