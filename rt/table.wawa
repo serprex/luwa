@@ -1,4 +1,4 @@
-require alloc.wasm
+use alloc
 
 /*
 struct Hkv {
@@ -22,12 +22,15 @@ const sizeofHkv 12
 const sizeofTable 32
 
 func mktable
-void -> i32
+i32
 	i32.const sizeofTable
 	call malloc
 	ret
 
+/*
+Decref children
+*/
 func freetable
-x i32 -> void
+x i32 void
 	load x
-	call 
+	call free 

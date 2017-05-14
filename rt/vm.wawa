@@ -1,5 +1,0 @@
-switch $op {
-	case BIN_ADD {
-		
-	}
-}

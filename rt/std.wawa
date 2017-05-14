@@ -1,0 +1,40 @@
+func memcpy
+dst i32 src i32 len i32 void
+	loop
+		loadl len
+		if
+			loadl dst
+			loadl len
+			i32.add
+			loadl src
+			loadl len
+			i32.add
+			i32.load8_u 
+			i32.store8
+			loadl len
+			i32 1
+			i32.sub
+			storel len
+		else
+			ret
+		end
+	end
+
+func memset
+dst i32 len i32 val i32 void
+	loop
+		loadl len
+		if
+			loadl dst
+			loadl len
+			i32.add
+			loadl val
+			i32.store8
+			loadl len
+			i32 1
+			i32.sub
+			storel len
+		else
+			ret
+		end
+	end

@@ -41,7 +41,7 @@ processModule({
 	table: [],
 	func: [],
 	memory: [],
-	start: -1,
+	start: null,
 	element: [],
 	data: [],
 	names: new Map(),
@@ -53,6 +53,7 @@ function gettype(mod, tysig) {
 	let t = mod.tymap.get(sig);
 	if (t === undefined) {
 		mod.tymap.set(sig, t = mod.type.length);
+		console.log(tysig);
 		mod.type.push(tysig.map(x => tymap[x]));
 	}
 	return t;
@@ -63,11 +64,13 @@ function mod_wawa(mod, data) {
 	for (let i=0; i<lines.length; i++) {
 		let line = lines[i];
 		if (line.match(/^\s*$/)) continue;
-		let expo = /^export (func|memory|table|global)/.test(line);
+		let expo = /^export (start|func|memory|table|global) /.test(line);
 		if (expo) line = line.slice(7);
+		let startf = /^start func /.test(line);
+		if (startf) line = line.slice(6);
 		if (/^use /.test(line)) continue;
 		else if (/^\/\*/.test(line)) {
-			while (!lines[++i].test(/\*\/$/));
+			while (!/\*\/$/.test(lines[++i]));
 		}
 		else if (/^func /.test(line)) {
 			let name = line.slice(5);
@@ -80,6 +83,7 @@ function mod_wawa(mod, data) {
 				code: [],
 				localnames: new Map(),
 			};
+			if (startf) mod.start = fu;
 			for (let j=0; j<tysig.length - 1; j += 2) {
 				fu.localnames.set(tysig[j], fu.locals.length);
 				fu.locals.push(tysig[j+1]);
@@ -92,14 +96,16 @@ function mod_wawa(mod, data) {
 				i += 2;
 			} else {
 				let losig = line2.split(/\s+/);
-				for (let j=0; j; j+=2) {
-					fu.localnames.set(tysig[j], fu.locals.length);
-					fu.locals.push(tysig[j+1]);
+				for (let j=0; j<losig.length; j+=2) {
+					fu.localnames.set(losig[j], fu.locals.length);
+					fu.locals.push(losig[j+1]);
 				}
 				i += 3;
 			}
-			while (/^\s+/.test(lines[i])) {
-				fu.code.push(lines[i].trim().split(/\s+/));
+			while (/^\s+|^\s*$/.test(lines[i])) {
+				if (!/^\s*$/.test(lines[i])) {
+					fu.code.push(lines[i].trim().split(/\s+/));
+				}
 				i++;
 			}
 			i--;
@@ -128,9 +134,6 @@ function mod_wawa(mod, data) {
 			let [_memory, ...mems] = line.split(/\s+/);
 			if (expo) mod.exports.memory.add(mod.memory.length);
 			mod.memory.push(...mems.map(x => pushLimit([], x)));
-		} else if (/^start /.test(line)) {
-			if (~mod.start) console.log("Duplicate start", mod.start, line);
-			mod.start = line.slice(6);
 		} else {
 			console.log("??", line);
 		}
@@ -190,6 +193,7 @@ function mod_comp(mod) {
 			}
 		}
 	}
+	const gbase = gsig.length;
 	for (let i=0; i<mod.global.length; i++) {
 		let [_global, mut, ty, name, val] = mod.global[i];
 		if (!val) {
@@ -203,7 +207,7 @@ function mod_comp(mod) {
 		val = +val;
 		mut = mut == "mut"?1:0;
 		mod.names.set(name, gsig.length);
-		mod.global.push([ty, mut]);
+		gsig.push([tymap[ty], mut]);
 	}
 	for (let i=0; i<mod.func.length; i++) {
 		let fu = mod.func[i];
@@ -271,14 +275,35 @@ function mod_comp(mod) {
 	}
 	if (mod.global.length) {
 		bc.push(6);
+		const bcglo = [];
+		varuint(bcglo, mod.global.length);
+		for (let i=gbase; i<gsig.length; i++) {
+			const [gty, gmut] = gsig[i];
+			bcglo.push(gty, gmut);
+			switch (gty) {
+				case 0x7f:
+					bcglo.push(opmap["i32.const"], 0, 0x0b);
+					break;
+				case 0x7e:
+					bcglo.push(opmap["i64.const"], 0, 0x0b);
+					break;
+				case 0x7d:
+					bcglo.push(opmap["f32.const"], 0, 0, 0, 0, 0x0b);
+					break;
+				case 0x7c:
+					bcglo.push(opmap["f64.const"], 0, 0, 0, 0, 0, 0, 0, 0, 0x0b);
+					break;
+			}
+		}
+		varuint(bc, bcglo.length);
+		bc.push(...bcglo);
 	}
 	if (mod.exports.length) {
 		bc.push(7);
 	}
-	if (~mod.start) {
+	if (mod.start) {
 		bc.push(8);
-		let val = mod.names.get(mod.start);
-		if (val === undefined) val = mod.start|0;
+		let val = mod.names.get(mod.start.name);
 		let bcstart = [];
 		varuint(bcstart, val);
 		varuint(bc, bcstart.length);
@@ -293,6 +318,7 @@ function mod_comp(mod) {
 		varuint(bcco, mod.func.length);
 		for (let i=0; i<mod.func.length; i++) {
 			const fu = mod.func[i], cofu = [];
+			console.log(i, fu.name);
 			varuint(cofu, fu.locals.length - fu.pcount);
 			// TODO RLE
 			for (let j=fu.pcount; j<fu.locals.length; j++) {
@@ -301,7 +327,8 @@ function mod_comp(mod) {
 			}
 			for (let j=0; j<fu.code.length; j++) {
 				let ln = fu.code[j];
-				let op = opmap[ln[0]] || (ln[0]|0);
+				let op = opmap[ln[0]];
+				if (op === undefined) console.log("Unknown op", ln);
 				cofu.push(op);
 				let opf = opimm[op];
 				if (opf) {
@@ -350,8 +377,10 @@ const opmap = {
 	drop: 0x1a,
 	select: 0x1b,
 	get_local: 0x20,
+	load: 0x20,
 	loadl: 0x20,
 	set_local: 0x21,
+	store: 0x21,
 	storel: 0x21,
 	tee_local: 0x22,
 	tee: 0x22,

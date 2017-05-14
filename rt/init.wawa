@@ -1,0 +1,37 @@
+start func init
+void
+	i32 5
+	call malloc
+	storeg onil
+	loadg onil
+	i32 1
+	i32.store
+	loadg onil
+	i32 2
+	i32.store 4
+
+	i32 6
+	call malloc
+	storeg ofalse
+	loadg ofalse
+	i32 1
+	i32.store
+	loadg ofalse
+	i32 3
+	i32.store8 4
+	loadg ofalse
+	i32 0
+	i32.store8 5
+
+	i32 6
+	call malloc
+	storeg otrue
+	loadg otrue
+	i32 1
+	i32.store
+	loadg otrue
+	i32 3
+	i32.store8 4
+	loadg otrue
+	i32 0
+	i32.store8 5
