@@ -78,10 +78,10 @@ function mod_wawa(mod, data) {
 				pcount: -1,
 				locals: [],
 				code: [],
+				localnames: new Map(),
 			};
-			const locals = new Map();
 			for (let j=0; j<tysig.length - 1; j += 2) {
-				locals.set(tysig[j], fu.locals.length);
+				fu.localnames.set(tysig[j], fu.locals.length);
 				fu.locals.push(tysig[j+1]);
 			}
 			fu.pcount = fu.locals.length;
@@ -93,19 +93,13 @@ function mod_wawa(mod, data) {
 			} else {
 				let losig = line2.split(/\s+/);
 				for (let j=0; j; j+=2) {
-					locals.set(tysig[j], fu.locals.length);
+					fu.localnames.set(tysig[j], fu.locals.length);
 					fu.locals.push(tysig[j+1]);
 				}
 				i += 3;
 			}
 			while (/^\s+/.test(lines[i])) {
-				let ln = lines[i].trim().split(/\s+/);
-				fu.code.push(opmap[ln[0]] || (ln[0]|0));
-				// TODO implicit params
-				for (let j=1; j<ln.length; j++) {
-					let lv = locals.get(ln[j]);
-					fu.code.push(lv === undefined ? ln[j] : lv);
-				}
+				fu.code.push(lines[i].trim().split(/\s+/));
 				i++;
 			}
 			i--;
@@ -308,10 +302,13 @@ function mod_comp(mod) {
 				cofu.push(tymap[fu.locals[j]]);
 			}
 			for (let j=0; j<fu.code.length; j++) {
-				let c = fu.code[j];
-				if (typeof c === "string") c = mod.names.get(c);
-				// TODO sometimes we need to varuint, or floatencode
-				cofu.push(c);
+				let ln = fu.code[j];
+				let op = opmap[ln[0]] || (ln[0]|0);
+				cofu.push(op);
+				let opf = opimm[op];
+				if (opf) {
+					opf(fu, mod, cofu, ln);
+				}
 			}
 			varuint(bcco, cofu.length);
 			bcco.push(...cofu);
@@ -522,3 +519,85 @@ const opmap = {
 	"f32.reinterpret/i32": 0xbe,
 	"f64.reinterpret/i64": 0xbf,
 };
+const opimm = [];
+function setopimm(f, ...args) {
+	for (let i=0; i<args.length; i++) {
+		opimm[opmap[args[i]]] = f;
+	}
+}
+setopimm(block_type, "block", "loop", "if");
+setopimm(relative_depth, "br", "br_if");
+opimm[opmap.br_table] = br_table;
+opimm[opmap.call] = function_index;
+opimm[opmap.call_indirect] = call_indirect;
+setopimm(local_index, get_local, set_local, tee_local);
+setopimm(global_index, get_global, set_global);
+setopimm(memory_immediate, "i32.load", "i64.load", "f32.load", "f64.load",
+	"i32.load8_s", "i32.load8_u", "i32.load16_s", "i32.load16_u",
+	"i64.load8_s", "i64.load8_u", "i64.load16_s", "i64.load16_u", "i64.load32_s", "i64.load32_u",
+	"i32.store", "i64.store", "f32.store", "f64.store", "i32.store8", "i32.store16",
+	"i64.store8", "i64.store16", "i64.store32");
+setopimm(reserved0, "current_memory", "grow_memory");
+opimm[opmap["i32.const"]] = const_i32;
+opimm[opmap["i64.const"]] = const_i64;
+opimm[opmap["f32.const"]] = const_f32;
+opimm[opmap["f64.const"]] = const_f64;
+function local_index(fu, mod, bc, ln) {
+	varuint(bc, fu.localnames.get(ln[1]));
+}
+function global_index(fu, mod, bc, ln) {
+	varuint(bc, mod.names.get(ln[1]));
+}
+function relative_depth(fu, mod, bc, ln) {
+	varuint(bc, ln[1]|0); // TODO named blocks
+}
+function br_table(fu, mod, bc, ln) {
+	varuint(bc, ln.length - 2);
+	for (let i=1; i<ln.length; i++) {
+		varuint(bc, ln[i]|0); // TODO named blocks
+	}
+}
+function block_type(fu, mod, bc, ln) {
+	let ty = tymap[ln[1]];
+	if (ty === undefined) ty = ln[1]|0;
+	bc.push(ty);
+}
+function function_index(fu, mod, bc, ln) {
+	varuint(bc, mod.names.get(ln[1]));
+}
+function call_indirect(fu, mod, bc, ln) {
+	// Ahhh need to do this before we encode all types..
+	bc.push(0);
+}
+function memory_immediate(fu, mod, bc, ln) {
+	if (ln.length == 1) {
+		bc.push(0, 0);
+	} else if (ln.length == 2) {
+		bc.push(0);
+		let v = mod.names.get(ln[1]);
+		if (v === undefined) v = ln[1]|0;
+		varuint(bc, v);
+	} else if (ln.length == 3) {
+		bc.push(ln[2]|0);
+		let v = mod.names.get(ln[1]);
+		if (v === undefined) v = ln[1]|0;
+		varuint(bc, v);
+	}
+}
+function reserved0(fu, mod, bc, ln) {
+	bc.push(0);
+}
+function const_i32(fu, mod, bc, ln) {
+	varint(bc, ln[1]|0);
+}
+function const_i64(fu, mod, bc, ln) {
+	varint(bc, ln[1]|0); // TODO JS doesn't do 64bit
+}
+function const_f32(fu, mod, bc, ln) {
+	let f32 = new Float32Array([+ln[1]]);
+	bc.push(...new Uint8Array(f32.buffer));
+}
+function const_f64(fu, mod, bc, ln) {
+	let f64 = new Float64Array([+ln[1]]);
+	bc.push(...new Uint8Array(f32.buffer));
+}
