@@ -68,3 +68,61 @@ p i32
 	f64.store 5
 	load p
 	ret
+
+func istrue
+x i32 i32
+	load x
+	loadg onil
+	i32.eq
+	load x
+	loadg ofalse
+	i32.eq
+	i32.or
+	ret
+
+func eq
+a i32 b i32 i32
+	load a
+	i32.load8_u 4
+	load b
+	i32.load8_u 4
+	i32.ne
+	if
+		i32 1
+		ret
+	end
+	block
+	block
+	block
+	block
+	block
+	load a
+	i32.load8_u 4
+	br_table 0 1 2 3 4
+	end ;0 i64
+	load a
+	i64.load 5
+	load b
+	i64.load 5
+	i64.eq
+	ret
+	end ;1 f64
+	load a
+	f64.load 5
+	load b
+	f64.load 5
+	f64.eq
+	ret
+	end ;2 nil
+	i32 1
+	ret
+	end ;3 bool
+	load a
+	load b
+	i32.eq
+	ret
+	end ;4 table
+	load a
+	load b
+	i32.eq
+	ret

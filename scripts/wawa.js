@@ -53,7 +53,6 @@ function gettype(mod, tysig) {
 	let t = mod.tymap.get(sig);
 	if (t === undefined) {
 		mod.tymap.set(sig, t = mod.type.length);
-		console.log(tysig);
 		mod.type.push(tysig.map(x => tymap[x]));
 	}
 	return t;
@@ -62,7 +61,7 @@ function gettype(mod, tysig) {
 function mod_wawa(mod, data) {
 	const lines = data.split('\n');
 	for (let i=0; i<lines.length; i++) {
-		let line = lines[i];
+		let line = lines[i].replace(/;.*$/, '');
 		if (line.match(/^\s*$/)) continue;
 		let expo = /^export (start|func|memory|table|global) /.test(line);
 		if (expo) line = line.slice(7);
