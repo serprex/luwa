@@ -4,7 +4,6 @@ use alloc
 struct Hkv {
 	obj*key
 	obj*val
-	Hkv*next
 }
 
 struct Table {
@@ -14,13 +13,14 @@ struct Table {
 	i32 kappa
 	obj*arr
 	i32 hlen
+	i32 hcap
 	Hkv*hash
 	Table*meta
 }
 */
 
-const sizeofHkv 12
-const sizeofTable 29
+const sizeofHkv 8
+const sizeofTable 34
 
 func hash
 o i32 i32
@@ -29,9 +29,10 @@ o i32 i32
 	block
 	block
 	block
+	block
 	load o
 	i32.load8_u 4
-	br_table 0 1 2 3 4
+	br_table 0 1 2 3 4 5
 	end ;0 i64
 	load o
 	i32.load 5
@@ -55,6 +56,10 @@ o i32 i32
 	end ;4 table
 	load o
 	ret
+	end ; 5 string
+	load o
+	i32.load 5
+	ret
 
 func mktable
 i32
@@ -76,15 +81,87 @@ p i32
 	i64 0
 	i64.store 13
 
-	load p ; hash = 0
-	i32 0
-	i32.store 21
+	load p ; hcap,hash = 0
+	i64 0
+	i64.store 21
 	load p
 
 	loadg onil ; meta = nil
-	i32.store 25
+	i32.store 29
 	load p
 	ret
+
+func tabset
+tab i32 key i32 val i32 void
+	ret
+
+func tabget
+tab i32 key i32 i32
+kv i32 mx i32
+	load key
+	call hash
+
+	; H <- H%cap(T)
+	load tab
+	i32.load 21
+	i32.rem
+
+	; H <- H*8
+	i32 3
+	i32.shl
+
+	; kv = tab.hash[H]
+	load tab
+	i32.load 25
+	i32.add
+	store kv
+
+	load tab
+	i32.load 21
+	i32 3
+	i32.shl
+	load tab
+	i32.load 25
+	i32.add
+	store mx
+
+	loop
+		; if kv.key == nil, ret nil
+		load kv
+		i32.load
+		loadg onil
+		i32.eq
+		if
+			loadg onil
+			call incref
+			ret
+		end
+
+		; if kv.key == key, ret val
+		load kv
+		i32.load
+		load key
+		call eq
+		if
+			load kv
+			i32.load 4
+			call incref
+			ret
+		end
+
+		; kv += 8, if kv == mx, ret nil
+		load kv
+		i32 8
+		i32.add
+		tee kv
+		load mx
+		i32.eq
+		if
+			loadg onil
+			call incref
+			ret
+		end
+	end
 
 /*
 Decref children

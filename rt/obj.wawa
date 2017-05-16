@@ -10,13 +10,15 @@ global mut i32 otrue
 global mut i32 ofalse
 
 func incref
-x i32 void
+x i32 i32
 	load x
 	i32.load
 	i32 1
 	i32.add
 	load x
 	i32.store
+	load x
+	ret
 
 func decref
 x i32 void
@@ -69,6 +71,28 @@ p i32
 	load p
 	ret
 
+func newstr
+sz i32
+p i32
+	i32 13
+	load sz
+	i32.add
+	call malloc
+	tee p
+	i32 1
+	i32.store
+	load p
+	i32 5
+	i32.store8 4
+	load p
+	i32 sz
+	i32.store 5
+	load p
+	i32 0
+	i32.store 9
+	load p
+	ret
+
 func istrue
 x i32 i32
 	load x
@@ -82,13 +106,14 @@ x i32 i32
 
 func eq
 a i32 b i32 i32
+i i32
 	load a
 	i32.load8_u 4
 	load b
 	i32.load8_u 4
 	i32.ne
 	if
-		i32 1
+		i32 0
 		ret
 	end
 	block
@@ -98,7 +123,7 @@ a i32 b i32 i32
 	block
 	load a
 	i32.load8_u 4
-	br_table 0 1 2 3 4
+	br_table 0 1 2 3 4 5
 	end ;0 i64
 	load a
 	i64.load 5
@@ -126,3 +151,54 @@ a i32 b i32 i32
 	load b
 	i32.eq
 	ret
+	end ;5 string
+	load a
+	load b
+	i32.eq
+	if
+		i32 1
+		ret
+	end
+	load a
+	i32.load 5
+	tee i
+	load b
+	i32.load 5
+	i32.ne
+	if
+		i32 0
+		ret
+	end
+	load a
+	i32 13
+	i32.add
+	store a
+	load b
+	i32 13
+	i32.add
+	store b
+	loop
+		load i
+		if
+			load a
+			load i
+			i32.add
+			i32.load8_u
+			load b
+			load i
+			i32.add
+			i32.load8_u
+			i32.ne
+			if
+				i32 0
+				ret
+			end
+		else
+			load a
+			i32.load8_u
+			load b
+			i32.load8_u
+			i32.eq
+			ret
+		end
+	end
