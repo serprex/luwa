@@ -22,3 +22,17 @@ sz i32 i32
 func free
 p i32 void
 	ret
+
+func realloc
+p i32 sz i32 i32
+np i32
+	load sz
+	call malloc
+	tee np
+	load p
+	load sz
+	call memcpy
+	load p
+	call free
+	load np
+	ret
