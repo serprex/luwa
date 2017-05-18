@@ -63,7 +63,7 @@ o i32 i32
 
 func mktable
 i32
-p i32
+p i32 h i32
 	i32 sizeofTable
 	call malloc
 	tee p
@@ -89,7 +89,40 @@ p i32
 	load p ; hash = malloc(4)
 	i32 4
 	call malloc
+	tee h
 	i32.store 25
+
+	load h
+	loadg onil
+	i32.store 0
+
+	load h
+	i32 0
+	i32.store 4
+
+	load h
+	loadg onil
+	i32.store 8
+
+	load h
+	i32 0
+	i32.store 12
+
+	load h
+	loadg onil
+	i32.store 16
+
+	load h
+	i32 0
+	i32.store 20
+
+	load h
+	loadg onil
+	i32.store 24
+
+	load h
+	i32 0
+	i32.store 28
 
 	load p ; hcap = 4. TODO constant fold into hlen/hcap assign
 	i32 4
@@ -102,7 +135,7 @@ p i32
 
 func tabset
 tab i32 key i32 val i32 void
-kv i32 mx i32 newp i32 rh i32
+kv i32 mx i32 rh i32
 	load key
 	cal hash
 
@@ -150,7 +183,6 @@ kv i32 mx i32 newp i32 rh i32
 				load key
 				i32.store 4
 
-/*
 				; increment hlen, maybe rehash
 				load tab
 				i32.load 13
@@ -166,30 +198,88 @@ kv i32 mx i32 newp i32 rh i32
 				tee kv
 				i32.gt_u
 				if ; if hlen > hcap
-					; allocate new table
+					; allocate new table, store to tab
+					load tab
+					i32.load 25
+					store val
+
+					; weaved computation of new field values
+					load tab
 					load tab
 					i32.load 25
 					load kv
 					tee mx
 					load kv
 					i32.add
+
 					tee kv
+					load tab
+					load kv
+					i32.store 17
+
 					i32 3
 					i32.shl
+					tee kv
 					call malloc
-					store newp
+					tee key
+					i32.store 25
 
 					load tab
-					i32.load 25
-					store val
+					i32 0
+					i32.store 13
 
-					; rehash. kv is newhcap, mx is oldhcap, val is oldhash, newp is newhash
 					loop
-						load 
+						load key
 						load rh
+						i32.add
+						loadg onil
+						i32.store
+
+						load key
+						load rh
+						i32.add
+						i32 0
+						i32.store 4
 
 						load rh
-						i32 1
+						i32 8
+						i32.add
+						tee rh
+						load kv
+						i32.eq
+						if
+							br 1
+						end
+					end
+					i32 0
+					store rh
+
+					load mx
+					i32 3
+					i32.shl
+					store mx
+
+					; rehash. mx is oldhcap*8, val is oldhash
+					loop
+						; if val[rh].key != nil, tabset(tab, val[rh].key, val[rh].val)
+						load rh
+						load val
+						i32.add
+						tee kv
+						i32.load
+						loadg onil
+						i32.ne
+						if
+							load tab
+							load kv
+							i32.load
+							load kv
+							i32.load 4
+							call tabset
+						end
+
+						load rh
+						i32 8
 						i32.add
 						tee rh
 						load mx
@@ -198,13 +288,7 @@ kv i32 mx i32 newp i32 rh i32
 							ret
 						end
 					end
-
-					; update hash to newp
-					load tab
-					load newp
-					i32.store 17
 				end
-		*/
 				ret
 			end
 		else
