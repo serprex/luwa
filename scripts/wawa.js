@@ -33,10 +33,10 @@ processModule({
 	global: [],
 	imports: [],
 	exports: {
-		func: new Set(),
-		table: new Set(),
-		memory: new Set(),
-		global: new Set(),
+		func: [],
+		table: [],
+		memory: [],
+		global: [],
 	},
 	table: [],
 	func: [],
@@ -108,31 +108,31 @@ function mod_wawa(mod, data) {
 				i++;
 			}
 			i--;
-			if (expo) mod.exports.func.add(mod.func.length);
+			if (expo) mod.exports.func.push(mod.func.length);
 			mod.func.push(fu);
 		}
 		else if (/^table /.test(line)) {
+			let name = line.slice(6);
 			let tab = [];
 			while (/^\s+/.test(lines[i+1])) {
 				tab.push(lines[i+1].trim().split(/\s+/));
 				i++;
 			}
-			if (expo) mod.exports.table.add(mod.table.length);
-			mod.table.push(tab);
+			if (expo) mod.exports.table.push(mod.table.length);
+			mod.table.push({name: name, table: tab});
 		}
 		else if (/^import /.test(line)) {
 			mod.imports.push(line.split(/\s+/));
 		}
 		else if (/^global /.test(line)) {
-			if (expo) mod.exports.global.add(mod.global.length);
+			if (expo) mod.exports.global.push(mod.global.length);
 			mod.global.push(line.split(/\s+/));
-		} else if (/^const /.test(line)) {
-			let [_const, name, val] = line.split(/\s+/);
-			mod.names.set(name, val);
 		} else if (/^memory /.test(line)) {
 			let [_memory, ...mems] = line.split(/\s+/);
-			if (expo) mod.exports.memory.add(mod.memory.length);
-			mod.memory.push(...mems.map(x => pushLimit([], x)));
+			for (let i=0; i<mems.length; i++) {
+				if (expo) mod.exports.memory.push(mod.memory.length);
+				mod.memory.push({name: mems[i], size: pushLimit([], mems[i+1])});
+			}
 		} else {
 			console.log("??", line);
 		}
@@ -271,6 +271,10 @@ function mod_comp(mod) {
 	}
 	if (mod.memory.length) {
 		bc.push(5);
+		const bcmem = [];
+		varuint(bcmem, mod.memory.length);
+		varuint(bc, bcmem.length);
+		bc.push(...bcmem);
 	}
 	if (mod.global.length) {
 		bc.push(6);
@@ -297,8 +301,23 @@ function mod_comp(mod) {
 		varuint(bc, bcglo.length);
 		bc.push(...bcglo);
 	}
-	if (mod.exports.length) {
+	const exlength = mod.exports.func.length + mod.exports.table.length + mod.exports.memory.length + mod.exports.global.length;
+	if (exlength) {
 		bc.push(7);
+		const sects = ["func", "table", "memory", "global"], bcex = [];
+		varuint(bcex, exlength);
+		for (let i=0; i<sects.length; i++) {
+			const modsect = mod[sects[i]];
+			for (let idx of mod.exports[sects[i]]) {
+				let name = modsect[idx].name;
+				varuint(bcex, name.length);
+				bcex.push(...asUtf8(name));
+				bcex.push(i);
+				varuint(bcex, mod.names.get(name));
+			}
+		}
+		varuint(bc, bcex.length);
+		bc.push(...bcex);
 	}
 	if (mod.start) {
 		bc.push(8);
