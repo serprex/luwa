@@ -121,6 +121,7 @@ i i32
 	block
 	block
 	block
+	block
 	load a
 	i32.load8_u 4
 	br_table 0 1 2 3 4 5
@@ -202,3 +203,4 @@ i i32
 			ret
 		end
 	end
+	unreachable

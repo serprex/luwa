@@ -59,9 +59,9 @@ function gettype(mod, tysig) {
 }
 
 function mod_wawa(mod, data) {
-	const lines = data.split('\n');
+	const lines = data.split('\n').map(line => line.replace(/;.*$/, ''));
 	for (let i=0; i<lines.length; i++) {
-		let line = lines[i].replace(/;.*$/, '');
+		let line = lines[i];
 		if (line.match(/^\s*$/)) continue;
 		let expo = /^export (start|func|memory|table|global) /.test(line);
 		if (expo) line = line.slice(7);
@@ -327,6 +327,7 @@ function mod_comp(mod) {
 			for (let j=0; j<fu.code.length; j++) {
 				let ln = fu.code[j];
 				let op = opmap[ln[0]];
+				console.log(cofu.length, ln);
 				if (op === undefined) console.log("Unknown op", ln);
 				cofu.push(op);
 				let opf = opimm[op];
