@@ -136,8 +136,8 @@ p i32 psz i32
 									load sz
 									i32 7
 									i32.and
-									br_table 7 6 5 4 3 2 1 0
-								end
+									br_table 4 5 6 7 0 1 2 3
+								end ;0
 								load psz
 								i32 0
 								i32.store 13
@@ -148,7 +148,7 @@ p i32 psz i32
 								i32 0
 								i32.store8 19
 								br 6
-							end
+							end ;1
 							load psz
 							i32 0
 							i32.store 13
@@ -156,7 +156,7 @@ p i32 psz i32
 							i32 0
 							i32.store16 17
 							br 5
-						end
+						end ;2
 						load psz
 						i32 0
 						i32.store 13
@@ -164,12 +164,12 @@ p i32 psz i32
 						i32 0
 						i32.store8 17
 						br 4
-					end
+					end ;3
 					load psz
 					i32 0
 					i32.store 13
 					br 3
-				end
+				end ;4
 				load psz
 				i32 0
 				i32.store16 13
@@ -177,16 +177,16 @@ p i32 psz i32
 				i32 0
 				i32.store8 15
 				br 2
-			end
+			end ;5
 			load psz
 			i32 0
 			i32.store16 13
 			br 1
-		end
+		end ;6
 		load psz
 		i32 0
 		i32.store8 13
-	end
+	end ;7
 	load p
 	ret
 

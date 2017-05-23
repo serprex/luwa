@@ -139,9 +139,8 @@ n i32 m i32 h i64
 	i32.load 9
 	i32.eqz
 	if
-		; n = s, h = s.len, m=s+s.len
+		; n = s, h = s.len^s.len<<32^s0^s1<<23^s2<<53, m=s+s.len
 		load o
-		tee n
 		load o
 		i32.load 5
 		i32.add
@@ -155,7 +154,25 @@ n i32 m i32 h i64
 		i64.shl
 		load h
 		i64.or
+		load o
+		i64.load8_u 13
+		i64.xor
+		load o
+		i64.load8_u 14
+		i64 23
+		i64.shl
+		i64.xor
+		load o
+		i64.load8_u 15
+		i64 53
+		i64.shl
+		i64.xor
 		store h
+
+		load o
+		i32 3
+		i32.add
+		store n
 
 		block
 		loop
