@@ -119,7 +119,7 @@ n i32 m i32 h i64
 	br_table 0 1 2 2 2 3
 	end ;0 i64
 	load o
-	i64.load 5
+	i32.load 5
 	load o
 	i32.load 9
 	i32.xor
@@ -128,7 +128,7 @@ n i32 m i32 h i64
 	load o
 	i32.load 5
 	load o
-	i32 load 9
+	i32.load 9
 	i32.xor
 	ret
 	end ;2 nil, bool, table

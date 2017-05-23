@@ -232,7 +232,7 @@ struct Vec {
 	00 i32
 	04 i8 type6
 	05 i32 len
-	13 ...
+	09 ...
 }
 */
 export func newvec

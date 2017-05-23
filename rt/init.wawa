@@ -37,6 +37,5 @@ void
 	i32.store8 5
 
 	i32 0
-	i32 6
 	call newvec
 	storeg oroot
