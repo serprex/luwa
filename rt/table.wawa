@@ -15,6 +15,9 @@ struct Table {
 export func tabset
 tab i32 key i32 val i32 void
 kv i32 mx i32 rh i32
+	load tab
+	storeg otmp
+
 	; H <- (hash(key) % tab.hash.len) & -8
 	load key
 	call hash
@@ -81,11 +84,14 @@ kv i32 mx i32 rh i32
 				store val
 
 				; tab.hash = newvec, tab.hlen = 0
-				load tab
 				load kv
 				load kv
 				i32.add
 				call newvec
+				store key
+				loadg otmp
+				tee tab
+				load key
 				i32.store 17
 
 				load tab

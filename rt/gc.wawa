@@ -14,12 +14,20 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 	call gcmark
 	loadg oroot
 	call gcmark
+	loadg otmp
+	call gcmark
 
 	loadg oroot
 	i32.load
 	i32 -8
 	i32.and
 	storeg oroot
+
+	loadg otmp
+	i32.load
+	i32 -8
+	i32.and
+	storeg otmp
 
 	; Phase1 set reloc pointers
 	loadg markbit

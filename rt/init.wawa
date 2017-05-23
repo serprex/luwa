@@ -8,6 +8,9 @@ void
 	storeg onil
 
 	loadg onil
+	storeg otmp
+
+	loadg onil
 	i64.extend_u/i32
 	storeg onilnil64
 	loadg onilnil64
