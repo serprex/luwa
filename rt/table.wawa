@@ -5,88 +5,12 @@ struct Table {
 	00 i32 ref
 	04 i8 type
 	05 i32 len
-	09 13 i32 hlen
-	13 21 obj*arr
-	17 25 Hkv*hash
-	21 29 Table*meta
+	09 i32 hlen
+	13 obj*arr
+	17 Hkv*hash
+	21 Table*meta
 }
 */
-
-func hash
-o i32 i32
-h i32 n i32 m i32
-	block
-	block
-	block
-	block
-	load o
-	i32.load8_u 4
-	br_table 0 1 2 2 2 3
-	end ;0 i64
-	load o
-	i32.load 5
-	load o
-	i32.load 9
-	i32.xor
-	ret
-	end ;1 f64 TODO H(1.0) == H(1)
-	load o
-	i32.load 5
-	load o
-	i32 load 9
-	i32.xor
-	ret
-	end ;2 nil, bool, table
-	load o
-	ret
-	end ;3 string
-	load o
-	i32.load 9
-	i32.eqz
-	if ; djb2 TODO use a better hash algo
-		; n = s.data, m=s.data+s.len
-		load o
-		i32 13
-		i32.add
-		tee n
-		load o
-		i32.load 5
-		i32.add
-		store m
-
-		i32 5381
-		store h
-
-		loop		
-			load n
-			load m
-			i32.eq
-			br_if 0
-
-			; h = (h<<5)+h^*n
-			load h
-			i32.5
-			i32.shl
-			load h
-			i32.add
-			load n
-			i32.load
-			i32.xor
-			store h
-
-			load n
-			i32 1
-			i32.add
-			store n
-		end
-
-		load o
-		load h
-		i32.store 9
-	end
-	load o
-	i32.load 9
-	ret
 
 export func tabset
 tab i32 key i32 val i32 void

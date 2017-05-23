@@ -106,7 +106,7 @@ p i32
 
 export func newstr
 sz i32 i32
-p i32
+p i32 psz i32
 	i32 13
 	load sz
 	i32.add
@@ -114,11 +114,79 @@ p i32
 	i32 5
 	call newobj
 	tee p
-	i32 sz
+	load sz
 	i32.store 5
 	load p
 	i32 0
 	i32.store 9
+
+	load p
+	load sz
+	i32.add
+	store psz
+
+	block
+		block
+			block
+				block
+					block
+						block
+							block
+								block
+									load sz
+									i32 7
+									i32.and
+									br_table 7 6 5 4 3 2 1 0
+								end
+								load psz
+								i32 0
+								i32.store 13
+								load psz
+								i32 0
+								i32.store16 17
+								load psz
+								i32 0
+								i32.store8 19
+								br 6
+							end
+							load psz
+							i32 0
+							i32.store 13
+							load psz
+							i32 0
+							i32.store16 17
+							br 5
+						end
+						load psz
+						i32 0
+						i32.store 13
+						load psz
+						i32 0
+						i32.store8 17
+						br 4
+					end
+					load psz
+					i32 0
+					i32.store 13
+					br 3
+				end
+				load psz
+				i32 0
+				i32.store16 13
+				load psz
+				i32 0
+				i32.store8 15
+				br 2
+			end
+			load psz
+			i32 0
+			i32.store16 13
+			br 1
+		end
+		load psz
+		i32 0
+		i32.store8 13
+	end
 	load p
 	ret
 
@@ -142,12 +210,27 @@ p i32 n i32
 	tee p
 	load sz
 	i32.store 5
+
+	; need to start with (sz - n)%8 == 0
+	load sz
+	i32 4
+	i32.and
+	if
+		load p
+		loadg onil
+		i32.store 9
+		i32 4
+		store n
+	end
+
 	loop ; fill vec with references to nil
 		load n
 		load sz
-		i32.ge_u
-		br_if 0
-
+		i32.eq
+		if
+			load p
+			ret
+		end
 		load p
 		load n
 		i32.add
@@ -159,8 +242,7 @@ p i32 n i32
 		i32.add
 		store n
 	end
-	load p
-	ret
+	unreachable
 
 func istrue
 x i32 i32

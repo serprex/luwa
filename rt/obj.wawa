@@ -106,3 +106,137 @@ i i32
 		end
 	end
 	unreachable
+
+func hash
+o i32 i32
+n i32 m i32 h i64
+	block
+	block
+	block
+	block
+	load o
+	i32.load8_u 4
+	br_table 0 1 2 2 2 3
+	end ;0 i64
+	load o
+	i64.load 5
+	load o
+	i32.load 9
+	i32.xor
+	ret
+	end ;1 f64 TODO H(1.0) == H(1)
+	load o
+	i32.load 5
+	load o
+	i32 load 9
+	i32.xor
+	ret
+	end ;2 nil, bool, table
+	load o
+	ret
+	end ;3 string
+	load o
+	i32.load 9
+	i32.eqz
+	if
+		; n = s, h = s.len, m=s+s.len
+		load o
+		tee n
+		load o
+		i32.load 5
+		i32.add
+		store m
+
+		load o
+		i32.load 5
+		i64.extend_u/i32
+		tee h
+		i64 32
+		i64.shl
+		load h
+		i64.or
+		store h
+
+		block
+		loop
+			load n
+			load m
+			i32.ge_u
+			br_if 1
+
+			; h = (^ (+ (rol h 15) h) *n)
+			load h
+			i64 15
+			i64.rotl
+			load h
+			i64.add
+			load n
+			i64.load 13
+			i64.xor
+			store h
+
+			load n
+			i32 8
+			i32.add
+			store n
+		end
+		end
+
+		load o
+		load h
+		i64 32
+		i64.shr_u
+		load h
+		i64.xor
+		i32.wrap/i64
+		tee n
+		i32 113
+		load n
+		select
+		i32.store 9
+	end
+	load o
+	i32.load 9
+	ret
+
+func sizeof
+o i32 i32
+	block
+	block
+	block
+	block
+	block
+	block
+	block
+	load o
+	i32.load8_u 4
+	br_table 0 1 2 3 4 5 6
+	end ;0 i64
+	i32 16
+	ret
+	end ;1 f64
+	i32 16
+	ret
+	end ;2 nil
+	i32 8
+	ret
+	end ;3 bool
+	i32 8
+	ret
+	end ;4 table
+	i32 32
+	ret
+	end ;5 str
+	load o
+	i32.load 5
+	i32 13
+	i32.add
+	call allocsize
+	ret
+	end ;6 vec
+	load o
+	i32.load 5
+	i32 9
+	i32.add
+	call allocsize
+	ret

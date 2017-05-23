@@ -1,40 +1,45 @@
-func memcpy
+func memcpy1rl
 dst i32 src i32 len i32 void
 	loop
-		loadl len
-		if
-			loadl dst
-			loadl len
-			i32.add
-			loadl src
-			loadl len
-			i32.add
-			i32.load8_u 
-			i32.store8
-			loadl len
-			i32 1
-			i32.sub
-			storel len
-		else
-			ret
-		end
+		load len
+		i32.eqz
+		br_if 1
+
+		load dst
+		load len
+		i32.add
+		load src
+		load len
+		i32.add
+		i32.load8_u 
+		i32.store8
+
+		load len
+		i32 1
+		i32.sub
+		store len
 	end
 
-func memset
-dst i32 len i32 val i32 void
+func memcpy8
+dst i32 src i32 len i32 void
+n i32
 	loop
-		loadl len
-		if
-			loadl dst
-			loadl len
-			i32.add
-			loadl val
-			i32.store8
-			loadl len
-			i32 1
-			i32.sub
-			storel len
-		else
-			ret
-		end
+		load n
+		load len
+		i32.eq
+		br_if 1
+
+		load dst
+		load n
+		i32.add
+		load src
+		load n
+		i32.add
+		i64.load
+		i64.store
+
+		load n
+		i32 8
+		i32.add
+		store n
 	end

@@ -59,10 +59,10 @@ function gettype(mod, tysig) {
 }
 
 function mod_wawa(mod, data) {
-	const lines = data.split('\n').map(line => line.replace(/;.*$/, ''));
+	const lines = data.split('\n').map(line => line.replace(/\s*;.*$|\s+$/, ''));
 	for (let i=0; i<lines.length; i++) {
 		let line = lines[i];
-		if (line.match(/^\s*$/)) continue;
+		if (!line) continue;
 		let expo = /^export (start|func|memory|table|global) /.test(line);
 		if (expo) line = line.slice(7);
 		let startf = /^start func /.test(line);
@@ -101,7 +101,7 @@ function mod_wawa(mod, data) {
 				}
 				i += 3;
 			}
-			while (/^\s+|^\s*$/.test(lines[i])) {
+			while (lines[i] && /^\s+/.test(lines[i])) {
 				if (!/^\s*$/.test(lines[i])) {
 					fu.code.push(lines[i].trim().split(/\s+/));
 				}
