@@ -156,16 +156,33 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 	i32 0
 	store livetip
 	block
-	loop
-		load livetip
-		call sizeof
-		store sz
+		block
+		loop
+			load livetip
+			call sizeof
+			store sz
+
+			load livetip
+			load livetip
+			i32.load
+			i32 -8
+			i32.and
+			tee n
+			i32.ne
+			br_if 1
+
+			load livetip
+			load sz
+			i32.add
+			tee livetip
+			loadg heaptip
+			i32.eq
+			br_if 2
+		end
+		end
 
 		load livetip
-		load livetip
-		i32.load
-		i32 -8
-		i32.and
+		load n
 		load sz
 		call memcpy8
 
@@ -174,14 +191,36 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 		i32.add
 		tee livetip
 		loadg heaptip
-		i32.eq
-	end
-	end
+		i32.ne
+		if
+			loop
+				load livetip
+				call sizeof
+				store sz
 
-	load freetip
-	i32 -8
-	i32.and
-	storeg heaptip
+				load livetip
+				load livetip
+				i32.load
+				i32 -8
+				i32.and
+				load sz
+				call memcpy8
+
+				load livetip
+				load sz
+				i32.add
+				tee livetip
+				loadg heaptip
+				i32.eq
+				br_if 1
+			end
+		end
+
+		load freetip
+		i32 -8
+		i32.and
+		storeg heaptip
+	end
 
 func gcmark
 o i32 void

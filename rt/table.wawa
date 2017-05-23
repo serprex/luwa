@@ -101,9 +101,14 @@ kv i32 mx i32 rh i32
 					load val
 					i32.add
 					tee mx
-					i64.load 5
-					loadg onilnil64
-					i64.ne
+					i32.load 5
+					loadg onil
+					i32.ne
+					load mx
+					i32.load 9
+					loadg onil
+					i32.ne
+					i32.and
 					if
 						load tab
 						load mx
