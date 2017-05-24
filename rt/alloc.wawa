@@ -1,4 +1,4 @@
-global i32 heap_tip
+global i32 heaptip
 global i32 markbit
 global i32 onil
 global i32 otrue
@@ -24,13 +24,13 @@ sz i32 i32
 func newobjnogc
 sz i32 t i32 i32
 p i32
-	loadg heap_tip
+	loadg heaptip
 	tee p
-	loadg heap_tip
+	loadg heaptip
 	load sz
 	i32.add
-	storeg heap_tip
-	loadg heap_tip
+	storeg heaptip
+	loadg heaptip
 	i32 16
 	i32.shr_u
 	i32 1
@@ -54,7 +54,7 @@ p i32
 func newobj
 sz i32 t i32 i32
 p i32 ht i32
-	loadg heap_tip
+	loadg heaptip
 	tee p
 	load sz
 	i32.add
@@ -254,14 +254,11 @@ p i32 n i32
 	end
 
 	loop ; fill vec with references to nil
+		load p
 		load n
 		load sz
 		i32.eq
-		if
-			load p
-			ret
-		end
-		load p
+		br_if 1
 		load n
 		i32.add
 		loadg onilnil64

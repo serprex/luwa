@@ -41,3 +41,26 @@ FFI.prototype.newtable = function() {
 	this.handles.add(h);
 	return h;
 }
+FFI.prototype.newstr = function(s) {
+	if (typeof s === "string") s = util.asUtf8(s);
+	let o = this.mod.addroot(this.mod.newstr(s.length));
+	let memta = new Uint8Array(this.mem.buffer);
+	memta.set(s, o+13);
+	let h = new Handle(o);
+	this.handles.add(h);
+	return h;
+}
+FFI.prototype.newf64 = function(f) {
+	let h = new Handle(this.mod.addroot(this.mod.newf64(f)));
+	this.handles.add(h);
+	return h;
+}
+FFI.prototype.gettypeid = function(h) {
+	let memta = new Uint8Array(this.mem.buffer);
+	return memta[h.val+4];
+}
+const tys = ["number", "number", "nil", "boolean", "table", "string"];
+FFI.prototype.gettype = function(h) {
+	let ty = this.gettypeid(h);
+	return tys[ty];
+}

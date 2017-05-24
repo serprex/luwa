@@ -317,8 +317,8 @@ n i32
 	call newvec
 	tee p
 
-	loadg oroot
 	load p
+	loadg oroot
 	load n
 	i32 9
 	i32.add
@@ -330,10 +330,15 @@ n i32
 	load n
 	i32.add
 	loadg otmp
-	i32.store
+	i32.store 9
+
+	load p
+	load n
+	i32 4
+	i32.add
+	i32.store 5
 
 	loadg otmp
-	ret
 
 export func rmroot
 o i32 void
