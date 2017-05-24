@@ -20,7 +20,6 @@ sz i32 i32
 	else
 		load sz
 	end
-	ret
 
 func newobjnogc
 sz i32 t i32 i32
@@ -51,7 +50,6 @@ p i32
 	load t
 	i32.store8 4
 	load p
-	ret
 
 func newobj
 sz i32 t i32 i32
@@ -81,7 +79,6 @@ p i32 ht i32
 		i32.store8 4
 		load p
 	end
-	ret
 
 export func newi64
 x i64 i32
@@ -93,7 +90,6 @@ p i32
 	load x
 	i64.store 5
 	load p
-	ret
 
 export func newf64
 x f64 i32
@@ -105,7 +101,6 @@ p i32
 	load x
 	f64.store 5
 	load p
-	ret
 
 export func newtable
 i32
@@ -113,7 +108,7 @@ p i32
 	i32 32
 	i32 4
 	call newobj
-	storeg otemp
+	storeg otmp
 
 	; len, hlen = 0
 	loadg otmp
@@ -139,7 +134,6 @@ p i32
 	i32.store 17
 
 	loadg otmp
-	ret
 
 export func newstr
 sz i32 i32
@@ -225,7 +219,6 @@ p i32 psz i32
 		i32.store8 13
 	end ;7
 	load p
-	ret
 
 /*
 struct Vec {
@@ -278,6 +271,7 @@ p i32 n i32
 		i32 8
 		i32.add
 		store n
+		br 0
 	end
 	unreachable
 
@@ -290,4 +284,3 @@ x i32 i32
 	loadg ofalse
 	i32.eq
 	i32.or
-	ret

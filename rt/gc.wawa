@@ -60,7 +60,7 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 		tee livetip
 		loadg heaptip
 		i32.eq
-		br_if 1
+		br_table 0 1
 	end
 	end
 
@@ -147,6 +147,8 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 				i32 4
 				i32.add
 				store n
+
+				br 0
 			end
 		end
 
@@ -156,9 +158,11 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 		tee livetip
 		loadg heaptip
 		i32.eq
-		br_if 1
+		br_table 0 1
 	end
 	end
+
+	call gcfix
 
 	; Phase3 move it
 	i32 0
@@ -185,7 +189,7 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 			tee livetip
 			loadg heaptip
 			i32.eq
-			br_if 2
+			br_table 0 2
 		end
 		end
 
@@ -220,7 +224,7 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 				tee livetip
 				loadg heaptip
 				i32.eq
-				br_if 1
+				br_table 0 1
 			end
 		end
 
@@ -295,5 +299,138 @@ m i32
 			i32 4
 			i32.add
 			store o
+
+			br 0
 		end
 	end
+
+export func addroot
+o i32 i32
+n i32
+	load o
+	storeg otmp
+	loadg oroot
+	i32.load 5
+	tee n
+	i32 4
+	i32.add
+	call newvec
+	tee p
+
+	loadg oroot
+	load p
+	load n
+	i32 9
+	i32.add
+	call memcpy8
+
+	storeg oroot
+
+	load p
+	load n
+	i32.add
+	loadg otmp
+	i32.store
+
+	loadg otmp
+	ret
+
+export func rmroot
+o i32 void
+n i32 m i32 p i32
+	load o
+	storeg otmp
+
+	loadg oroot
+	i32.load 5
+	i32 1
+	i32.sub
+	tee m
+	call newvec
+	store p
+
+	loadg otmp
+	store o
+
+	loadg oroot
+	tee n
+	load m
+	i32.add
+	store m
+
+	loop
+		load n
+		load m
+		i32.eq
+		br_if 1
+
+		load n
+		i32.load
+		load o
+		i32.ne
+		if
+			load p
+			load n
+			i32.load
+			i32.store
+
+			load p
+			i32 4
+			i32.add
+			store p
+		end
+
+		load n
+		i32 4
+		i32.add
+		store n
+
+		br 0
+	end
+
+/* reuse this for table.remove
+export func rmroot
+o i32 void
+p i32 q i32
+	loadg oroot
+	loadg oroot
+	i32.load 5
+	i32.add
+	tee q
+	store p
+	loop
+		load p
+		i32 4
+		i32.sub
+		tee p
+		i32.load
+		load o
+		i32.eq
+		if
+			loop
+				load p
+				load p
+				i32 4
+				i32.add
+				tee p
+				i32.load
+				i32.store
+
+				load p
+				load q
+				i32.eq
+				if
+					load p
+					i32 4
+					i32.sub
+					loadg onil
+					i32.store
+					ret
+				end
+
+				br 0
+			end
+		end
+		br 0
+	end
+*/

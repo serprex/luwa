@@ -130,7 +130,7 @@ kv i32 mx i32 rh i32
 					tee rh
 					load mx
 					i32.eq
-					br_if 1
+					br_table 0 1
 				end
 			end
 			ret
@@ -159,6 +159,7 @@ kv i32 mx i32 rh i32
 				store kv
 			end
 		end
+		br 0
 	end
 
 export func tabget
@@ -222,5 +223,6 @@ kv i32 mx i32
 			i32 0
 			store kv
 		end
+		br 0
 	end
 	unreachable

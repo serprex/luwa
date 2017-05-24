@@ -14,6 +14,7 @@ exports.pushString = pushString;
 exports.asUtf8 = asUtf8;
 exports.readvarint = readvarint;
 exports.readvaruint = readvaruint;
+exports.readuint32 = readuint32;
 
 function varint (v, value) {
 	while (true) {
@@ -83,4 +84,8 @@ function readvaruint(v, idx) {
 		if (!(byte & 128)) return ret;
 		shift += 7;
 	}
+}
+
+function readuint32(v, idx) {
+	return v[0]|v[1]<<8|v[2]<<16|v[3]<<24;
 }

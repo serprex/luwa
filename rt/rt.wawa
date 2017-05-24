@@ -1,1 +1,2 @@
 import memory .m 1
+import func .gcfix

@@ -104,6 +104,7 @@ i i32
 			i32.eq
 			ret
 		end
+		br 0
 	end
 	unreachable
 
@@ -196,6 +197,7 @@ n i32 m i32 h i64
 			i32 8
 			i32.add
 			store n
+			br 0
 		end
 		end
 
@@ -214,7 +216,6 @@ n i32 m i32 h i64
 	end
 	load o
 	i32.load 9
-	ret
 
 func sizeof
 o i32 i32
@@ -256,4 +257,3 @@ o i32 i32
 	i32 9
 	i32.add
 	call allocsize
-	ret

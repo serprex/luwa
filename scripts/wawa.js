@@ -48,8 +48,8 @@ processModule({
 	tymap: new Map(),
 }, 3);
 
-function gettype(mod, tysig) {
-	let sig = tysig.join();
+function gettype(mod, tysig = []) {
+	let sig = tysig.join() || "void";
 	let t = mod.tymap.get(sig);
 	if (t === undefined) {
 		mod.tymap.set(sig, t = mod.type.length);
@@ -159,7 +159,7 @@ function mod_comp(mod) {
 		switch (kind.slice(0, 3)) {
 			case "fun": {
 				mod.names.set(name, fsig.length);
-				const fty = gettype(data);
+				const fty = gettype(mod, data);
 				fsig.push(fty);
 				bcimp.push(0);
 				varuint(bcimp, fty);
