@@ -1,0 +1,405 @@
+func lxpush
+len i32 ch i32 i32
+ts i32 nl i32
+	load len
+	i32 1
+	i32.add
+	i32 4
+	call nthtmp
+	i32.load 5
+	i32.eq
+	if
+		load len
+		load len
+		i32.add
+		tee nl
+		call newstr
+		tee ts
+		i32 4
+		call nthtmp
+		load len
+		i32 13
+		i32.add
+		call memcpy8
+
+		load ts
+		load nl
+		i32.store 5
+	end
+	i32 4
+	call nthtmp
+	load len
+	i32.add
+	load ch
+	i32.store8
+
+	load len
+	i32 1
+	i32.add
+
+export func lex
+src i32 i32
+lxl i32 lx i32 i i32 i32 ch i32 slen i32
+	block @loopwrap
+		; 5 src
+		load src
+		call tmppush
+		drop
+
+		; 4 lex
+		i32 1011
+		call newstr
+		call tmppush
+		drop
+
+		; 3 reverse mapping of idents/numbers
+		call newtable
+		call tmppush
+		drop
+
+		; 2 idents - array
+		call newtable
+		call tmppush
+		drop
+
+		; 1 numbers - array
+		call newtable
+		call tmppush
+		drop
+
+		i32 5
+		call nthtmp
+		i32.load 5
+		i32.eqz
+		br_if 0
+
+		loop @loopnoinc
+			block @loop
+				i32 5
+				call nthtmp
+				tee src
+				i32.load 5
+				load i
+				i32.eq
+				br_if 1
+
+				load src
+				load i
+				i32.add
+				i32.load 13
+				tee ch
+
+				/*
+				i32 33
+				i32.lt_u
+				load ch
+				i32 126
+				i32.gt_u
+				i32.or
+				br_if 0 ; TODO error when this isn't a space
+				*/
+
+				block @invalidchar
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				block
+				load ch
+				i32 32
+				i32.sub
+				br_table @loop 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93
+				end ;1 !
+				br @invalidchar
+				end ;2 "
+				;;;
+				end ;3 #
+				load slen
+				i32 29
+				call lxpush
+				store slen
+				br @loop
+				end ;4 $
+				br @invalidchar
+				end ;5 %
+				load slen
+				i32 27
+				call lxpush
+				store slen
+				br @loop
+				end ;6 &
+				load slen
+				i32 30
+				call lxpush
+				store slen
+				br @loop
+				end ;7 '
+				;;;
+				end ;8 (
+				load slen
+				i32 43
+				call lxpush
+				store slen
+				br @loop
+				end ;9 )
+				load slen
+				i32 44
+				call lxpush
+				store slen
+				br @loop
+				end ;10 *
+				load slen
+				i32 25
+				call lxpush
+				store slen
+				br @loop
+				end ;11 +
+				load slen
+				i32 23
+				call lxpush
+				store slen
+				br @loop
+				end ;12 ,
+				load slen
+				i32 52
+				call lxpush
+				store slen
+				br @loop
+				end ;13 -
+				;;;
+				end ;14 .
+				;;;
+				end ;15 /
+				;;; / or //
+				end ;16 0
+				end ;17 1
+				end ;18 2
+				end ;19 3
+				end ;20 4
+				end ;21 5
+				end ;22 6
+				end ;23 7
+				end ;24 8
+				end ;25 9
+				end ;26 :
+				;;; : or ::
+				end ;27 ;
+				load slen
+				i32 50
+				call lxpush
+				store slen
+				br @loop
+				end ;28 <
+				;;; < <= <<
+				end ;29 =
+				;;; = ==
+				end ;30 >
+				;;; > >= >>
+				end ;31 ?
+				br @invalidchar
+				end ;32 @
+				br @invalidchar
+				end ;33 A
+				end ;34 B
+				end ;35 C
+				end ;36 D
+				end ;37 E
+				end ;38 F
+				end ;39 G
+				end ;40 H
+				end ;41 I
+				end ;42 J
+				end ;43 K
+				end ;44 L
+				end ;45 M
+				end ;46 N
+				end ;47 O
+				end ;48 P
+				end ;49 Q
+				end ;50 R
+				end ;51 S
+				end ;52 T
+				end ;53 U
+				end ;54 V
+				end ;55 X
+				end ;56 Y
+				end ;57 Z
+				end ;58 [
+				load slen
+				i32 47
+				call lxpush
+				store slen
+				br @loop
+				end ;59 \
+				br @invalidchar
+				end ;60 ]
+				load slen
+				i32 48
+				call lxpush
+				store slen
+				br @loop
+				end ;61 ^
+				load slen
+				i32 28
+				call lxpush
+				store slen
+				br @loop
+				end ;62 _
+				end ;63 `
+				br @invalidchar
+				end ;64 a
+				end ;65 b
+				end ;66 c
+				end ;67 d
+				end ;68 e
+				end ;69 f
+				end ;70 g
+				end ;71 h
+				end ;72 i
+				end ;73 j
+				end ;74 k
+				end ;75 l
+				end ;76 m
+				end ;77 n
+				end ;78 o
+				end ;79 p
+				end ;80 q
+				end ;81 r
+				end ;82 s
+				end ;83 t
+				end ;84 u
+				end ;85 v
+				end ;86 w
+				end ;87 x
+				end ;88 y
+				end ;89 z
+				end ;90 {
+				load slen
+				i32 45
+				call lxpush
+				store slen
+				br @loop
+				end ;91 |
+				load slen
+				i32 32
+				call lxpush
+				store slen
+				br @loop
+				end ;92 }
+				load slen
+				i32 46
+				call lxpush
+				store slen
+				br @loop
+				end ;93 ~
+				;;; ~ ~=
+				end ;94 nonascii
+				unreachable ; TODO better error mechanism
+			end
+			load i
+			i32 1
+			i32.add
+			store i
+			br 0
+		end
+	end
+	load slen
+	i32 0
+	call lxpush
+	drop ; want to return length too
+
+	i32 4
+	call nthtmp
+	call tmppop
+	call tmppop
+	call tmppop
+	call tmppop
+	call tmppop

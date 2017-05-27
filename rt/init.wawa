@@ -1,4 +1,11 @@
 global mut i64 onilnil64
+global i32 onil
+global i32 otrue
+global i32 ofalse
+global i32 oroot
+global i32 otmp
+global i32 otmpstack
+global i32 otmpstacklen
 
 start func init
 void
@@ -39,3 +46,7 @@ void
 	i32 0
 	call newvec
 	storeg oroot
+
+	i32 32
+	call newvec
+	storeg otmpstack

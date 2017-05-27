@@ -80,7 +80,9 @@ function mod_wawa(mod, data) {
 				locals: [],
 				code: [],
 				localnames: new Map(),
+				scopes: new Map(),
 			};
+			fu.scopes.set('@' + name, 0);
 			if (startf) mod.start = fu;
 			for (let j=0; j<tysig.length - 1; j += 2) {
 				fu.localnames.set(tysig[j], fu.locals.length);
@@ -342,16 +344,17 @@ function mod_comp(mod) {
 				varuint(cofu, 1);
 				cofu.push(tymap[fu.locals[j]]);
 			}
+			let scope = 0;
 			for (let j=0; j<fu.code.length; j++) {
 				let ln = fu.code[j];
 				let op = opmap[ln[0]];
 				console.log(cofu.length, ln);
 				if (op === undefined) console.log("Unknown op", ln);
 				cofu.push(op);
+				if (op >= 0x02 && op <= 0x04) scope++;
+				if (op == 0x0b) scope--;
 				let opf = opimm[op];
-				if (opf) {
-					opf(fu, mod, cofu, ln);
-				}
+				if (opf) opf(fu, mod, cofu, ln, scope);
 			}
 			cofu.push(0x0b);
 			varuint(bcco, cofu.length);
@@ -595,20 +598,31 @@ function global_index(fu, mod, bc, ln) {
 	varuint(bc, mod.names.get(ln[1]));
 }
 function relative_depth(fu, mod, bc, ln) {
-	varuint(bc, ln[1]|0); // TODO named blocks
+	let val = fu.scopes.get(ln[1]);
+	varuint(bc, val === undefined ? ln[1]|0 : val);
 }
 function br_table(fu, mod, bc, ln) {
 	varuint(bc, ln.length - 2);
 	for (let i=1; i<ln.length; i++) {
-		varuint(bc, ln[i]|0); // TODO named blocks
+		let val = fu.scopes.get(ln[i]);
+		varuint(bc, val === undefined ? ln[i]|0 : val);
 	}
 }
-function block_type(fu, mod, bc, ln) {
+function block_type(fu, mod, bc, ln, scope) {
 	if (ln.length == 1) bc.push(0x40);
 	else {
-		let ty = tymap[ln[1]];
-		if (ty === undefined) ty = ln[1]|0;
-		bc.push(ty);
+		for (let i=0; i<ln.length; i++) {
+			let ty = tymap[ln[i]];
+			if (ty !== undefined) {
+				bc.push(ty);
+				break;
+			}
+		}
+		for (let i=0; i<ln.length; i++) {
+			if (ln[i][0] == '@') {
+				fu.scopes.set(ln[i], scope);
+			}
+		}
 	}
 }
 function function_index(fu, mod, bc, ln) {
