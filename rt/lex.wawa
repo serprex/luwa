@@ -44,28 +44,23 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 		; 5 src
 		load src
 		call tmppush
-		drop
 
 		; 4 lex
 		i32 1011
 		call newstr
 		call tmppush
-		drop
 
-		; 3 reverse mapping of idents/numbers
+		; 3 reverse mapping of idents/nums
 		call newtable
 		call tmppush
-		drop
 
 		; 2 idents - array
 		call newtable
 		call tmppush
-		drop
 
-		; 1 numbers - array
+		; 1 nums - array
 		call newtable
 		call tmppush
-		drop
 
 		i32 5
 		call nthtmp
@@ -81,23 +76,13 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				i32.load 5
 				load i
 				i32.eq
-				br_if 1
+				br_if @loopwrap
 
 				load src
 				load i
 				i32.add
-				i32.load 13
-				tee ch
-
-				/*
-				i32 33
-				i32.lt_u
-				load ch
-				i32 126
-				i32.gt_u
-				i32.or
-				br_if 0 ; TODO error when this isn't a space
-				*/
+				i32.load8_u 13
+				store ch
 
 				block @invalidchar
 				block
@@ -258,7 +243,36 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				end ;14 .
 				;;;
 				end ;15 /
-				;;; / or //
+
+				load i
+				i32 1
+				i32.add
+				tee i
+				load slen
+				i32.eq
+				br_if @loopwrap
+
+				load slen
+				load i
+				load src
+				i32.add
+				i32.load 13
+				i32 47 ; '/
+				i32.eq
+				if i32
+					load i
+					i32 1
+					i32.add
+					store i
+
+					load 35
+				else
+					load 26
+				end
+				call lxpush
+				store slen
+
+				br @loop
 				end ;16 0
 				end ;17 1
 				end ;18 2
@@ -270,7 +284,33 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				end ;24 8
 				end ;25 9
 				end ;26 :
-				;;; : or ::
+				load i
+				i32 1
+				i32.add
+				tee i
+				load slen
+				i32.eq
+				br_if @loopwrap
+
+				load slen
+				load i
+				load src
+				i32.add
+				i32.load 13
+				i32 58 ; ':
+				i32.eq
+				if i32
+					load i
+					i32 1
+					i32.add
+					store i
+
+					load 49
+				else
+					load 51
+				end
+				call lxpush
+				store slen
 				end ;27 ;
 				load slen
 				i32 50
@@ -380,7 +420,38 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				store slen
 				br @loop
 				end ;93 ~
-				;;; ~ ~=
+				load i
+				i32 1
+				i32.add
+				tee i
+				load slen
+				i32.eq
+				br_if @loopwrap
+
+				load slen
+				load i
+				load src
+				i32.add
+				i32.load 13
+				i32 61 ; '=
+				i32.eq
+				if i32
+					load i
+					i32 1
+					i32.add
+					store i
+
+					load 31
+				else
+					load 51
+				end
+				call lxpush
+				store slen
+				end ;27 ;
+				load slen
+				i32 50
+				call lxpush
+				store slen
 				end ;94 nonascii
 				unreachable ; TODO better error mechanism
 			end

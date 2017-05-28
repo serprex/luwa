@@ -396,7 +396,7 @@ n i32 m i32 p i32
 	end
 
 func tmppush
-o i32 i32
+o i32 void
 n i32 p i32
 	loadg otmpstacklen
 	loadg otmpstack
@@ -432,9 +432,7 @@ n i32 p i32
 	loadg otmpstacklen
 	i32 4
 	i32.add
-	tee o
 	storeg otmpstacklen
-	load o
 
 func tmppop
 void
