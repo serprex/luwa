@@ -110,7 +110,7 @@ function Lex(src) {
 						break;
 					}
 				}
-				i += 3;
+				i += 2;
 				while (i < src.length && src[i] != '\n') i++;
 			} else lex.push(_minus);
 			break;
