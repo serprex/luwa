@@ -39,7 +39,7 @@ ts i32 nl i32
 
 export func lex
 src i32 i32
-lxl i32 lx i32 i i32 i32 ch i32 slen i32
+i i32 i32 ch i32 slen i32 j i32
 	block @loopwrap
 		; 5 src
 		load src
@@ -179,7 +179,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 					load i
 					load src
 					i32.add
-					i32.load 13
+					i32.load8_u 13
 					i32 45 ; '-
 					i32.eq
 					if i32
@@ -238,8 +238,92 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 							end
 							end
 
-							loop
-								; scan for ]=]
+							loop ; scan for ]
+								; eof?
+								load i
+								i32 1
+								i32.add
+								tee i
+								load ch
+								i32.add
+								load slen
+								i32.eq
+								br_if @loopnoinc
+
+								; reloop if not ]
+								load i
+								load ch
+								i32.add
+								tee i
+								load src
+								i32.add
+								i32.load8_u 13
+								i32 93 ; ']
+								i32.ne
+								br_if 0
+
+								; count =s
+								load i
+								store j
+								loop i32
+									; eof?
+									load i
+									i32 1
+									i32.add
+									tee i
+									load ch
+									i32.add
+									load slen
+									i32.eq
+									br_if @loopnoinc
+
+									; =?
+									load i
+									load ch
+									i32.add
+									load src
+									i32.add
+									i32.load8_u 13
+									i32 61
+									i32.eq
+									br_if 0
+
+									load i
+								end
+								load j
+								i32.sub
+								load ch
+								i32.ne
+								br_if 0 ; reloop if wrong = count
+
+								; eof?
+								load i
+								i32 1
+								i32.add
+								tee i
+								load ch
+								i32.add
+								load slen
+								i32.eq
+								br_if @loopnoinc
+
+								; if not ], reloop
+								load i
+								load ch
+								i32.add
+								load src
+								i32.add
+								i32.load8_u 13
+								i32 93 ; ']
+								i32.ne
+								br_if 0
+
+								; end of comment. Increment i by ch & break
+								load i
+								load ch
+								i32.add
+								store i
+
 								br @loop
 							end
 						end
@@ -268,6 +352,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				end
 				call lxpush
 				store slen
+				br @loop
 				end ;@solidus /
 				load slen
 				load i
@@ -282,7 +367,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 					load i
 					load src
 					i32.add
-					i32.load 13
+					i32.load8_u 13
 					i32 47 ; '/
 					i32.eq
 					if i32
@@ -298,8 +383,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				end
 				call lxpush
 				store slen
-
-				br @loopnoinc
+				br @loop
 				end ;@dot .
 				load slen
 				load i
@@ -314,7 +398,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 					load i
 					load src
 					i32.add
-					i32.load 13
+					i32.load8_u 13
 					i32 46 ; '.
 					i32.eq
 					if i32
@@ -330,7 +414,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 							load i
 							load src
 							i32.add
-							i32.load 13
+							i32.load8_u 13
 							i32 46 ; '.
 							i32.eq
 							if i32
@@ -350,7 +434,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				end
 				call lxpush
 				store slen
-				br @loopnoinc
+				br @loop
 				end ;@digit
 				;;;
 				end ;@colon :
@@ -367,7 +451,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 					load i
 					load src
 					i32.add
-					i32.load 13
+					i32.load8_u 13
 					i32 58 ; ':
 					i32.eq
 					if i32
@@ -406,7 +490,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 						load i
 						load src
 						i32.add
-						i32.load 13
+						i32.load8_u 13
 						i32 61 ; '=
 						i32.sub
 						br_table 0 1 2
@@ -431,7 +515,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				end
 				call lxpush
 				store slen
-				br @loopnoinc
+				br @loop
 				end ;@eq =
 				load slen
 				load i
@@ -446,7 +530,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 					load i
 					load src
 					i32.add
-					i32.load 13
+					i32.load8_u 13
 					i32 61 ; '=
 					i32.eq
 					if i32
@@ -480,7 +564,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 						load i
 						load src
 						i32.add
-						i32.load 13
+						i32.load8_u 13
 						i32 61 ; '=
 						i32.sub
 						br_table 0 2 1 2
@@ -505,7 +589,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 				end
 				call lxpush
 				store slen
-				br @loopnoinc
+				br @loop
 				end ;@id A-Za-z_
 				end ;@ls [
 				load slen
@@ -557,7 +641,7 @@ lxl i32 lx i32 i i32 i32 ch i32 slen i32
 					load i
 					load src
 					i32.add
-					i32.load 13
+					i32.load8_u 13
 					i32 61 ; '=
 					i32.eq
 					if i32
