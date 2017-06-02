@@ -53,7 +53,11 @@ function gettype(mod, tysig = []) {
 	let t = mod.tymap.get(sig);
 	if (t === undefined) {
 		mod.tymap.set(sig, t = mod.type.length);
-		mod.type.push(tysig.map(x => tymap[x]));
+		mod.type.push(tysig.map(x => {
+			let t = tymap[x];
+			if (t === undefined) throw "Invalid type: " + x;
+			return t;
+		}));
 	}
 	return t;
 }
@@ -61,16 +65,19 @@ function gettype(mod, tysig = []) {
 function mod_wawa(mod, data) {
 	const lines = data.split('\n').map(line => line.replace(/\s*;.*$|\s+$/, '')).filter(line => line);
 	for (let i=0; i<lines.length; i++) {
+		if (/^\s*\/\*/.test(lines[i])) {
+			let j = 1;
+			while (!/\*\/$/.test(lines[i+j++]));
+			console.log(i, j, lines.splice(i--, j));
+		}
+	}
+	for (let i=0; i<lines.length; i++) {
 		let line = lines[i];
 		let expo = /^export (start|func|memory|table|global) /.test(line);
 		if (expo) line = line.slice(7);
 		let startf = /^start func /.test(line);
 		if (startf) line = line.slice(6);
-		if (/^use /.test(line)) continue;
-		else if (/^\/\*/.test(line)) {
-			while (!/\*\/$/.test(lines[++i]));
-		}
-		else if (/^func /.test(line)) {
+		if (/^func /.test(line)) {
 			let name = line.slice(5);
 			let tysig = lines[i+1].split(/\s+/), line2 = lines[i+2];
 			const fu = {
@@ -597,32 +604,30 @@ function local_index(fu, mod, bc, ln) {
 function global_index(fu, mod, bc, ln) {
 	varuint(bc, mod.names.get(ln[1]));
 }
-function relative_depth(fu, mod, bc, ln) {
+function relative_depth(fu, mod, bc, ln, scope) {
 	let val = fu.scopes.get(ln[1]);
-	varuint(bc, val === undefined ? ln[1]|0 : val);
+	varuint(bc, val === undefined ? ln[1]|0 : scope-val);
 }
-function br_table(fu, mod, bc, ln) {
+function br_table(fu, mod, bc, ln, scope) {
 	varuint(bc, ln.length - 2);
 	for (let i=1; i<ln.length; i++) {
 		let val = fu.scopes.get(ln[i]);
-		varuint(bc, val === undefined ? ln[i]|0 : val);
+		varuint(bc, val === undefined ? ln[i]|0 : scope-val);
 	}
 }
 function block_type(fu, mod, bc, ln, scope) {
 	if (ln.length == 1) bc.push(0x40);
 	else {
-		for (let i=0; i<ln.length; i++) {
-			let ty = tymap[ln[i]];
-			if (ty !== undefined) {
-				bc.push(ty);
-				break;
-			}
-		}
-		for (let i=0; i<ln.length; i++) {
+		let bty = 0x40;
+		for (let i=1; i<ln.length; i++) {
 			if (ln[i][0] == '@') {
 				fu.scopes.set(ln[i], scope);
 			}
+			else if (ln[i] in tymap) {
+				bty = tymap[ln[i]];
+			}
 		}
+		bc.push(bty);
 	}
 }
 function function_index(fu, mod, bc, ln) {

@@ -1,5 +1,3 @@
-use alloc
-
 /*
 struct Table {
 	00 i32 ref

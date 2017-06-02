@@ -39,7 +39,7 @@ ts i32 nl i32
 
 export func lex
 src i32 i32
-i i32 i32 ch i32 slen i32 j i32
+i i32 ch i32 slen i32 j i32
 	block @loopwrap
 		; 5 src
 		load src
@@ -484,9 +484,9 @@ i i32 i32 ch i32 slen i32 j i32
 				if i32 @ltifelse
 					load 38
 				else
-					block i32
-					block i32
-					block i32
+					block
+					block
+					block
 						load i
 						load src
 						i32.add
@@ -558,9 +558,9 @@ i i32 i32 ch i32 slen i32 j i32
 				if i32 @gtifelse
 					load 39
 				else
-					block i32
-					block i32
-					block i32
+					block
+					block
+					block
 						load i
 						load src
 						i32.add
