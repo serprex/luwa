@@ -1,0 +1,502 @@
+#!/usr/bin/guile -s
+!#
+
+(use-modules (srfi srfi-9))
+(use-modules (ice-9 hash-table))
+(use-modules (ice-9 match))
+(use-modules (rnrs bytevectors))
+
+(define buf->bytevector (compose u8-list->bytevector reverse))
+
+(define (pushbuf-core buf src i)
+	(if (= (bytevector-length src) i)
+		buf
+		(cons (array-ref buf i) (pushbuf-core buf src (1+ i)))
+	)
+)
+
+(define (pushbuf buf src)
+	(pushbuf-core buf src 0)
+)
+
+(define (varint buf i)
+	(define b (logand i 127))
+	(define i7 (ash i -7))
+	(if
+		(or
+			(and (zero? i7) (not (logbit b 6)))
+			(and (= -1 i7) (logbit b 6))
+		)
+		(cons b buf)
+		(cons (logior b 128) (varint buf i7))
+	)
+)
+
+(define (varuint buf i)
+	(define b (logand i 127))
+	(define i7 (ash i -7))
+	(if (zero? i7)
+		(cons b buf)
+		(cons (logior b 128) (varuint buf i7))
+	)
+)
+
+(define (pushutf8 buf str)
+	(define utf8 (string->utf8 str))
+	(varuint buf (bytevector-length utf8))
+	(pushbuf buf utf8)
+)
+
+(define-record-type <wasm-mod>
+	(make-wasm-mod-core type global import export-func export-table export-memory export-global
+		table func memory start element data name tymap)
+	wasm-mod?
+	(type wasm-type set-wasm-type!)
+	(global wasm-global set-wasm-global!)
+	(import wasm-import set-wasm-import!)
+	(export-func wasm-export-func set-wasm-export-func!)
+	(export-table wasm-export-table set-wasm-export-table!)
+	(export-memory wasm-export-memory set-wasm-export-memory!)
+	(export-global wasm-export-global set-wasm-export-global!)
+	(table wasm-table set-wasm-table!)
+	(func wasm-func set-wasm-func!)
+	(memory wasm-memory set-wasm-memory!)
+	(start wasm-start set-wasm-start!)
+	(element wasm-element set-wasm-element!)
+	(data wasm-data set-wasm-data!)
+	(name wasm-name set-wasm-name!)
+	(tymap wasm-tymap set-wasm-tymap!)
+)
+
+(define wasmod
+	(make-wasm-mod-core
+		'() '() '()
+		'() '() '() '()
+		'() '() '()
+		#nil '() '()
+		(make-eq-hashtable) (make-eq-hashtable)
+	)
+)
+
+(define tymap (alist->hash-table
+'(
+	(i32 . #x7f)
+	(i64 . #x7e)
+	(f32 . #x7d)
+	(f64 . #x7c)
+	(anyfunc . #x70)
+	(func . #x60)
+	(void . #x40)
+))
+
+(define (hash-table/has ht key)
+	(hash-table/lookup ht key
+		(lambda (x) #t)
+		(lambda () #f)
+	)
+)
+
+(define opmap (alist->hash-table
+'(
+	(unreachable . #x00)
+	(nop . #x01)
+	(block . #x02)
+	(loop . #x03)
+	(if . #x04)
+	(else . #x05)
+	(end . #x0b)
+	(br . #x0c)
+	(br_if . #x0d)
+	(brif . #x0d)
+	(br_table . #x0e)
+	(ret . #x0f)
+	(call . #x10)
+	(call_indirect . #x11)
+	(calli . #x11)
+	(drop . #x1a)
+	(select . #x1b)
+	(get_local . #x20)
+	(load . #x20)
+	(loadl . #x20)
+	(set_local . #x21)
+	(store . #x21)
+	(storel . #x21)
+	(tee_local . #x22)
+	(tee . #x22)
+	(get_global . #x23)
+	(loadg . #x23)
+	(set_global . #x24)
+	(storeg . #x24)
+	(i32.load . #x28)
+	(i64.load . #x29)
+	(f32.load . #x2a)
+	(f64.load . #x2b)
+	(i32.load8_s . #x2c)
+	(i32.load8_u . #x2d)
+	(i32.load16_s . #x2e)
+	(i32.load16_u . #x2f)
+	(i64.load8_s . #x30)
+	(i64.load8_u . #x31)
+	(i64.load16_s . #x32)
+	(i64.load16_u . #x33)
+	(i64.load32_s . #x34)
+	(i64.load32_u . #x35)
+	(i32.store . #x36)
+	(i64.store . #x37)
+	(f32.store . #x38)
+	(f64.store . #x39)
+	(i32.store8 . #x3a)
+	(i32.store16 . #x3b)
+	(i64.store8 . #x3c)
+	(i64.store16 . #x3d)
+	(i64.store32 . #x3e)
+	(current_memory . #x3f)
+	(grow_memory . #x40)
+	(i32.const . #x41)
+	(i32 . #x41)
+	(i64.const . #x42)
+	(i64 . #x42)
+	(f32.const . #x43)
+	(f32 . #x43)
+	(f64.const . #x44)
+	(f64 . #x44)
+	(i32.eqz . #x45)
+	(i32.eq . #x46)
+	(i32.ne . #x47)
+	(i32.lt_s . #x48)
+	(i32.lt_u . #x49)
+	(i32.gt_s . #x4a)
+	(i32.gt_u . #x4b)
+	(i32.le_s . #x4c)
+	(i32.le_u . #x4d)
+	(i32.ge_s . #x4e)
+	(i32.ge_u . #x4f)
+	(i64.eqz . #x50)
+	(i64.eq . #x51)
+	(i64.ne . #x52)
+	(i64.lt_s . #x53)
+	(i64.lt_u . #x54)
+	(i64.gt_s . #x55)
+	(i64.gt_u . #x56)
+	(i64.le_s . #x57)
+	(i64.le_u . #x58)
+	(i64.ge_s . #x59)
+	(i64.ge_u . #x5a)
+	(f32.eq . #x5b)
+	(f32.ne . #x5c)
+	(f32.lt . #x5d)
+	(f32.gt . #x5e)
+	(f32.le . #x5f)
+	(f32.ge . #x60)
+	(f64.eq . #x61)
+	(f64.ne . #x62)
+	(f64.lt . #x63)
+	(f64.gt . #x64)
+	(f64.le . #x65)
+	(f64.ge . #x66)
+	(i32.clz . #x67)
+	(i32.ctz . #x68)
+	(i32.popcnt . #x69)
+	(i32.add . #x6a)
+	(i32.sub . #x6b)
+	(i32.mul . #x6c)
+	(i32.div_s . #x6d)
+	(i32.div_u . #x6e)
+	(i32.rem_s . #x6f)
+	(i32.rem_u . #x70)
+	(i32.and . #x71)
+	(i32.or . #x72)
+	(i32.xor . #x73)
+	(i32.shl . #x74)
+	(i32.shr_s . #x75)
+	(i32.shr_u . #x76)
+	(i32.rotl . #x77)
+	(i32.rotr . #x78)
+	(i64.clz . #x79)
+	(i64.ctz . #x7a)
+	(i64.popcnt . #x7b)
+	(i64.add . #x7c)
+	(i64.sub . #x7d)
+	(i64.mul . #x7e)
+	(i64.div_s . #x7f)
+	(i64.div_u . #x80)
+	(i64.rem_s . #x81)
+	(i64.rem_u . #x82)
+	(i64.and . #x83)
+	(i64.or . #x84)
+	(i64.xor . #x85)
+	(i64.shl . #x86)
+	(i64.shr_s . #x87)
+	(i64.shr_u . #x88)
+	(i64.rotl . #x89)
+	(i64.rotr . #x8a)
+	(f32.abs . #x8b)
+	(f32.neg . #x8c)
+	(f32.ceil . #x8d)
+	(f32.floor . #x8e)
+	(f32.trunc . #x8f)
+	(f32.nearest . #x90)
+	(f32.sqrt . #x91)
+	(f32.add . #x92)
+	(f32.sub . #x93)
+	(f32.mul . #x94)
+	(f32.div . #x95)
+	(f32.min . #x96)
+	(f32.max . #x97)
+	(f32.copysign . #x98)
+	(f64.abs . #x99)
+	(f64.neg . #x9a)
+	(f64.ceil . #x9b)
+	(f64.floor . #x9c)
+	(f64.trunc . #x9d)
+	(f64.nearest . #x9e)
+	(f64.sqrt . #x9f)
+	(f64.add . #xa0)
+	(f64.sub . #xa1)
+	(f64.mul . #xa2)
+	(f64.div . #xa3)
+	(f64.min . #xa4)
+	(f64.max . #xa5)
+	(f64.copysign . #xa6)
+	(i32.wrap/i64 . #xa7)
+	(i32.trunc_s/f32 . #xa8)
+	(i32.trunc_u/f32 . #xa9)
+	(i32.trunc_s/f64 . #xaa)
+	(i32.trunc_u/f64 . #xab)
+	(i64.extend_s/i32 . #xac)
+	(i64.extend_u/i32 . #xad)
+	(i64.trunc_s/f32 . #xae)
+	(i64.trunc_u/f32 . #xaf)
+	(i64.trunc_s/f64 . #xb0)
+	(i64.trunc_u/f64 . #xb1)
+	(f32.convert_s/i32 . #xb2)
+	(f32.convert_u/i32 . #xb3)
+	(f32.convert_s/i64 . #xb4)
+	(f32.convert_s/i64 . #xb5)
+	(f32.demote/f64 . #xb6)
+	(f64.convert_s/i32 . #xb7)
+	(f64.convert_u/i32 . #xb8)
+	(f64.convert_s/i64 . #xb9)
+	(f64.convert_s/i64 . #xba)
+	(f64.promote/f32 . #xbb)
+	(i32.reinterpret/f32 . #xbc)
+	(i64.reinterpret/f64 . #xbd)
+	(f32.reinterpret/i32 . #xbe)
+	(f64.reinterpret/i64 . #xbf)
+)
+))
+
+(define (params->typesig params)
+	(define (rcore params ps ns)
+	(if (hash-table/has opmap a) (values ps ns)
+	(let
+		(a (car params))
+		(b (car (cdr params)))
+		(c (cdr (cdr params)))
+		(cond
+			((hash-table/has opmap b)
+				(cons (car params) '(void))
+			)
+			((hash-table/has tymap b)
+				(cons (car params) '())
+			)
+			(else
+				(set! names (cons b names))
+			)
+		)
+		(rcore (cdr params) ps ns)
+	))
+	)
+	(rcore params '() '())
+)
+
+(define (typesig->typeid params)
+	(hash-table/lookup (wasm-tymap wasmod) params
+		(lambda (x) x)
+		(lambda ()
+			(define typeid (length (wasm-type wasmod)))
+			(hash-table/put! (wasm-tymap wasmod) params typeid)
+			(set-wasm-type! (cons (cons typeid params) (wasm-type wasmod)))
+			typeid
+		))
+	(hash-table/get wasmod params #nil)
+)
+
+(define (loop tree)
+	(append '(loop) tree '(end))
+)
+
+(define (block tree)
+	(append '(block) tree '(end))
+)
+
+(define (if-then tree)
+	(append '(if) tree ('end))
+)
+
+(define (if-else tree-then tree-else)
+	(append '(if) tree-then ('else) tree-else ('end))
+)
+
+; Parsers take a context & state
+; Return result, remaining context, & state
+; Or #f if end of parses
+
+(define (rule r)
+	(lambda (ctx)
+		(list (r ctx))
+	)
+)
+
+(define (r-sym . syms)
+	(lambda (ctx state)
+		(define state-val (if (null? state) syms state))
+		(define memb (member (car ctx) state-val))
+		(if memb (list (car memb) (cdr ctx) (cons (cdr memb) state)) #f)
+	)
+)
+
+(define (r-or . args)
+	(lambda (ctx state)
+		(define state-val (if (null? state) 0 (car state)))
+		; foreach a in args
+		;  v <- (a . car) ctx
+		;  if v, return (car v) (cdr ctx) (cons #a (cdr v))
+		; return #f
+		(define carctx (car ctx))
+		(let/ec return
+			(define i 0)
+			(for-each
+				(lambda (a)
+					(if (< i state-val)
+						((lambda ()
+						(define v (a carctx))
+						(if v
+							(return (list (car v) (cadr ctx) (cons i (cdr v))))
+							'()
+						)
+						(set! i (+ i 1))))
+						; else
+						'()
+					)
+				)
+			args)
+			#f
+		)
+		(define x (ctx-next ctx))
+		(define memb (member (car ctx) args))
+		(if member #f)
+	)
+)
+
+(define type-func
+	(r-sym 'i32 'i64 'f32 'f64 'void 'anyfunc 'func)
+)
+
+(define type-block
+	(r-sym 'i32 'i64 'f32 'f64 'void)
+)
+
+(define type-global
+	(r-sym 'i32 'i64 'f32 'f64)
+)
+
+(define (ident ctx)
+	(let x (ctx-next ctx))
+	(if (and (symbol? x) (not (member x '(i32 i64 f32 f64 void anyfunc func))))
+		(cons x ctx) #f)
+)
+
+; TODO relative-depth
+; TODO function-index
+; TODO local-index
+
+(define instruction
+	(r-or
+		(r-sym
+			'unreachable 'nop 'end 'ret 'drop 'select 
+			'i32.eqz 'i32.eq 'i32.ne 'i32.lt_s 'i32.lt_u 'i32.gt_s 'i32.gt_e
+			'i32.le_s 'i32.le_u 'i32.ge_s 'i32.ge_u
+			'i64.eqz 'i64.eq 'i64.ne 'i64.lt_s 'i64.lt_u 'i64.gt_s 'i64.gt_e
+			'i64.le_s 'i64.le_u 'i64.ge_s 'i64.ge_u
+			'f32.eq 'f32.ne 'f32.lt 'f32.gt 'f32.le 'f32.ge
+			'f64.eq 'f64.ne 'f64.lt 'f64.gt 'f64.le 'f64.ge
+			'i32.cls 'i32.ctz 'i32.popcnt 'i32.add 'i32.sub 'i32.mul
+			'i32.div_s 'i32.div_u 'i32.rem_s 'i32.rem_u 'i32.and 'i32.or 'i32.xor
+			'i32.shl 'i32.shr_s 'i32.shr_u 'i32.rotl 'i32.rotr
+			'i64.cls 'i64.ctz 'i64.popcnt 'i64.add 'i64.sub 'i64.mul
+			'i64.div_s 'i64.div_u 'i64.rem_s 'i64.rem_u 'i64.and 'i64.or 'i64.xor
+			'i64.shl 'i64.shr_s 'i64.shr_u 'i64.rotl 'i64.rotr
+			'f32.abs 'f32.neg 'f32.ceil 'f32.floor 'f32.trunc 'f32.nearest 'f32.sqrt
+			'f32.add 'f32.sub 'f32.mul 'f32.div 'f32.min 'f32.max 'f32.copysign
+			'f64.abs 'f64.neg 'f64.ceil 'f64.floor 'f64.trunc 'f64.nearest 'f64.sqrt
+			'f64.add 'f64.sub 'f64.mul 'f64.div 'f64.min 'f64.max 'f64.copysign
+			'i32.wrap/i64 'i32.trunc_s/f32 'i32.trunc_u/f32 'i32.trunc_s/f64 'i32.trunc_u/f64
+			'i64.extend_s/i32 'i64.extend_u/i32 'i64.trunc_s/f32 'i64.trunc_u/f32 'i64.trunc_s/f64 'i64.trunc_u/f64
+			'f32.convert_s/i32 'f32.convert_u/i32 'f32.convert_s/i64 'f32.convert_s/i64 'f32.demote/f64
+			'f64.convert_s/i32 'f64.convert_u/i32 'f64.convert_s/i64 'f64.convert_s/i64 'f64.promote/f32
+			'i32.reinterpret/f32 'i64.reinterpret/f64 'f32.reinterpret/i32 'f64.reinterpret/i64
+			'current_memory 'grow_memory
+			)
+		(r-seq
+			(r-sym 'i32.load 'i64.load 'f32.load 'f64.load
+				'i32.load8_s 'i32.load8_u 'i32.load16_s 'i32.load16_u
+				'i64.load8_s 'i64.load8_u 'i64.load16_s 'i64.load16_u 'i64.load32_s 'i64.load32_u
+				'i32.store 'i64.store 'f32.store 'f64.store
+				'i32.store8 'i32.store16 'i64.store8 'i64.store16 'i64.store32
+			) (maybe (r-seq rule-i32 (maybe rule-i32)))
+		(r-seq (r-sym 'block 'loop 'if) (r-maybe type-block))
+		(r-seq (r-sym 'br 'br_if) relative-depth)
+		(r-seq (r-sym 'br_table) (r-many relative-depth))
+		(r-seq (r-sym 'call) function-index)
+		(r-seq (r-sym 'get_local 'set_local 'tee_local) local-index)
+		(r-seq (r-sym 'i32.const) rule-i32)
+		(r-seq (r-sym 'i64.const) rule-i64)
+		(r-seq (r-sym 'f32.const) rule-f32)
+		(r-seq (r-sym 'f64.const) rule-f64)
+	)
+	; a big or of all instructions
+)
+
+(define params
+	(r-seq
+		(r-many
+			(r-seq
+				(rule type-block)
+				(rule ident)
+			)
+		)
+		(r-maybe type)
+	)
+)
+
+(define locals
+	(r-seq
+		(r-many
+			(r-seq
+				(rule type-block)
+				(rule ident)
+			)
+		)
+	)
+)
+
+(define code
+	(r-many
+		(rule instruction)
+	)
+)
+
+(define (func tree)
+	(write ((r-seq
+		ident
+		(rule params)
+		(rule locals)
+		(rule code)
+	) tree '()))
+)
+
+(for-each (lambda (x) 
+	(load x)
+	(write wasmod)
+) (cdr (command-line)))

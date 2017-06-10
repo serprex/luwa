@@ -6,7 +6,7 @@ if (process.argv.length<3) {
 }
 
 const fs = require("fs"), path = require("path");
-const util = require("../util"), varint = util.varint, varuint = util.varuint, asUtf8 = util.asUtf8;
+const { varint, varuint, asUtf8 } = require("../util");
 
 function processModule(mod, n) {
 	if (n >= process.argv.length) {
@@ -68,7 +68,7 @@ function mod_wawa(mod, data) {
 		if (/^\s*\/\*/.test(lines[i])) {
 			let j = 1;
 			while (!/\*\/$/.test(lines[i+j++]));
-			console.log(i, j, lines.splice(i--, j));
+			lines.splice(i--, j);
 		}
 	}
 	for (let i=0; i<lines.length; i++) {
