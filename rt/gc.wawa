@@ -343,20 +343,20 @@ n i32 m i32 p i32
 
 	loadg oroot
 	i32.load 5
-	i32 1
+	i32 4
 	i32.sub
 	tee m
 	call newvec
-	store p
-
-	loadg otmp
-	store o
-
 	loadg oroot
 	tee n
 	load m
 	i32.add
 	store m
+	tee p
+	storeg oroot
+
+	loadg otmp
+	store o
 
 	loop
 		load n
@@ -365,14 +365,14 @@ n i32 m i32 p i32
 		br_if 1
 
 		load n
-		i32.load
+		i32.load 9
 		load o
 		i32.ne
 		if
 			load p
 			load n
-			i32.load
-			i32.store
+			i32.load 9
+			i32.store 9
 
 			load p
 			i32 4

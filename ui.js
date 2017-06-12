@@ -22,28 +22,18 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		assert.equal(nil.val, 0); // todo should export a getter for nil/true/false
 		assert.equal(rt.mod.tabget(newt.val, news.val), newf.val);
 		console.log("Tested newtab/tabget/tabset. Next: string gc pressure");
-		let s = "0123456789";
+		let s = "0123456789", ss = [];
 		for (var i=0; i<10; i++) s += s;
-		let s1 = rt.newstr(s);
-		console.log(s1);
-		let s2 = rt.newstr(s);
-		console.log(s1, s2);
-		let s3 = rt.newstr(s);
-		console.log(s1, s2, s3);
-		let s4 = rt.newstr(s);
-		console.log(s1, s2, s3, s4);
-		let s5 = rt.newstr(s);
-		console.log(s1, s2, s3, s4, s5);
-		let s6 = rt.newstr(s);
-		console.log(s1, s2, s3, s4, s5, s6);
-		console.log("6", rt.mem.buffer.byteLength);
-		//rt.free(s6);
-		let s7 = rt.newstr(s);
-		console.log(s1, s2, s3, s4, s5, s6, s7);
-		console.log("7", rt.mem.buffer.byteLength);
-		let s8 = rt.newstr(s);
-		console.log(s1, s2, s3, s4, s5, s6, s7, s8);
-		console.log("8", rt.mem.buffer.byteLength);
+		for (var j=0; j<2; j++) {
+			for (var i=0; i<8; i++) {
+				ss.push(rt.newstr(s));
+				console.log(rt.mem.buffer.byteLength, ss, rt.handles);
+			}
+			while (ss.length) {
+				rt.free(ss.pop());
+			}
+			console.log("Freed" + (j?"":". Now to do it again"));
+		}
 	}).catch(err => {
 		console.log("ERR", err);
 	});
