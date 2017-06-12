@@ -21,36 +21,6 @@ sz i32 i32
 		load sz
 	end
 
-func newobjnogc
-sz i32 t i32 i32
-p i32
-	loadg heaptip
-	tee p
-	loadg heaptip
-	load sz
-	i32.add
-	storeg heaptip
-	loadg heaptip
-	i32 16
-	i32.shr_u
-	i32 1
-	i32.add
-	current_memory
-	i32.sub
-	tee sz
-	if
-		load sz
-		grow_memory
-		drop
-	end
-	; store header to p
-	loadg markbit
-	i32.store
-	load p
-	load t
-	i32.store8 4
-	load p
-
 func newobj
 sz i32 t i32 i32
 p i32 ht i32
@@ -62,23 +32,42 @@ p i32 ht i32
 	i32 16
 	i32.shr_u
 	current_memory
-	i32.gt_u
-	if i32
+	i32.ge_u
+	if
 		call gccollect
+
+		loadg heaptip
+		tee p
 		load sz
-		load t
-		call newobjnogc
+		i32.add
+		storeg heaptip
+		loadg heaptip
+		i32 16
+		i32.shr_u
+		tee sz
+		current_memory
+		i32.ge_u
+		if
+			load sz
+			current_memory
+			i32.sub
+			i32 1
+			i32.add
+			grow_memory
+			drop
+		end
 	else
 		load ht
-		storeg ht
-		load p
-		loadg markbit
-		i32.store
-		load p
-		load t
-		i32.store8 4
-		load p
+		storeg heaptip
 	end
+	; store header to p
+	load p
+	loadg markbit
+	i32.store
+	load p
+	load t
+	i32.store8 4
+	load p
 
 export func newi64
 x i64 i32

@@ -15,7 +15,7 @@ if (!('TRAVIS' in process.env)) {
 		let newt = rt.newtable();
 		let news = rt.newstr("asdf");
 		let newf = rt.newf64(4.2);
-		let nil = rt.mod.tabget(newt.val, news.val);
+		let nil = rt.mkref(rt.mod.tabget(newt.val, news.val));
 		rt.mod.tabset(newt.val, news.val, newf.val);
 		assert.equal(nil.val, 0); // todo should export a getter for nil/true/false
 		assert.equal(rt.mod.tabget(newt.val, news.val), newf.val);

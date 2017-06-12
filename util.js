@@ -87,5 +87,5 @@ function readvaruint(v, idx) {
 }
 
 function readuint32(v, idx) {
-	return v[0]|v[1]<<8|v[2]<<16|v[3]<<24;
+	return v[idx]|v[idx+1]<<8|v[idx+2]<<16|v[idx+3]<<24;
 }

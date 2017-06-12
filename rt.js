@@ -1,5 +1,5 @@
 const rtwa = typeof fetch !== 'undefined' ?
-	fetch('rt.wasm').then(r => r.arrayBuffer()) :
+	fetch('rt.wasm', {cache:'no-cache'}).then(r => r.arrayBuffer()) :
 	new Promise((resolve, reject) =>
 		require('fs').readFile(__dirname + '/rt.wasm',
 			(err, data) => err ? reject(err) : resolve(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)))
@@ -8,6 +8,10 @@ function rtwathen(ab) {
 	const mem = new WebAssembly.Memory({initial:1}), ffi = new FFI(mem);
 	return WebAssembly.instantiate(ab, {'':{
 		m: mem,
+		echo: x => {
+			console.log(x);
+			return x;
+		},
 		gcfix: () => {
 			let memta = new Uint8Array(mem.buffer);
 			for (let h of ffi.handles) {
@@ -36,24 +40,23 @@ FFI.prototype.free = function(h) {
 		this.mod.rmroot(h.val);
 	}
 }
-FFI.prototype.newtable = function() {
-	let h = new Handle(this.mod.addroot(this.mod.newtable()));
+FFI.prototype.mkref = function(p) {
+	let h = new Handle(p);
 	this.handles.add(h);
 	return h;
+}
+FFI.prototype.newtable = function() {
+	return this.mkref(this.mod.addroot(this.mod.newtable()));
 }
 FFI.prototype.newstr = function(s) {
 	if (typeof s === "string") s = util.asUtf8(s);
 	let o = this.mod.addroot(this.mod.newstr(s.length));
 	let memta = new Uint8Array(this.mem.buffer);
 	memta.set(s, o+13);
-	let h = new Handle(o);
-	this.handles.add(h);
-	return h;
+	return this.mkref(o);
 }
 FFI.prototype.newf64 = function(f) {
-	let h = new Handle(this.mod.addroot(this.mod.newf64(f)));
-	this.handles.add(h);
-	return h;
+	return this.mkref(this.mod.addroot(this.mod.newf64(f)));
 }
 FFI.prototype.gettypeid = function(h) {
 	let memta = new Uint8Array(this.mem.buffer);

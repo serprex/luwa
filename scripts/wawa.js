@@ -631,7 +631,9 @@ function block_type(fu, mod, bc, ln, scope) {
 	}
 }
 function function_index(fu, mod, bc, ln) {
-	varuint(bc, mod.names.get(ln[1]));
+	const name = mod.names.get(ln[1]);
+	if (name === undefined) throw "Unknown function_index: " + ln[1];
+	varuint(bc, name);
 }
 function call_indirect(fu, mod, bc, ln) {
 	// Ahhh need to do this before we encode all types..

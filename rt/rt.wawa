@@ -1,2 +1,3 @@
 import memory .m 1
 import func .gcfix
+import func .echo i32 i32

@@ -19,18 +19,6 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 	loadg otmpstack
 	call gcmark
 
-	loadg oroot
-	i32.load
-	i32 -8
-	i32.and
-	storeg oroot
-
-	loadg otmp
-	i32.load
-	i32 -8
-	i32.and
-	storeg otmp
-
 	; Phase1 set reloc pointers
 	loadg markbit
 	store freetip
@@ -67,6 +55,24 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 	end
 
 	; Phase2 fix reloc pointers
+	loadg oroot
+	i32.load
+	i32 -8
+	i32.and
+	storeg oroot
+
+	loadg otmp
+	i32.load
+	i32 -8
+	i32.and
+	storeg otmp
+
+	loadg otmpstack
+	i32.load
+	i32 -8
+	i32.and
+	storeg otmpstack
+
 	i32 0
 	store livetip
 	block
@@ -81,26 +87,13 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 		i32.and
 		loadg markbit
 		i32.eq
-		if
-			block
-			block
-			block
-			block
-			block
-			block
-			block
+		if @terminal
+			block @vec
+			block @table
 				load livetip
 				i32.load8_u 4
-				br_table 0 1 2 3 4 5 6
-			end ;0 i64
-			ret
-			end ;1 f64
-			ret
-			end ;2 nil
-			ret
-			end ;3 bool
-			ret
-			end ;4 table
+				br_table @terminal @terminal @terminal @terminal @table @terminal @vec
+			end ; @table
 			load livetip
 			load livetip
 			i32.load 13
@@ -122,9 +115,7 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 			i32 -8
 			i32.and
 			i32.store 21
-			end ;5 str
-			ret
-			end ;6 vec
+			end ; @vec
 			load livetip
 			tee n
 			load livetip
@@ -164,26 +155,34 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 	end
 	end
 
-	call gcfix
+	call .gcfix
 
 	; Phase3 move it
 	i32 0
 	store livetip
 	block
-		block
+		block @foundshift
 		loop
 			load livetip
 			call sizeof
 			store sz
 
 			load livetip
-			load livetip
 			i32.load
-			i32 -8
+			i32 1
 			i32.and
-			tee n
-			i32.ne
-			br_if 1
+			loadg markbit
+			i32.eq
+			if
+				load livetip
+				load livetip
+				i32.load
+				i32 -8
+				i32.and
+				tee n
+				i32.ne
+				br_if @foundshift
+			end
 
 			load livetip
 			load sz
@@ -195,8 +194,8 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 		end
 		end
 
-		load livetip
 		load n
+		load livetip
 		load sz
 		call memcpy8
 
@@ -213,12 +212,20 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 				store sz
 
 				load livetip
-				load livetip
 				i32.load
-				i32 -8
+				i32 1
 				i32.and
-				load sz
-				call memcpy8
+				loadg markbit
+				i32.eq
+				if
+					load livetip
+					i32.load
+					i32 -8
+					i32.and
+					load livetip
+					load sz
+					call memcpy8
+				end
 
 				load livetip
 				load sz
@@ -251,25 +258,12 @@ m i32
 		loadg markbit
 		i32.store
 
-		block
-		block
-		block
-		block
-		block
-		block
-		block
+		block @vec
+		block @table
 			load o
 			i32.load8_u 4
-			br_table 0 1 2 3 4 5 6
-		end ;0 i64
-		ret
-		end ;1 f64
-		ret
-		end ;2 nil
-		ret
-		end ;3 bool
-		ret
-		end ;4 table
+			br_table @gcmark @gcmark @gcmark @gcmark @table @gcmark @vec
+		end ; @table
 		load o
 		i32.load 13
 		call gcmark
@@ -279,9 +273,8 @@ m i32
 		load o
 		i32.load 21
 		call gcmark
-		end ;5 str
 		ret
-		end ;6 vec
+		end ; @vec
 		load o
 		load o
 		i32.load 5
