@@ -345,11 +345,21 @@ function mod_comp(mod) {
 		for (let i=0; i<mod.func.length; i++) {
 			const fu = mod.func[i], cofu = [];
 			console.log(i, fu.name);
-			varuint(cofu, fu.locals.length - fu.pcount);
-			// TODO RLE
-			for (let j=fu.pcount; j<fu.locals.length; j++) {
-				varuint(cofu, 1);
-				cofu.push(tymap[fu.locals[j]]);
+			if (fu.pcount === fu.locals.length) {
+				cofu.push(0);
+			} else {
+				let numlocent = 1;
+				for (let j=fu.pcount+1; j<fu.locals.length; j++) {
+					numlocent += fu.locals[j] != fu.locals[j-1];
+				}
+				varuint(cofu, numlocent);
+				for (let j=fu.pcount; j<fu.locals.length; ) {
+					const jty = tymap[fu.locals[j]], jj = j++;
+					while (j<fu.locals.length && tymap[fu.locals[j]] === jty) j++;
+					console.log(jty, fu.locals[j], fu.locals[jj], j, jj);
+					varuint(cofu, j-jj);
+					cofu.push(jty);
+				}
 			}
 			let scope = 0;
 			for (let j=0; j<fu.code.length; j++) {

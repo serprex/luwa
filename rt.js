@@ -67,3 +67,8 @@ FFI.prototype.gettype = function(h) {
 	let ty = this.gettypeid(h);
 	return tys[ty];
 }
+FFI.prototype.strbytes = function(h) {
+	const memta = new Uint8Array(this.mem.buffer);
+	const len = util.readuint32(memta, h.val+5);
+	return memta.slice(h.val+13, h.val+13+len);
+}

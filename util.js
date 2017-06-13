@@ -12,6 +12,7 @@ exports.varint = varint;
 exports.varuint = varuint;
 exports.pushString = pushString;
 exports.asUtf8 = asUtf8;
+exports.fromUtf8 = fromUtf8;
 exports.readvarint = readvarint;
 exports.readvaruint = readvaruint;
 exports.readuint32 = readuint32;
@@ -53,14 +54,25 @@ if (typeof TextEncoder === 'undefined') {
 		return ret;
 	}
 }
+if (typeof TextDecoder === 'undefined') {
+	TextDecoder = function() {
+	};
+	TextDecoder.prototype.decode = function (utf8) {
+		return decodeURIComponent(escape(String.fromCharCode.apply(null, utf8)));
+	}
+}
 
-const te = new TextEncoder();
+const te = new TextEncoder(), td = new TextDecoder();
 function pushString(v, str) {
 	v.push(...te.encode(str));
 }
 
 function asUtf8(str) {
 	return te.encode(str);
+}
+
+function fromUtf8(utf8) {
+	return td.decode(utf8);
 }
 
 function readvarint(v, idx) {

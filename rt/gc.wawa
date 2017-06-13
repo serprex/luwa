@@ -447,7 +447,7 @@ i i32 i32
 	load i
 	i32.sub
 	i32.add
-	i32.load 5
+	i32.load 9
 
 /* reuse this for table.remove
 export func rmroot

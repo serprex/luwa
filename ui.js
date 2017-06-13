@@ -1,5 +1,4 @@
 (function(){"use strict";
-const lua = require("./luwa");
 const taBoard = document.getElementById("taBoard");
 const prOut = document.getElementById("prOut");
 const assert = {
@@ -11,11 +10,13 @@ const assert = {
 		}
 	}
 };
+const util = require("./util");
 document.getElementById("btnRt").addEventListener("click", (s, e) => {
 	require("./rt")().then(rt => {
 		console.log(window.mod = rt);
 		let newt = rt.newtable();
 		let news = rt.newstr("asdf");
+		assert.equal(util.fromUtf8(rt.strbytes(news)), "asdf");
 		let newf = rt.newf64(4.2);
 		let nil = rt.mkref(rt.mod.tabget(newt.val, news.val));
 		rt.mod.tabset(newt.val, news.val, newf.val);
@@ -32,13 +33,16 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 			while (ss.length) {
 				rt.free(ss.pop());
 			}
-			console.log("Freed" + (j?"":". Now to do it again"));
+			console.log("Freed" + (j?". Next: lex":". Now to do it again"));
 		}
+		let codestr = rt.newstr("local x = 3 * 5 + 2");
+		console.log(rt.strbytes(rt.mod.lex(codestr.val)));
 	}).catch(err => {
 		console.log("ERR", err);
 	});
 });
 document.getElementById("btnGo").addEventListener("click", (s, e) => {
+	const lua = require("./luwa");
 	const imp = {
 		"": {
 			p: x => prOut.textContent += x + " ",
