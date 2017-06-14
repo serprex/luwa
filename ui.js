@@ -36,7 +36,7 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 			console.log("Freed" + (j?". Next: lex":". Now to do it again"));
 		}
 		let codestr = rt.newstr("local x = 3 * 5 + 2");
-		console.log(codestr.val, rt.strbytes(rt.mod.lex(codestr.val)), codestr.val);
+		console.log(codestr.val, rt.strbytes(rt.mkref(rt.mod.lex(codestr.val))), codestr.val);
 	}).catch(err => {
 		console.log("ERR", err);
 	});

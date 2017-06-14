@@ -25,13 +25,17 @@ ts i32 nl i32
 		load ts
 		load nl
 		i32.store 5
+
+		load ts
+		i32 4
+		call setnthtmp
 	end
 	i32 4
 	call nthtmp
 	load len
 	i32.add
 	load ch
-	i32.store8
+	i32.store8 13
 
 	load len
 	i32 1
@@ -174,7 +178,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32
-					load 24
+					i32 24
 				else
 					load i
 					load src
@@ -347,7 +351,7 @@ i i32 ch i32 slen i32 j i32
 							i32 0 ; not needed?
 						end
 					else
-						load 24
+						i32 24
 					end
 				end
 				call lxpush
@@ -362,7 +366,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32
-					load 26
+					i32 26
 				else
 					load i
 					load src
@@ -376,9 +380,9 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 35
+						i32 35
 					else
-						load 26
+						i32 26
 					end
 				end
 				call lxpush
@@ -393,7 +397,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32
-					load 53
+					i32 53
 				else
 					load i
 					load src
@@ -409,7 +413,7 @@ i i32 ch i32 slen i32 j i32
 						load slen
 						i32.eq
 						if i32
-							load 54
+							i32 54
 						else
 							load i
 							load src
@@ -423,13 +427,13 @@ i i32 ch i32 slen i32 j i32
 								i32.add
 								store i
 
-								load 55
+								i32 55
 							else
-								load 54
+								i32 54
 							end
 						end
 					else
-						load 53
+						i32 53
 					end
 				end
 				call lxpush
@@ -446,7 +450,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32
-					load 51
+					i32 51
 				else
 					load i
 					load src
@@ -460,9 +464,9 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 49
+						i32 49
 					else
-						load 51
+						i32 51
 					end
 				end
 				call lxpush
@@ -482,7 +486,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32 @ltifelse
-					load 38
+					i32 38
 				else
 					block
 					block
@@ -500,7 +504,7 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 40 ; lte
+						i32 40 ; lte
 						br @ltifelse
 					end ; <
 						load i
@@ -508,10 +512,10 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 33 ; lsh
+						i32 33 ; lsh
 						br @ltifelse
 					end ; default
-					load 38
+					i32 38
 				end
 				call lxpush
 				store slen
@@ -525,7 +529,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32
-					load 42
+					i32 42
 				else
 					load i
 					load src
@@ -539,14 +543,14 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 36
+						i32 36
 					else
-						load 42
+						i32 42
 					end
 				end
 				call lxpush
 				store slen
-				br @noloopinc
+				br @loopnoinc
 				end ;@gt >
 				load slen
 				load i
@@ -556,7 +560,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32 @gtifelse
-					load 39
+					i32 39
 				else
 					block
 					block
@@ -574,7 +578,7 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 41 ; gte
+						i32 41 ; gte
 						br @gtifelse
 					end ; >
 						load i
@@ -582,10 +586,10 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 34 ; rsh
+						i32 34 ; rsh
 						br @gtifelse
 					end ; default
-					load 39
+					i32 39
 				end
 				call lxpush
 				store slen
@@ -637,7 +641,7 @@ i i32 ch i32 slen i32 j i32
 				load slen
 				i32.eq
 				if i32
-					load 51
+					i32 51
 				else
 					load i
 					load src
@@ -651,9 +655,9 @@ i i32 ch i32 slen i32 j i32
 						i32.add
 						store i
 
-						load 31
+						i32 31
 					else
-						load 51
+						i32 51
 					end
 				end
 				call lxpush
@@ -671,12 +675,25 @@ i i32 ch i32 slen i32 j i32
 	load slen
 	i32 0
 	call lxpush
-	drop ; want to return length too
+	store slen
 
+	load slen
+	call newstr
+	tee i
 	i32 4
 	call nthtmp
+	load slen
+	i32 13
+	i32.add
+	call allocsize
+	call memcpy8
+	load i
+	load slen
+	i32.store 5
+
 	call tmppop
 	call tmppop
 	call tmppop
 	call tmppop
 	call tmppop
+	load i
