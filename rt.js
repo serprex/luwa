@@ -58,14 +58,16 @@ FFI.prototype.newstr = function(s) {
 FFI.prototype.newf64 = function(f) {
 	return this.mkref(this.mod.addroot(this.mod.newf64(f)));
 }
+FFI.prototype.nil = new Handle(0);
+FFI.prototype.true = new Handle(8);
+FFI.prototype.false = new Handle(16);
 FFI.prototype.gettypeid = function(h) {
 	let memta = new Uint8Array(this.mem.buffer);
 	return memta[h.val+4];
 }
 const tys = ["number", "number", "nil", "boolean", "table", "string"];
 FFI.prototype.gettype = function(h) {
-	let ty = this.gettypeid(h);
-	return tys[ty];
+	return tys[this.gettypeid(h)];
 }
 FFI.prototype.strbytes = function(h) {
 	const memta = new Uint8Array(this.mem.buffer);

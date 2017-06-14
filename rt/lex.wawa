@@ -116,7 +116,7 @@ i i32 ch i32 slen i32 j i32
 				i32.sub
 				br_table @loop @invalid @quote @hash @invalid @cent @amp @quote @lp @rp @ast @plus @comma @minus @dot @solidus @digit @digit @digit @digit @digit @digit @digit @digit @digit @digit @colon @semi @lt @eq @gt @invalid @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @ls @invalid @rs @circum @id @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @lc @pipe @rc @tilde @invalid
 				end ;@quote " '
-				;;;
+				br @loop;;;
 				end ;@hash #
 				load slen
 				i32 29
@@ -436,7 +436,7 @@ i i32 ch i32 slen i32 j i32
 				store slen
 				br @loop
 				end ;@digit
-				;;;
+				br @loop;;;
 				end ;@colon :
 				load slen
 				load i
@@ -591,6 +591,7 @@ i i32 ch i32 slen i32 j i32
 				store slen
 				br @loop
 				end ;@id A-Za-z_
+				br @loop;;;
 				end ;@ls [
 				load slen
 				i32 47
