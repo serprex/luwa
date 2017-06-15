@@ -1,3 +1,53 @@
+func pushvec
+o i32 tmpid i32 len i32 i32
+vec i32 cap i32 l1 i32
+	load len
+	i32 1
+	i32.add
+	tee l1
+	load tmpid
+	call nthtmp
+	tee vec
+	i32.load 5
+	tee cap
+	i32.eq
+	if
+		load o
+		storeg otmp
+
+		load cap
+		load cap
+		i32.add
+		tee cap
+		call newvec
+		load tmpid
+		call nthtmp
+		tee vec
+		load len
+		i32 9
+		i32.add
+		call memcpy8
+
+		load vec
+		load cap
+		i32.store 5
+
+		load vec
+		load tmpid
+		call setnthtmp
+
+		loadg otmp
+		store o
+	end
+
+	load vec
+	load len
+	i32.add
+	load o
+	i32.store 13
+	load l1
+	call .echo
+
 func memcpy1rl
 dst i32 src i32 len i32 void
 	loop
