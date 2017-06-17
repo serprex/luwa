@@ -1,8 +1,51 @@
+func pushstr
+ch i32 tmpid i32 len i32 i32
+str i32 cap i32 l1 i32
+	load len
+	i32 1
+	i32.add
+	tee l1
+	load tmpid
+	call nthtmp
+	tee str
+	i32.load 5
+	tee cap
+	i32.eq
+	if
+		load cap
+		load cap
+		i32.add
+		tee cap
+		call newstr
+		load tmpid
+		call nthtmp
+		tee str
+		load len
+		i32 13
+		i32.add
+		call memcpy8
+
+		load str
+		load cap
+		i32.store 5
+
+		load str
+		load tmpid
+		call setnthtmp
+	end
+
+	load str
+	load len
+	i32.add
+	load ch
+	i32.store8 13
+	load l1
+
 func pushvec
 o i32 tmpid i32 len i32 i32
 vec i32 cap i32 l1 i32
 	load len
-	i32 1
+	i32 4
 	i32.add
 	tee l1
 	load tmpid
@@ -44,9 +87,8 @@ vec i32 cap i32 l1 i32
 	load len
 	i32.add
 	load o
-	i32.store 13
+	i32.store 9
 	load l1
-	call .echo
 
 func memcpy1rl
 dst i32 src i32 len i32 void
