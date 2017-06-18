@@ -175,6 +175,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 					load tlen
 					call pushstr
 					store tlen
+					br 0
 				end
 				end
 
@@ -235,7 +236,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 				call pushstr
 				store lxlen
 
-				br @loop;;;
+				br @loop
 				end ;@hash #
 				i32 29
 				i32 4

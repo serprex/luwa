@@ -3,7 +3,6 @@ global i32 markbit
 global i32 onil
 global i32 otrue
 global i32 ofalse
-global i32 oroot
 global i32 otmp
 
 func allocsize
@@ -242,7 +241,7 @@ p i32 n i32
 		store n
 	end
 
-	loop ; fill vec with references to nil
+	loop i32 ; fill vec with references to nil
 		load p
 		load n
 		load sz
@@ -259,7 +258,6 @@ p i32 n i32
 		store n
 		br 0
 	end
-	unreachable
 
 func istrue
 x i32 i32

@@ -4,15 +4,15 @@ struct Table {
 	04 i8 type
 	05 i32 len
 	09 i32 hlen
-	13 obj*arr
-	17 Hkv*hash
-	21 Table*meta
+	13 vec arr
+	17 vec hash
+	21 tbl meta
 }
 */
 
 export func tabset
 tab i32 key i32 val i32 void
-kv i32 mx i32 rh i32
+kv i32 mx i32
 	load tab
 	storeg otmp
 
@@ -21,72 +21,74 @@ kv i32 mx i32 rh i32
 	call hash
 	load tab
 	i32.load 17
+	tee mx
 	i32.load 5
 	i32.rem_u
 	i32 -8
 	i32.and
 
 	; kv <- tab.hash + H
-	load tab
-	i32.load 17
+	load mx
 	i32.add
 	store kv
 
 	; mx <- tab.hash + tab.hash.len
-	load tab
-	i32.load 17
+	load mx
+	load mx
 	i32.load 5
-	load tab
-	i32.load 17
 	i32.add
 	store mx
 
 	loop
 		; if kv.key == nil, set
 		load kv
-		i32.load 5
+		i32.load 9
 		loadg onil
 		i32.eq
 		if
 			load kv
 			load key
-			i32.store 5
+			i32.store 9
 			load kv
 			load val
-			i32.store 9
+			i32.store 13
 
-			; increment hlen, mx <- hlen
+			; hlen += 8, mx <- hlen
 			load tab
 			load tab
 			i32.load 9
-			i32 1
+			i32 8
 			i32.add
 			tee mx
 			i32.store 9
 
-			; kv <- hcap. if (mx+mx)*8 > hcap, rehash
+			; kv <- hcap. if mx+mx > hcap, rehash
 			load mx
 			load mx
 			i32.add
-			i32 3
-			i32.shl
 			load tab
 			i32.load 17
 			i32.load 5
 			tee kv
 			i32.gt_u
 			if
-				; val <- tab.hash
-				load tab
-				i32.load 17
-				store val
-
 				; tab.hash = newvec, tab.hlen = 0
 				load kv
 				load kv
 				i32.add
 				call newvec
 				store key
+
+				; val <- tab.hash, mx <- tab.hash + tab.hash.len
+				; have to do between call to newvec and updating tab.hash
+				load tab
+				i32.load 17
+				tee val
+				load val
+				i32.load 5
+				i32.add
+				store mx
+
 				loadg otmp
 				tee tab
 				load key
@@ -96,36 +98,32 @@ kv i32 mx i32 rh i32
 				i32 0
 				i32.store 9
 
-				; rehash. mx is oldhcap*8, val is oldhash
+				; rehash. val is oldhash. mx is oldhash+oldhash.len
 				loop
-					; mx <- rh+val
-					; if mx.key != nil && mx.val != nil
-					; then tabset(tab, mx.key, mx.val)
-					load rh
+					; if val.key != nil && val.val != nil
+					; then tabset(tab, val.key, val.val)
 					load val
-					i32.add
-					tee mx
-					i32.load 5
+					i32.load 9
 					loadg onil
 					i32.ne
-					load mx
-					i32.load 9
+					load val
+					i32.load 13
 					loadg onil
 					i32.ne
 					i32.and
 					if
 						load tab
-						load mx
-						i32.load 5
-						load mx
+						load val
 						i32.load 9
+						load val
+						i32.load 13
 						call tabset
 					end
 
-					load rh
+					load val
 					i32 8
 					i32.add
-					tee rh
+					tee val
 					load mx
 					i32.eq
 					br_table 0 1
@@ -135,27 +133,27 @@ kv i32 mx i32 rh i32
 		else
 			; if kv.key = key, set
 			load kv
-			i32.load 5
+			i32.load 9
 			load key
 			call eq
 			if
 				load kv
 				load val
-				i32.store 9
+				i32.store 13
 				ret
 			end
 
-			; kv += 8, if kv == mx, kv = 0
+			; kv += 8, if kv == mx, kv = tab.hash
 			load kv
 			i32 8
 			i32.add
 			tee kv
 			load mx
-			i32.eq
-			if
-				i32 0
-				store kv
-			end
+			i32.ne
+			br_if 1
+			load tab
+			i32.load 17
+			store kv
 		end
 		br 0
 	end
@@ -168,30 +166,28 @@ kv i32 mx i32
 	call hash
 	load tab
 	i32.load 17
+	tee mx
 	i32.load 5
 	i32.rem_u
 	i32 -8
 	i32.and
 
 	; kv = tab.hash + H
-	load tab
-	i32.load 17
+	load mx
 	i32.add
 	store kv
 
 	; mx = tab.hash + tab.hash.len
-	load tab
-	i32.load 17
+	load mx
+	load mx
 	i32.load 5
-	load tab
-	i32.load 17
 	i32.add
 	store mx
 
-	loop
+	loop i32
 		; if kv.key == nil, ret nil
 		load kv
-		i32.load 5
+		i32.load 9
 		loadg onil
 		i32.eq
 		if
@@ -201,26 +197,26 @@ kv i32 mx i32
 
 		; if kv.key == key, ret val
 		load kv
-		i32.load 5
+		i32.load 9
 		load key
 		call eq
 		if
 			load kv
-			i32.load 9
+			i32.load 13
 			ret
 		end
 
-		; kv += 8, if kv == mx, kv = 0
+		; kv += 8, if kv == mx, kv = tab.hash
 		load kv
 		i32 8
 		i32.add
 		tee kv
 		load mx
-		i32.eq
-		if
-			i32 0
-			store kv
-		end
+		i32.ne
+		br_if 0
+		load tab
+		i32.load 17
+		store kv
+
 		br 0
 	end
-	unreachable

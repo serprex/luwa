@@ -1,3 +1,18 @@
 import memory .m 1
 import func .gcfix
+import func .gcmark
 import func .echo i32 i32
+
+func echodrop
+x i32 void
+	load x
+	call .echo
+	drop
+
+func echodrop2
+x i32 y i32 i32
+	load x
+	load y
+	call echodrop
+	call .echo
+

@@ -344,7 +344,7 @@ function mod_comp(mod) {
 		varuint(bcco, mod.func.length);
 		for (let i=0; i<mod.func.length; i++) {
 			const fu = mod.func[i], cofu = [];
-			console.log(i, fu.name);
+			console.log(mod.names.get(fu.name), fu.name);
 			if (fu.pcount === fu.locals.length) {
 				cofu.push(0);
 			} else {

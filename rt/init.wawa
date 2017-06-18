@@ -2,7 +2,6 @@ global mut i64 onilnil64
 global i32 onil
 global i32 otrue
 global i32 ofalse
-global i32 oroot
 global i32 otmp
 global i32 otmpstack
 global i32 otmpstacklen
@@ -42,10 +41,6 @@ void
 	loadg otrue
 	i32 1
 	i32.store8 5
-
-	i32 0
-	call newvec
-	storeg oroot
 
 	i32 32
 	call newvec

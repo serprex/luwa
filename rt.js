@@ -12,9 +12,18 @@ function rtwathen(ab) {
 			console.log(x);
 			return x;
 		},
+		echo2: (x, y) => {
+			console.log(y, x);
+			return x;
+		},
+		gcmark: x => {
+			for (const h of ffi.handles) {
+				ffi.mod.gcmark(h.val);
+			}
+		},
 		gcfix: () => {
 			let memta = new Uint8Array(mem.buffer);
-			for (let h of ffi.handles) {
+			for (const h of ffi.handles) {
 				h.val = util.readuint32(memta, h.val)&-8;
 			}
 		},
@@ -29,34 +38,37 @@ const util = require('./util');
 function Handle(val) {
 	this.val = val;
 }
-
 function FFI(mem) {
 	this.mod = null;
 	this.mem = mem;
 	this.handles = new Set();
 }
 FFI.prototype.free = function(h) {
-	if (this.handles.delete(h)) {
-		this.mod.rmroot(h.val);
-	}
+	this.handles.delete(h);
 }
 FFI.prototype.mkref = function(p) {
-	let h = new Handle(p);
-	this.handles.add(h);
-	return h;
+	switch (p) {
+		case 0: return this.nil;
+		case 4: return this.false;
+		case 8: return this.true;
+		default:
+		let h = new Handle(p);
+		this.handles.add(h);
+		return h;
+	}
 }
 FFI.prototype.newtable = function() {
-	return this.mkref(this.mod.addroot(this.mod.newtable()));
+	return this.mkref(this.mod.newtable());
 }
 FFI.prototype.newstr = function(s) {
 	if (typeof s === "string") s = util.asUtf8(s);
-	let o = this.mod.addroot(this.mod.newstr(s.length));
+	let o = this.mod.newstr(s.length);
 	let memta = new Uint8Array(this.mem.buffer);
 	memta.set(s, o+13);
 	return this.mkref(o);
 }
 FFI.prototype.newf64 = function(f) {
-	return this.mkref(this.mod.addroot(this.mod.newf64(f)));
+	return this.mkref(this.mod.newf64(f));
 }
 FFI.prototype.nil = new Handle(0);
 FFI.prototype.true = new Handle(8);
