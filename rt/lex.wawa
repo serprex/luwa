@@ -141,15 +141,12 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 				i32.sub
 				br_table @loop @invalid @quote @hash @invalid @cent @amp @quote @lp @rp @ast @plus @comma @minus @dot @solidus @digit @digit @digit @digit @digit @digit @digit @digit @digit @digit @colon @semi @lt @eq @gt @invalid @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @ls @invalid @rs @circum @id @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @lc @pipe @rc @tilde @invalid
 				end ;@quote " '
-				load i
-				i32 1
-				i32.add
-				store i
-
 				i32 11
-				tee tlen
 				call newstr
 				call tmppush
+
+				i32 0
+				store tlen
 
 				block
 				loop
@@ -179,9 +176,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 				end
 				end
 
-				i32 1
-				call nthtmp
-				i32.load 5
+				load tlen
 				call newstr
 				tee ch
 				i32 13
@@ -779,7 +774,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 				tee src
 				i32 13
 				i32.add
-				i32 4
+				i32 5
 				call nthtmp
 				load j
 				i32.add
