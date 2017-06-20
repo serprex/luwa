@@ -826,12 +826,213 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 
 				br @loop
 				end ;@ls [
-				i32 47
+				load i
+				i32 1
+				i32.add
+				tee i
+				load srclen
+				i32.eq
+				if i32 @lsvalif
+					i32 47
+				else
+					i32 0
+					store tlen
+					load i
+					i32 1
+					i32.sub
+					store j
+
+					loop i32 @lscounteq
+						i32 47
+						load j
+						i32 1
+						i32.add
+						tee j
+						load srclen
+						i32.eq
+						br_if @lsvalif
+						drop
+
+						load j
+						load src
+						i32.add
+						i32.load8_u 13
+						tee ch
+						i32 61 ; '=
+						i32.eq
+						if i32
+							load tlen
+							i32 1
+							i32.add
+							store tlen
+							br @lscounteq
+						else
+							i32 47
+							load ch
+							i32 91 ; '[
+							i32.ne
+							br_if @lsvalif
+							drop
+
+							loop i32 @lsseekeq
+								i32 47
+								load j
+								i32 1
+								i32.add
+								tee j
+								load srclen
+								i32.eq
+								br_if @lsvalif
+								drop
+
+								load j
+								load src
+								i32.add
+								i32.load8_u 13
+								i32 93 ; ']
+								i32.ne
+								br_if 0
+
+								load j
+								store ch
+								block
+								loop
+									load j
+									load ch
+									i32.sub
+									load tlen
+									i32.eq
+									br_if 1
+
+									i32 47
+									load j
+									i32 1
+									i32.add
+									tee j
+									load srclen
+									i32.eq
+									br_if @lsvalif
+									drop
+
+									load j
+									load src
+									i32.add
+									i32.load8_u 13
+									i32 61
+									i32.ne
+									br_if @lsseekeq
+									br 0
+								end
+								end
+
+								i32 47
+								load j
+								i32 1
+								i32.add
+								tee j
+								load srclen
+								i32.eq
+								br_if @lsvalif
+								drop
+
+								load j
+								load src
+								i32.add
+								i32.load8_u 13
+								i32 93
+								i32.ne
+								br_if @lsseekeq
+
+								; i, ch, tlen = j+1, i + 1 + tlen + 13, ch - i - tlen - 1
+								load ch
+								load i
+								i32.sub
+								load tlen
+								i32.sub
+								i32 1
+								i32.sub
+
+								load i
+								load tlen
+								i32.add
+								i32 14
+								i32.add
+
+								load j
+								i32 1
+								i32.add
+
+								store i
+								store ch
+								tee tlen
+
+								call newstr
+								tee src
+								i32 13
+								i32.add
+								i32 5
+								call nthtmp
+								load ch
+								i32.add
+								load tlen
+								call memcpy1rl
+
+								load src
+								i32 2
+								load strlen
+								call lxaddval
+								tee temp64
+								i32.wrap/i64
+								store strlen
+								load temp64
+								i64 32
+								i64.shr_u
+								i32.wrap/i64
+								store ch
+
+								load ch
+								i32 24
+								i32.shr_u
+								i32 4
+
+								load ch
+								i32 16
+								i32.shr_u
+								i32 4
+
+								load ch
+								i32 8
+								i32.shr_u
+								i32 4
+
+								load ch
+								i32 4
+
+								i32 128
+								i32 4
+								load lxlen
+								call pushstr
+								call pushstr
+								call pushstr
+								call pushstr
+								call pushstr
+								store lxlen
+
+								load j
+								i32 1
+								i32.add
+								store i
+								br @loopnoinc
+							end
+						end
+					end
+				end
 				i32 4
 				load lxlen
 				call pushstr
 				store lxlen
-				br @loop
+
+				br @loopnoinc
 				end ;@rs ]
 				i32 48
 				i32 4
