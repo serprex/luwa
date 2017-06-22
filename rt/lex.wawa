@@ -148,8 +148,8 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 				i32 0
 				store tlen
 
-				block
-				loop
+				block @blockscanq
+				loop @loopscanq
 					load i
 					i32 1
 					i32.add
@@ -168,6 +168,159 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 					br_if 1
 
 					load j
+					i32 92
+					i32.eq
+					if i32 @stresc
+						i32 0
+						load i
+						i32 1
+						i32.add
+						tee i
+						load srclen
+						i32.eq
+						br_if @stresc
+						drop
+
+						load i
+						load src
+						i32.add
+						i32.load8_u 13
+						tee j
+						i32 34
+						i32.eq
+						load j
+						i32 34
+						i32.eq
+						i32.or
+						load j
+						i32 92
+						i32.eq
+						i32.or
+						if i32
+							load j
+						else
+							load j
+							i32 48
+							i32.sub
+							tee j
+							i32 10
+							i32.lt
+							if i32
+								i32 0
+								load i
+								i32 1
+								i32.add
+								tee i
+								load srclen
+								i32.eq
+								br_if @stresc
+								drop
+
+								load i
+								load src
+								i32.add
+								i32.load8_u 13
+								i32 48
+								i32.sub
+								tee ch
+								i32 10
+								i32.lt
+								if i32 @tblbr
+									i32 0
+									load i
+									i32 1
+									i32.add
+									tee i
+									load srclen
+									i32.eq
+									br_if @stresc
+									drop
+
+									load i
+									load src
+									i32.add
+									i32.load8_u 13
+									i32 47
+									i32.sub
+									tee tlen
+									i32 10
+									i32.lt
+									if i32
+										load j
+										i32 100
+										i32.mul
+										load ch
+										i32 10
+										i32.mul
+										i32.add
+										load tlen
+										i32.add
+									else
+										load i
+										i32 1
+										i32.sub
+										store i
+
+										load j
+										i32 10
+										i32.mul
+										load ch
+										i32.add
+									end
+								else
+									load i
+									i32 1
+									i32.sub
+									store i
+
+									load j
+								end
+							else
+								block @a i32
+								block @b i32
+								block @f i32
+								block @n i32
+								block @r i32
+								block @t i32
+								block @u i32
+								block @v i32
+								block @x i32
+									load j
+									i32 49
+									i32.sub
+									br_table @a @b @tblbr @tblbr @tblbr @f @tblbr @tblbr @tblbr @tblbr @tblbr @tblbr @tblbr @n @tblbr @tblbr @tblbr @r @tblbr @t @u @v @tblbr @x @tblbr
+								end 'x
+									unreachable
+									br @tblbr
+								end 'v
+									i32 11
+									br @tblbr
+								end 'u
+									unreachable
+									br @loopscanq
+								end 't
+									i32 9
+									br @tblbr
+								end 'r
+									i32 13
+									br @tblbr
+								end 'n
+									i32 10
+									br @tblbr
+								end 'f
+									i32 12
+									br @tblbr
+								end 'b
+									i32 8
+									br @tblbr
+								end 'a
+									i32 7
+							end
+						end
+					else
+						load j
+					end
+
 					i32 1
 					load tlen
 					call pushstr
@@ -835,6 +988,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 				if i32 @lsvalif
 					i32 47
 				else
+					; TODO nested strings, omit opening character being newline
 					i32 0
 					store tlen
 					load i
