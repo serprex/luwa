@@ -1,3 +1,36 @@
+func chex
+ch i32 i32
+	load ch
+	i32 48
+	i32.sub
+	tee ch
+	i32 10
+	i32.lt
+	if i32
+		load ch
+	else
+		load ch
+		i32 17
+		i32.sub
+		tee ch
+		i32 6
+		i32.ge_u
+		if
+			i32 -1
+			load ch
+			i32 32
+			i32.sub
+			tee ch
+			i32 6
+			i32.ge_u
+			br_if @chex
+			drop
+		end
+		load ch
+		i32 10
+		i32.add
+	end
+
 func pushstr
 ch i32 tmpid i32 len i32 i32
 str i32 cap i32 l1 i32

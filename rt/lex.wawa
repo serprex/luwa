@@ -59,7 +59,7 @@ boxlen i32
 
 export func lex
 src i32 i32
-i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i64
+i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i64
 	block @loopwrap
 		load src
 		i32.load 5
@@ -202,7 +202,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 							load j
 							i32 48
 							i32.sub
-							tee j
+							tee h
 							i32 10
 							i32.lt
 							if i32
@@ -242,18 +242,18 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 									i32.load8_u 13
 									i32 47
 									i32.sub
-									tee tlen
+									tee k
 									i32 10
 									i32.lt
 									if i32
-										load j
+										load h
 										i32 100
 										i32.mul
 										load ch
 										i32 10
 										i32.mul
 										i32.add
-										load tlen
+										load k
 										i32.add
 									else
 										load i
@@ -261,7 +261,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 										i32.sub
 										store i
 
-										load j
+										load h
 										i32 10
 										i32.mul
 										load ch
@@ -273,7 +273,7 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 									i32.sub
 									store i
 
-									load j
+									load h
 								end
 							else
 								block @a i32
@@ -290,7 +290,44 @@ i i32 ch i32 lxlen i32 j i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i6
 									i32.sub
 									br_table @a @b @tblbr @tblbr @tblbr @f @tblbr @tblbr @tblbr @tblbr @tblbr @tblbr @tblbr @n @tblbr @tblbr @tblbr @r @tblbr @t @u @v @tblbr @x @tblbr
 								end 'x
-									unreachable
+									; TODO update lexer to use ge not eq
+									; then do i+=2, not i+=1 i+=1
+									i32 0
+									load i
+									i32 1
+									i32.add
+									tee i
+									load srclen
+									i32.eq
+									br_if @stresc
+									drop
+
+									i32 0
+									load i
+									i32 1
+									i32.add
+									tee i
+									load srclen
+									i32.eq
+									br_if @stresc
+									drop
+
+									load i
+									i32 1
+									i32.sub
+									load src
+									i32.add
+									i32.load8_u 13
+									call chex
+									i32 16
+									i32.mul
+
+									load i
+									load src
+									i32.add
+									i32.load8_u 13
+									call chex
+									i32.add
 									br @tblbr
 								end 'v
 									i32 11
