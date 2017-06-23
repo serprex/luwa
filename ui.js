@@ -49,8 +49,19 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 			}
 			console.log("Freed" + (j?". Next: lex":". Now to do it again"));
 		}
-		let codestr = rt.newstr("local x = 3 * 5 + 2; local y = 'x' + 'z' + 'z' + [[z]] + [=[x]=]");
-		console.log(codestr.val, rt.strbytes(rt.mkref(rt.mod.lex(codestr.val))), codestr.val);
+		let codestr = rt.newstr("local x = 3 * 5 + 2;" +
+			"local y = 'x' + 'z' + 'z' + [[z]] + [=[x]=];" +
+			"return 'a\\na'");
+		rt.mod.lex(codestr.val);
+		let lexstr = rt.mkref(rt.mod.nthtmp(3));
+		let svec = rt.mkref(rt.mod.nthtmp(2));
+		let nvec = rt.mkref(rt.mod.nthtmp(1));
+		rt.mod.tmppop();
+		rt.mod.tmppop();
+		rt.mod.tmppop();
+		console.log(rt.strbytes(lexstr));
+		console.log(rt.obj2js(svec));
+		console.log(rt.obj2js(nvec));
 	}).catch(err => {
 		console.log("ERR", err);
 	});

@@ -58,13 +58,14 @@ boxlen i32
 ;	i32.wrap/i64
 
 export func lex
-src i32 i32
-i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i64
+src i32 void
+i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i64
 	block @loopwrap
 		load src
 		i32.load 5
 		store srclen
 
+		; TODO move src+revmap to top of stack so we can efficiently pop without popping other 3
 		; 5 src
 		load src
 		call tmppush
@@ -202,10 +203,10 @@ i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i
 							load j
 							i32 48
 							i32.sub
-							tee h
+							tee j
 							i32 10
-							i32.lt
-							if i32
+							i32.lt_u
+							if i32 @tblbr
 								i32 0
 								load i
 								i32 1
@@ -224,8 +225,8 @@ i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i
 								i32.sub
 								tee ch
 								i32 10
-								i32.lt
-								if i32 @tblbr
+								i32.lt_u
+								if i32
 									i32 0
 									load i
 									i32 1
@@ -244,9 +245,9 @@ i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i
 									i32.sub
 									tee k
 									i32 10
-									i32.lt
+									i32.lt_u
 									if i32
-										load h
+										load j
 										i32 100
 										i32.mul
 										load ch
@@ -261,7 +262,7 @@ i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i
 										i32.sub
 										store i
 
-										load h
+										load j
 										i32 10
 										i32.mul
 										load ch
@@ -273,22 +274,26 @@ i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i
 									i32.sub
 									store i
 
-									load h
+									load j
 								end
 							else
-								block @a i32
-								block @b i32
-								block @f i32
-								block @n i32
-								block @r i32
-								block @t i32
-								block @u i32
-								block @v i32
-								block @x i32
+								block @a
+								block @b
+								block @f
+								block @n
+								block @r
+								block @t
+								block @u
+								block @v
+								block @x
+								block @noesc
 									load j
 									i32 49
 									i32.sub
-									br_table @a @b @tblbr @tblbr @tblbr @f @tblbr @tblbr @tblbr @tblbr @tblbr @tblbr @tblbr @n @tblbr @tblbr @tblbr @r @tblbr @t @u @v @tblbr @x @tblbr
+									br_table @a @b @noesc @noesc @noesc @f @noesc @noesc @noesc @noesc @noesc @noesc @noesc @n @noesc @noesc @noesc @r @noesc @t @u @v @noesc @x @noesc
+								end 'noesc
+									unreachable
+									br @tblbr
 								end 'x
 									; TODO update lexer to use ge not eq
 									; then do i+=2, not i+=1 i+=1
@@ -1320,9 +1325,17 @@ i i32 ch i32 lxlen i32 j i32 k i32 h i32 srclen i32 numlen i32 strlen i32 tlen i
 	load lxlen
 	i32.store 5
 
-	call tmppop
-	call tmppop
-	call tmppop
-	call tmppop
-	call tmppop
 	load i
+	i32 2
+	call nthtmp
+	i32 1
+	call nthtmp
+	call tmppop
+	call tmppop
+	i32 1
+	call setnthtmp
+	i32 2
+	call setnthtmp
+	i32 3
+	call setnthtmp
+

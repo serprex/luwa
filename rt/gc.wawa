@@ -293,7 +293,7 @@ m i32
 		end
 	end
 
-func tmppush
+export func tmppush
 o i32 void
 n i32 p i32
 	loadg otmpstacklen
@@ -313,7 +313,7 @@ n i32 p i32
 
 		load p
 		loadg otmpstack
-		load n
+		loadg otmpstacklen
 		i32 9
 		i32.add
 		call memcpy8
@@ -338,7 +338,7 @@ n i32 p i32
 	i32.add
 	storeg otmpstacklen
 
-func tmppop
+export func tmppop
 void
 	loadg otmpstacklen
 	i32 4
@@ -349,9 +349,9 @@ void
 	loadg otmpstacklen
 	i32.add
 	loadg onil
-	i32.store
+	i32.store 9
 
-func nthtmp
+export func nthtmp
 i i32 i32
 	loadg otmpstack
 	loadg otmpstacklen
@@ -362,7 +362,7 @@ i i32 i32
 	i32.add
 	i32.load 9
 
-func setnthtmp
+export func setnthtmp
 nv i32 i i32 void
 	loadg otmpstack
 	loadg otmpstacklen
