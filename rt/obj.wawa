@@ -162,30 +162,28 @@ n i32 m i32 h i64
 		i32.add
 		store n
 
-		block
 		loop
 			load n
 			load m
-			i32.ge_u
-			br_if 1
-
+			i32.lt_u
+			if
 			; h = (^ (+ (rol h 15) h) *n)
-			load h
-			i64 15
-			i64.rotl
-			load h
-			i64.add
-			load n
-			i64.load 13
-			i64.xor
-			store h
+				load h
+				i64 15
+				i64.rotl
+				load h
+				i64.add
+				load n
+				i64.load 13
+				i64.xor
+				store h
 
-			load n
-			i32 8
-			i32.add
-			store n
-			br 0
-		end
+				load n
+				i32 8
+				i32.add
+				store n
+				br 1
+			end
 		end
 
 		load o

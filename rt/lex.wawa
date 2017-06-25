@@ -722,7 +722,6 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 						if @ifdeepcomm
 							i32 0
 							store ch
-							block @deepcomm
 							loop ; count =s
 								; eof?
 								load ch
@@ -754,9 +753,8 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 								i32.add
 								i32.load8_u 13
 								i32 91 ; '[
-								i32.eq
-								br_table @ifdeepcomm @deepcomm
-							end
+								i32.ne
+								br_if @ifdeepcomm
 							end
 
 							loop ; scan for ]
