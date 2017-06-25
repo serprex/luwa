@@ -23,7 +23,6 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 	loadg markbit
 	store freetip
 
-	block
 	loop
 		load livetip
 		call sizeof
@@ -49,9 +48,8 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 		i32.add
 		tee livetip
 		loadg heaptip
-		i32.eq
-		br_table 0 1
-	end
+		i32.ne
+		br_if 0
 	end
 
 	; Phase2 fix reloc pointers
@@ -69,7 +67,6 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 
 	i32 0
 	store livetip
-	block
 	loop
 		load livetip
 		call sizeof 
@@ -144,9 +141,8 @@ freetip i32 livetip i32 sz i32 n i32 m i32
 		i32.add
 		tee livetip
 		loadg heaptip
-		i32.eq
-		br_table 0 1
-	end
+		i32.ne
+		br_if 0
 	end
 
 	call .gcfix
