@@ -286,14 +286,51 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 								block @u
 								block @v
 								block @x
+								block @z
 								block @noesc
 									load j
 									i32 49
 									i32.sub
-									br_table @a @b @noesc @noesc @noesc @f @noesc @noesc @noesc @noesc @noesc @noesc @noesc @n @noesc @noesc @noesc @r @noesc @t @u @v @noesc @x @noesc
+									br_table @a @b @noesc @noesc @noesc @f @noesc @noesc @noesc @noesc @noesc @noesc @noesc @n @noesc @noesc @noesc @r @noesc @t @u @v @noesc @x @noesc @z @noesc
 								end 'noesc
 									unreachable
 									br @tblbr
+								end 'z
+									loop
+										i32 0
+										load i
+										i32 1
+										i32.add
+										tee i
+										load srclen
+										i32.eq
+										br_if @stresc
+										drop
+
+										load i
+										load src
+										i32.add
+										i32.load8_u 13
+										tee j
+										i32 32
+										i32.eq
+										br_if 0
+
+										load j
+										i32 9
+										i32.ge_u
+										load j
+										i32 13
+										i32.le_u
+										i32.or
+										br_if 0
+									end
+
+									load i
+									i32 1
+									i32.sub
+									store i
+									br @loopscanq
 								end 'x
 									; TODO update lexer to use ge not eq
 									; then do i+=2, not i+=1 i+=1
