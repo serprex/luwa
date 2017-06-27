@@ -59,7 +59,7 @@ boxlen i32
 
 export func lex
 src i32 void
-i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i64 temp642 i64
+i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 temp64 i64 temp642 i64 double f64 flt10 f64
 	block @loopwrap
 		load src
 		i32.load 5
@@ -965,37 +965,96 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 				i64.extend_u/i32
 				store temp64
 
+				i32 0
+				store tlen
+
 				loop @intloop
 					load i
 					i32 1
 					i32.add
 					tee i
 					load srclen
-					i32.eq
-					br_if @loopnoinc
-
-					load i
-					load src
-					i32.add
-					i64.load8_u 13
-					i64 48
-					i64.sub
-					tee temp642
-					i64 10
-					i64.le_u
+					i32.ne
 					if
-						load temp64
+						load i
+						load src
+						i32.add
+						i64.load8_u 13
+						i64 48
+						i64.sub
+						tee temp642
 						i64 10
-						i64.mul
-						load temp642
-						i64.add
-						store temp64
-						br @intloop
+						i64.lt_u
+						if
+							load temp64
+							i64 10
+							i64.mul
+							load temp642
+							i64.add
+							store temp64
+							br @intloop
+						else
+							load temp642
+							i64 -2
+							i64.eq
+							if
+								load temp64
+								f64.convert_u/i64
+								store double
+
+								f64 1
+								store flt10
+
+								i32 1
+								store tlen
+
+								loop @fltloop
+									load i
+									i32 1
+									i32.add
+									tee i
+									load srclen
+									i32.ne
+									if
+										load i
+										load src
+										i32.add
+										i64.load8_u 13
+										i64 48
+										i64.sub
+										tee temp642
+										i64 10
+										i64.lt_u
+										if
+											load double
+											load temp642
+											f64.convert_u/i64
+											load flt10
+											f64 10
+											f64.div
+											tee flt10
+											f64.mul
+											f64.add
+											store double
+											br @fltloop
+										end
+									end
+								end
+							end
+						end
 					end
 				end
 
-				load temp64
-				call newi64
+				;; TODO once 1 & 1.0 hash the same this breaks
+				;; 1 & 1.0 need unique indices
+				load tlen
+				if i32
+					load double
+					call newf64
+				else
+					load temp64
+					call newi64
+				end
 				i32 1
 				load numlen
 				call lxaddval

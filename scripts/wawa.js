@@ -573,12 +573,12 @@ const opmap = {
 	"f32.convert_s/i32": 0xb2,
 	"f32.convert_u/i32": 0xb3,
 	"f32.convert_s/i64": 0xb4,
-	"f32.convert_s/i64": 0xb5,
+	"f32.convert_u/i64": 0xb5,
 	"f32.demote/f64": 0xb6,
 	"f64.convert_s/i32": 0xb7,
 	"f64.convert_u/i32": 0xb8,
 	"f64.convert_s/i64": 0xb9,
-	"f64.convert_s/i64": 0xba,
+	"f64.convert_u/i64": 0xba,
 	"f64.promote/f32": 0xbb,
 	"i32.reinterpret/f32": 0xbc,
 	"i64.reinterpret/f64": 0xbd,
@@ -679,5 +679,5 @@ function const_f32(fu, mod, bc, ln) {
 }
 function const_f64(fu, mod, bc, ln) {
 	let f64 = new Float64Array([+ln[1]]);
-	bc.push(...new Uint8Array(f32.buffer));
+	bc.push(...new Uint8Array(f64.buffer));
 }
