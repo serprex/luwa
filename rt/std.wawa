@@ -5,7 +5,7 @@ ch i32 i32
 	i32.sub
 	tee ch
 	i32 10
-	i32.lt
+	i32.lt_u
 	if i32
 		load ch
 	else

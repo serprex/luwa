@@ -124,7 +124,9 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 				block @lt
 				block @semi
 				block @colon
+				block @digitpush
 				block @digit
+				block @digit0
 				block @dot
 				block @solidus
 				block @minus
@@ -140,7 +142,7 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 				load ch
 				i32 32
 				i32.sub
-				br_table @loop @invalid @quote @hash @invalid @cent @amp @quote @lp @rp @ast @plus @comma @minus @dot @solidus @digit @digit @digit @digit @digit @digit @digit @digit @digit @digit @colon @semi @lt @eq @gt @invalid @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @ls @invalid @rs @circum @id @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @lc @pipe @rc @tilde @invalid
+				br_table @loop @invalid @quote @hash @invalid @cent @amp @quote @lp @rp @ast @plus @comma @minus @dot @solidus @digit0 @digit @digit @digit @digit @digit @digit @digit @digit @digit @colon @semi @lt @eq @gt @invalid @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @ls @invalid @rs @circum @id @invalid @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @id @lc @pipe @rc @tilde @invalid
 				end ;@quote " '
 				i32 11
 				call newstr
@@ -920,6 +922,7 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 					load src
 					i32.add
 					i32.load8_u 13
+					tee ch
 					i32 46 ; '.
 					i32.eq
 					if i32
@@ -950,6 +953,21 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 							end
 						end
 					else
+						load ch
+						i32 48
+						i32.sub
+						i32 10
+						i32.lt_u
+						if
+							; move i before . to parse as of 0.x
+							load i
+							i32 2
+							i32.sub
+							store i
+							i32 48
+							store ch
+							br @digit
+						end
 						i32 53
 					end
 				end
@@ -958,6 +976,111 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 				call pushstr
 				store lxlen
 				br @loop
+				end ;@digit0
+				load i
+				i32 1
+				i32.add
+				tee i
+				load srclen
+				i32.ne
+				if
+					load i
+					load src
+					i32.add
+					i32.load8_u 13
+					i32 120
+					i32.eq
+					if
+						i64 0
+						store temp64
+						i32 0
+						store tlen
+						loop @hexloop
+							load i
+							i32 1
+							i32.add
+							tee i
+							load srclen
+							i32.ne
+							if
+								load i
+								load src
+								i32.add
+								i32.load8_u 13
+								tee ch
+								i32 46
+								i32.eq
+								if ; hex float
+									load temp64
+									f64.convert_u/i64
+									store double
+
+									f64 1
+									store flt10
+
+									i32 1
+									store tlen
+
+									loop @xfltloop
+										load i
+										i32 1
+										i32.add
+										tee i
+										load srclen
+										i32.ne
+										if
+											load i
+											load src
+											i32.add
+											i32.load8_u 13
+											call chex
+											tee ch
+											i32 -1
+											i32.ne
+											if
+												load double
+												load ch
+												f64.convert_u/i32
+												load flt10
+												f64 16
+												f64.div
+												tee flt10
+												f64.mul
+												f64.add
+												store double
+												br @xfltloop
+											end
+										end
+									end
+									br @digitpush
+								end
+
+								load ch
+								call chex
+								tee ch
+								i32 -1
+								i32.eq
+								br_if @digitpush
+
+								load temp64
+								i64 4
+								i64.shl
+								load ch
+								i64.extend_u/i32
+								i64.or
+								store temp64
+
+								br @hexloop
+							end
+							br @digitpush
+						end
+					end
+				end
+				load i
+				i32 1
+				i32.sub
+				store i
+
 				end ;@digit
 				load ch
 				i32 48
@@ -1044,6 +1167,7 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 						end
 					end
 				end
+				end ; @digitpush -- shared endpoint of dec/hex parse
 
 				;; TODO once 1 & 1.0 hash the same this breaks
 				;; 1 & 1.0 need unique indices
