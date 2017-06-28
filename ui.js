@@ -49,7 +49,7 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 			}
 			console.log("Freed" + (j?". Next: lex":". Now to do it again"));
 		}
-		let codestr = rt.newstr("local x = 3 * 5 + 21 + 2.1 + 0x2.1 + 0xa;" +
+		let codestr = rt.newstr("local x = 3 * 5 + 21 + 2.1 + 0x2.1 + 0xa + 0xap2 + 1.25e2;" +
 			"local y = 'x' + 'z' + 'z' + [[z]] + [=[x]=];" +
 			"return 'a\\na'");
 		rt.mod.lex(codestr.val);

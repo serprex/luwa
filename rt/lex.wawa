@@ -1169,6 +1169,85 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 				end
 				end ; @digitpush -- shared endpoint of dec/hex parse
 
+				load i
+				load srclen
+				i32.lt_u
+				if @eorp
+					i32 0
+					store j
+
+					load i
+					load src
+					i32.add
+					i32.load8_u 13
+					i32 -33 ' ~32
+					i32.and
+					tee ch
+					i32 69
+					i32.eq
+					tee k
+					load ch
+					i32 80
+					i32.eq
+					i32.or
+					if
+						loop @eorploop
+							load i
+							i32 1
+							i32.add
+							tee i
+							load srclen
+							i32.eq
+							br_if @eorp
+
+							load i
+							load src
+							i32.add
+							i32.load8_u 13
+							i32 48
+							i32.sub
+							tee ch
+							i32 10
+							i32.lt_u
+							if
+								load j
+								i32 10
+								i32.mul
+								load ch
+								i32.add
+								store j
+								br @eorploop
+							end
+						end
+						load tlen
+						i32.eqz
+						if
+							i32 1
+							store tlen
+							load temp64
+							f64.convert_u/i64
+							store double
+						end
+						load j
+						if
+							loop
+								load double
+								f64 10
+								f64 2
+								load k
+								select
+								f64.mul
+								store double
+
+								load j
+								i32 1
+								i32.sub
+								tee j
+								br_if 0
+							end
+						end
+					end
+				end
 				;; TODO once 1 & 1.0 hash the same this breaks
 				;; 1 & 1.0 need unique indices
 				load tlen
