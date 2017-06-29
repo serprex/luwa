@@ -1180,17 +1180,60 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 					load src
 					i32.add
 					i32.load8_u 13
-					i32 -33 ' ~32
+					i32 -33 ; x&~32 is lower(x)
 					i32.and
 					tee ch
-					i32 69
+					i32 69 ; E
 					i32.eq
 					tee k
 					load ch
-					i32 80
+					i32 80 ; P
 					i32.eq
 					i32.or
 					if
+						f64 10
+						f64 2
+						load k
+						select
+						store flt10
+
+						; First iteration is unrolled to check for +-
+						load i
+						i32 1
+						i32.add
+						tee i
+						load srclen
+						i32.eq
+						br_if @eorp
+
+						load i
+						load src
+						i32.add
+						i32.load8_u 13
+						i32 48
+						i32.sub
+						tee j
+						i32 10
+						i32.ge_u
+						if
+							load j
+							i32 -3 ; -
+							i32.eq
+							if
+								f64 1
+								load flt10
+								f64.div
+								store flt10
+							else
+								load j
+								i32 -5 ; + is nop
+								i32.ne
+								br_if @eorp ; invalid number
+							end
+							i32 0
+							store j
+						end
+
 						loop @eorploop
 							load i
 							i32 1
@@ -1232,10 +1275,7 @@ i i32 ch i32 lxlen i32 j i32 k i32 srclen i32 numlen i32 strlen i32 tlen i32 tem
 						if
 							loop
 								load double
-								f64 10
-								f64 2
-								load k
-								select
+								load flt10
 								f64.mul
 								store double
 
