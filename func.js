@@ -15,11 +15,9 @@ function Func(asm) {
 	this.freelist = [];
 	this.local2free = asm.local2free;
 	this.trace = new trace.Context();
-	this.labels = new Set();
 	for (let i=0; i<asm.gotos.length; i+=3) {
 		let lpos = asm.labelpos[asm.gotos[i+1]];
 		this.bc[asm.gotos[i]] = lpos.pos;
-		this.labels.add(lpos.pos);
 		if (asm.gotos[i+2]) {
 			this.bc[asm.gotos[i]-2] = asm.gotos[i+2] - lpos.fordepth;
 		}
