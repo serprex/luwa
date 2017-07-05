@@ -21,7 +21,7 @@ function varint (v, value) {
 	while (true) {
 		let b = value & 127;
 		value >>= 7;
-		if ((!value && ((b & 0x40) == 0)) || ((value == -1 && ((b & 0x40) == 0x40)))) {
+		if ((!value && ((b & 0x40) == 0)) || (value == -1 && ((b & 0x40) == 0x40))) {
 			return v.push(b);
 		}
 		else {
