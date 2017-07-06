@@ -1,14 +1,57 @@
 #!/usr/bin/lua
 
-local typeval = {
-	i32 = 0x7f,
-	i64 = 0x7e,
-	f32 = 0x7d,
-	f64 = 0x7c,
-	anyfunc = 0x70,
-	func = 0x60,
-	void = 0x40,
+i32 = 0x7f
+i64 = 0x7e
+f32 = 0x7d
+f64 = 0x7c
+void = 0x40
+
+Mod = {
+	type = {},
+	import = {},
+	func = {},
+	table = {},
+	memory = {},
+	global = {},
+	exportfun = {},
+	exporttab = {},
+	exportmem = {},
+	exportglo = {},
+	start = nil,
+	element = {},
+	code = {},
+	data = {},
+	tymap = {},
+	fumap = {},
 }
+
+-- Type
+function Mod:decltype(...)
+	local types = table.pack(...)
+	if types[1] == void then
+		types[1] = nil
+		types.n = 0
+	end
+	return self:typefromsig(table.concat(types))
+end
+
+function Mod:typefromsig(sig)
+	local t = self.tymap[sig]
+	if not t then
+		t = #self.type+1
+		self.tymap[sig] = t
+		self.type[t] = types
+	end
+	return t
+end
+
+-- Import
+
+function importfunc()
+
+end
+
+-- Function
 local funcmeta = {}
 local funcmt = { __index = funcmeta }
 local push, pop = table.insert, table.remove
@@ -66,31 +109,85 @@ function funcmeta:peek()
 	return self.stack[#self.stack]
 end
 
+function funcmeta:params(...)
+	assert(#self.locals == 0)
+	self.locals = table.pack(...)
+	self.pcount = #self.locals
+	local ret = {}
+	for i = 1, self.pcount do
+		ret[i] = i
+	end
+	self.sig = table.concat(self.locals) .. self.sig
+	return table.unpack(ret)
+end
+
 function funcmeta:i32(x)
 	local xty = type(x)
-	if xty == 'string' then
-		local n = #self.locals+1
-		self.locals[n] = 'i32'
-		return n
-	else
+	if xty == 'number' then
 		self:emit(0x41)
 		self:emitint(x)
-		self:push('i32')
+		self:push(i32)
+	else
+		local n = #self.locals+1
+		self.locals[n] = 0x7f
+		return n
+	end
+end
+function funcmeta:i64(x)
+	local xty = type(x)
+	if xty == 'number' then
+		self:emit(0x42)
+		self:emitint(x)
+		self:push(i64)
+	else
+		local n = #self.locals+1
+		self.locals[n] = 0x7e
+		return n
+	end
+end
+function funcmeta:f32(x)
+	local xty = type(x)
+	if xty == 'number' then
+		self:emit(0x43)
+		local repr = string.pack('<f', x)
+		for i = 1, 4 do
+			self:emit(string.byte(repr, n))
+		end
+		self:push(f32)
+	else
+		local n = #self.locals+1
+		self.locals[n] = 0x7d
+		return n
+	end
+end
+function funcmeta:f64(x)
+	local xty = type(x)
+	if xty == 'number' then
+		self:emit(0x43)
+		local repr = string.pack('<d', x)
+		for i = 1, 8 do
+			self:emit(string.byte(repr, n))
+		end
+		self:push(f64)
+	else
+		local n = #self.locals+1
+		self.locals[n] = 0x7c
+		return n
 	end
 end
 function funcmeta:load(x)
 	self:emit(0x20)
-	self:emituint(x)
+	self:emituint(x-1)
 	self:push(self.locals[x])
 end
 function funcmeta:store(x)
 	self:emit(0x21)
-	self:emituint(x)
+	self:emituint(x-1)
 	self:pop()
 end
 function funcmeta:tee(x)
 	self:emit(0x22)
-	self:emituint(x)
+	self:emituint(x-1)
 end
 function funcmeta:drop()
 	self:emit(0x1a)
@@ -98,13 +195,18 @@ function funcmeta:drop()
 end
 function funcmeta:select()
 	-- TODO typesig
+	self:pop()
+	local a = self:pop()
+	local b = self:pop()
+	assert(a == b)
 	self:emit(0x1b)
+	self:push(a)
 end
 function funcmeta:iff(ty, brif)
 	local tyty, tyval = type(ty)
 	self:emit(0x04)
-	if tyty == 'string' then
-		tyval = typeval[ty]
+	if tyty == 'number' then
+		tyval = ty
 	else
 		tyval = 0x40
 		brif = ty
@@ -126,8 +228,8 @@ end
 function funcmeta:ifelse(ty, brif, brelse)
 	local tyty, tyval = type(ty)
 	self:emit(0x04)
-	if tyty == 'string' then
-		tyval = typeval[ty]
+	if tyty == 'number' then
+		tyval = ty
 	else
 		tyval = 0x40
 		brelse = brelse
@@ -198,37 +300,131 @@ function mkbinop(name, tymap, tyret)
 		end
 	end
 end
-mkbinop('eqz', { i32 = 0x45, i64 = 0x50 }, 'i32')
-mkbinop('eq', { i32 = 0x46, i64 = 0x51, f32 = 0x5b, f64 = 0x61 }, 'i32')
-mkbinop('ne', { i32 = 0x47, i64 = 0x52, f32 = 0x5c, f64 = 0x62 }, 'i32')
-mkbinop('lts', { i32 = 0x48, i64 = 0x53 }, 'i32')
-mkbinop('ltu', { i32 = 0x49, i64 = 0x54 }, 'i32')
-mkbinop('gts', { i32 = 0x4a, i64 = 0x55 }, 'i32')
-mkbinop('gtu', { i32 = 0x4b, i64 = 0x56 }, 'i32')
-mkbinop('leu', { i32 = 0x4c, i64 = 0x57 }, 'i32')
-mkbinop('les', { i32 = 0x4d, i64 = 0x58 }, 'i32')
-mkbinop('ges', { i32 = 0x4e, i64 = 0x59 }, 'i32')
-mkbinop('geu', { i32 = 0x4f, i64 = 0x5a }, 'i32')
+mkbinop('eqz', { i32 = 0x45, i64 = 0x50 }, i32)
+mkbinop('eq', { i32 = 0x46, i64 = 0x51, f32 = 0x5b, f64 = 0x61 }, i32)
+mkbinop('ne', { i32 = 0x47, i64 = 0x52, f32 = 0x5c, f64 = 0x62 }, i32)
+mkbinop('lts', { i32 = 0x48, i64 = 0x53 }, i32)
+mkbinop('ltu', { i32 = 0x49, i64 = 0x54 }, i32)
+mkbinop('gts', { i32 = 0x4a, i64 = 0x55 }, i32)
+mkbinop('gtu', { i32 = 0x4b, i64 = 0x56 }, i32)
+mkbinop('leu', { i32 = 0x4c, i64 = 0x57 }, i32)
+mkbinop('les', { i32 = 0x4d, i64 = 0x58 }, i32)
+mkbinop('ges', { i32 = 0x4e, i64 = 0x59 }, i32)
+mkbinop('geu', { i32 = 0x4f, i64 = 0x5a }, i32)
 mkbinop('add', { i32 = 0x6a, i64 = 0x7c, f32 = 0x91, f64 = 0xa0 })
 mkbinop('sub', { i32 = 0x6b, i64 = 0x7d, f32 = 0x92, f64 = 0xa1 })
 
-function func(name)
+function func(name, rety, block)
+	local sig
+	if not block then
+		block = rety
+		rety = void
+		sig = ""
+	else
+		sig = rety .. ""
+	end
+	-- TODO create a separate context object
+	-- which will be used for calling block
+	-- takes out scope/stack/polystack
 	local f = setmetatable({
 		name = name,
+		rety = rety,
 		locals = {},
+		pcount = 0,
+		sig = sig,
 		bcode = {},
 		scope = 0,
 		stack = {},
 		polystack = false,
+		block = block,
 	}, funcmt)
-	return function(block) block(f) end
+	M.fumap[name] = f
+	push(M.func, f)
+	return f
 end
+
+-- Table
+
+-- Memory
+
+-- Global
+
+-- Export
+
+-- Start
+
+-- Element
+
+-- Code
+
+-- Data
+
+-- Main
 
 local files = table.pack(...)
 for f = 2, #files do
+	print(files[f])
 	dofile(files[f])
 end
 
---local outf = io.open(files[1], 'w')
---outf:write(compile())
---outf:close()
+local outf = io.open(files[1], 'w')
+
+outf:write("\0asm\1\0\0\0")
+
+local function writeSection(id, bc)
+	outf:write(string.char(id))
+	local bclen = {}
+	encode_varuint(bclen, #bc)
+	outf:write(string.char(table.unpack(bclen)))
+	-- TODO chunk unpacking
+	outf:write(string.char(table.unpack(bc)))
+end
+
+for i = 1, #Mod.func do
+	Mod.func[i]:block()
+	Mod:typefromsig(Mod.func[i].sig)
+end
+
+if #Mod.type > 0 then
+	local bc = {}
+	encode_varuint(bc, #Mod.type)
+	for i = 1, #Mod.type do
+		local ty = Mod.type[i]
+		local ret = ty[#ty]
+		if ret == 0x40 then
+			ty[#ty] = nil
+		end
+		bc[#bc+1] = 0x60
+		encode_varuint(bc, #ty)
+		for j = 1, #ty do
+			bc[#bc+1] = ty
+		end
+		if ret == 0x40 then
+			bc[#bc+1] = 0
+		else
+			bc[#bc+1] = 1
+			bc[#bc+1] = ret
+		end
+	end
+	writeSection(1, bc)
+end
+
+if #Mod.import > 0 then
+	local bc = {}
+	encode_varuint(bc, #Mod.import)
+	for i = 1, #Mod.import do
+		Mod:decltype(Mod.import)
+	end
+	writeSection(2, bc)
+end
+
+if #Mod.func > 0 then
+	local bc = {}
+	encode_varuint(bc, #Mod.func)
+	for i = 1, #Mod.func do
+		encode_varuint(bc, Mod.tymap[Mod.func[i].sig])
+	end
+	writeSection(3, bc)
+end
+
+outf:close()
