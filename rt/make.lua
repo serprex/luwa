@@ -21,6 +21,8 @@ Mod = {
 	element = {},
 	code = {},
 	data = {},
+	impfid = 0,
+	fid = 0,
 	tymap = {},
 	fumap = {},
 }
@@ -46,9 +48,25 @@ function Mod:typefromsig(sig)
 end
 
 -- Import
-
-function importfunc()
-
+function importfunc(m, f, ...)
+	local impf = { m = m, f = f, ty = 0, type = Mod.decletype(...), id = Mod.impfid }
+	Mod.impfid = Mod.impfid + 1
+	push(Mod.import, impf)
+	return impf
+end
+function importtable(m, f)
+	push(Mod.import, { m = m, f = f, ty = 1 })
+end
+function importmemory(m, f, sz, mxsz)
+	push(Mod.import, { m = m, f = f, ty = 2, sz = sz, mxsz = mxsz })
+end
+function importglobal(m, f, ty, mut)
+	if not mut then
+		mut = 0
+	elseif mut == true then
+		mut = 1
+	end
+	push(Mod.import, { m = m, f = f, ty = 3, type = ty, mut = mut })
 end
 
 -- Function
@@ -78,6 +96,12 @@ function encode_varuint(dst, val)
 		else
 			dst[#dst+1] = b | 0x80
 		end
+	end
+end
+function encode_string(dst, str)
+	encode_varuint(dst, #str)
+	for i = 1, #str do
+		dst[#dst+1] = string.byte(str, i)
 	end
 end
 
@@ -314,6 +338,12 @@ mkbinop('geu', { i32 = 0x4f, i64 = 0x5a }, i32)
 mkbinop('add', { i32 = 0x6a, i64 = 0x7c, f32 = 0x91, f64 = 0xa0 })
 mkbinop('sub', { i32 = 0x6b, i64 = 0x7d, f32 = 0x92, f64 = 0xa1 })
 
+function funcmeta:call(f)
+	self:emit(0x10)
+	self:emituint(M.impfid + f.id)
+	-- TODO typeck
+end
+
 function func(name, rety, block)
 	local sig
 	if not block then
@@ -337,9 +367,11 @@ function func(name, rety, block)
 		stack = {},
 		polystack = false,
 		block = block,
+		id = Mod.fid,
 	}, funcmt)
-	M.fumap[name] = f
-	push(M.func, f)
+	Mod.fid = Mod.fid + 1
+	Mod.fumap[name] = f
+	push(Mod.func, f)
 	return f
 end
 
@@ -354,8 +386,6 @@ end
 -- Start
 
 -- Element
-
--- Code
 
 -- Data
 
@@ -413,7 +443,28 @@ if #Mod.import > 0 then
 	local bc = {}
 	encode_varuint(bc, #Mod.import)
 	for i = 1, #Mod.import do
-		Mod:decltype(Mod.import)
+		local imp = Mod.import[i]
+		encode_string(bc, imp.m)
+		encode_string(bc, imp.f)
+		bc[#bc+1] = string.char(imp.ty)
+		if imp.ty == 0 then
+			encode_varuint(bc, imp.type)
+		elseif imp.ty == 1 then
+			error('NYI table imp')
+		elseif imp.ty == 2 then
+			if imp.mxsz then
+				bc[#bc+1] = 1
+				encode_varuint(bc, imp.sz)
+				encode_varuint(bc, imp.mxsz)
+			else
+				bc[#bc+1] = 0
+				encode_varuint(bc, imp.sz)
+			end
+		elseif imp.ty == 3 then
+			error('NYI global imp')
+		else
+			error("Unknown import type: " .. imp.ty)
+		end
 	end
 	writeSection(2, bc)
 end
