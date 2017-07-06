@@ -23,56 +23,11 @@ Mod = {
 	data = {},
 	impfid = 0,
 	fid = 0,
+	impgid = 0,
+	gid = 0,
 	tymap = {},
 	fumap = {},
 }
-
--- Type
-function Mod:decltype(...)
-	local types = table.pack(...)
-	if types[1] == void then
-		types[1] = nil
-		types.n = 0
-	end
-	return self:typefromsig(table.concat(types))
-end
-
-function Mod:typefromsig(sig)
-	local t = self.tymap[sig]
-	if not t then
-		t = #self.type+1
-		self.tymap[sig] = t
-		self.type[t] = types
-	end
-	return t
-end
-
--- Import
-function importfunc(m, f, ...)
-	local impf = { m = m, f = f, ty = 0, type = Mod.decletype(...), id = Mod.impfid }
-	Mod.impfid = Mod.impfid + 1
-	push(Mod.import, impf)
-	return impf
-end
-function importtable(m, f)
-	push(Mod.import, { m = m, f = f, ty = 1 })
-end
-function importmemory(m, f, sz, mxsz)
-	push(Mod.import, { m = m, f = f, ty = 2, sz = sz, mxsz = mxsz })
-end
-function importglobal(m, f, ty, mut)
-	if not mut then
-		mut = 0
-	elseif mut == true then
-		mut = 1
-	end
-	push(Mod.import, { m = m, f = f, ty = 3, type = ty, mut = mut })
-end
-
--- Function
-local funcmeta = {}
-local funcmt = { __index = funcmeta }
-local push, pop = table.insert, table.remove
 
 function encode_varint(dst, val)
 	while true do
@@ -98,6 +53,18 @@ function encode_varuint(dst, val)
 		end
 	end
 end
+function encode_f32(dst, val)
+	local repr = string.pack('<f', val)
+	for i = 1, 4 do
+		dst[#dst+1] = string.byte(repr, i)
+	end
+end
+function encode_f64(dst, val)
+	local repr = string.pack('<d', val)
+	for i = 1, 8 do
+		dst[#dst+1] = string.byte(repr, i)
+	end
+end
 function encode_string(dst, str)
 	encode_varuint(dst, #str)
 	for i = 1, #str do
@@ -110,6 +77,59 @@ function remove_from(tbl, n)
 		tbl[i] = nil
 	end
 end
+
+-- Type
+function Mod:decltype(...)
+	local types = {...}
+	if types[1] == void then
+		types[1] = nil
+	end
+	return self:typefromsig(table.concat(types))
+end
+
+function Mod:typefromsig(sig)
+	local t = self.tymap[sig]
+	if not t then
+		t = #self.type+1
+		self.tymap[sig] = t
+		self.type[t] = types
+	end
+	return t
+end
+
+-- Import
+function importfunc(m, f, ...)
+	local impf = { m = m, f = f, ty = 0, type = Mod.decletype(...), id = Mod.impfid }
+	Mod.impfid = Mod.impfid + 1
+	push(Mod.import, impf)
+	return impf
+end
+function importtable(m, f)
+	local impt = { m = m, f = f, ty = 1 }
+	push(Mod.import, impt)
+	return impt
+end
+function importmemory(m, f, sz, mxsz)
+	local impm = { m = m, f = f, ty = 2, sz = sz, mxsz = mxsz }
+	push(Mod.import, impm)
+	return impm
+end
+function importglobal(m, f, ty, mut)
+	if not mut then
+		mut = 0
+	elseif mut ~= 0 then
+		mut = 1
+	end
+	local impg = { m = m, f = f, ty = 3, type = ty, mut = mut, id = Mod.impgid }
+	push(Mod.import, impg)
+	Mod.impgid = Mod.impgid + 1
+	return impg
+end
+
+-- Function
+local funcmeta = {}
+local funcmt = { __index = funcmeta }
+local push, pop = table.insert, table.remove
 
 function funcmeta:emit(val)
 	self.bcode[#self.bcode+1] = val
@@ -135,7 +155,7 @@ end
 
 function funcmeta:params(...)
 	assert(#self.locals == 0)
-	self.locals = table.pack(...)
+	self.locals = {...}
 	self.pcount = #self.locals
 	local ret = {}
 	for i = 1, self.pcount do
@@ -173,10 +193,7 @@ function funcmeta:f32(x)
 	local xty = type(x)
 	if xty == 'number' then
 		self:emit(0x43)
-		local repr = string.pack('<f', x)
-		for i = 1, 4 do
-			self:emit(string.byte(repr, n))
-		end
+		encode_f32(self.bcode, x)
 		self:push(f32)
 	else
 		local n = #self.locals+1
@@ -188,16 +205,47 @@ function funcmeta:f64(x)
 	local xty = type(x)
 	if xty == 'number' then
 		self:emit(0x43)
-		local repr = string.pack('<d', x)
-		for i = 1, 8 do
-			self:emit(string.byte(repr, n))
-		end
+		encode_f64(self.bcode, x)
 		self:push(f64)
 	else
 		local n = #self.locals+1
 		self.locals[n] = 0x7c
 		return n
 	end
+end
+function funcmeta:unreachable()
+	self:emit(0x00)
+end
+function funcmeta:nop()
+	self:emit(0x01)
+end
+function funcmeta:block(ty, block)
+	self:emit(0x02)
+	local tyty, tyval = type(ty)
+	if tyty == 'number' then
+		tyval = ty
+	else
+		tyval = 0x40
+		block = ty
+	end
+	self:emit(tyval)
+	block(self.scope)
+	self.polystack = false
+	remove_from(self.stack, sclen)
+end
+function funcmeta:loop(ty, block)
+	self:emit(0x03)
+	local tyty, tyval = type(ty)
+	if tyty == 'number' then
+		tyval = ty
+	else
+		tyval = 0x40
+		block = ty
+	end
+	self:emit(tyval)
+	block(self.scope)
+	self.polystack = false
+	remove_from(self.stack, sclen)
 end
 function funcmeta:load(x)
 	self:emit(0x20)
@@ -213,6 +261,10 @@ function funcmeta:tee(x)
 	self:emit(0x22)
 	self:emituint(x-1)
 end
+function funcmeta:loadg(x)
+end
+function funcmeta:storeg(x)
+end
 function funcmeta:drop()
 	self:emit(0x1a)
 	self:pop()
@@ -226,13 +278,14 @@ function funcmeta:select()
 	self:emit(0x1b)
 	self:push(a)
 end
-function funcmeta:iff(ty, brif)
+function funcmeta:iff(ty, brif, brelse)
 	local tyty, tyval = type(ty)
 	self:emit(0x04)
 	if tyty == 'number' then
 		tyval = ty
 	else
 		tyval = 0x40
+		brelse = brif
 		brif = ty
 	end
 	self:emit(tyval)
@@ -242,6 +295,12 @@ function funcmeta:iff(ty, brif)
 	brif(self.scope)
 	self.polystack = false
 	remove_from(self.stack, sclen)
+	if brelse then
+		self:emit(0x05)
+		brelse(self.scope)
+		self.polystack = false
+		remove_from(self.stack, sclen)
+	end
 	self:emit(0x0b)
 
 	self.scope = self.scope - 1
@@ -249,43 +308,8 @@ function funcmeta:iff(ty, brif)
 		self:push(tyval)
 	end
 end
-function funcmeta:ifelse(ty, brif, brelse)
-	local tyty, tyval = type(ty)
-	self:emit(0x04)
-	if tyty == 'number' then
-		tyval = ty
-	else
-		tyval = 0x40
-		brelse = brelse
-		brif = ty
-	end
-	self:emit(tyval)
-	self.scope = self.scope + 1
+funcmeta.ifelse = iff
 
-	local sclen = #self.stack + 1
-	brif(self.scope)
-	self.polystack = false
-	remove_from(self.stack, sclen)
-	self:emit(0x05)
-
-	brelse(self.scope)
-	self.polystack = false
-	remove_from(self.stack, sclen)
-	self:emit(0x0b)
-
-	self.scope = self.scope - 1
-	if tyval ~= 0x40 then
-		self:push(tyval)
-	end
-end
-
-function funcmeta:emitscope(scope)
-	if scope == self then
-		return self:emituint(self.scope)
-	else
-		return self:emituint(self.scope - scope)
-	end
-end
 function funcmeta:br(scope)
 	self.polystack = true
 	self:emit(0x0c)
@@ -300,6 +324,27 @@ function funcmeta:ret()
 	self:emit(0x0f)
 end
 
+function mkopcore(name, opcode, tyret)
+	if ty then
+		self:emit(ty)
+		if tyret then
+			self:push(tyret)
+		else
+			self:push(a)
+		end
+	else
+		return error(name .. ' not implemented for ' .. a)
+	end
+end
+function mkunop(name, tymap, tyret)
+	funcmeta[name] = function(self)
+		local a = self:pop()
+		if not a then
+			return error('Stack underflow')
+		end
+		return mkopcore(name, tymap[a], tyret)
+	end
+end
 function mkbinop(name, tymap, tyret)
 	funcmeta[name] = function(self)
 		local a = self:pop()
@@ -311,17 +356,7 @@ function mkbinop(name, tymap, tyret)
 			print(b, a)
 			return error('Type mismatch')
 		end
-		local ty = tymap[a]
-		if ty then
-			self:emit(ty)
-			if tyret then
-				self:push(tyret)
-			else
-				self:push(a)
-			end
-		else
-			error(name .. ' not implemented for ' .. a)
-		end
+		return mkopcore(name, tymap[a], tyret)
 	end
 end
 mkbinop('eqz', { i32 = 0x45, i64 = 0x50 }, i32)
@@ -335,12 +370,64 @@ mkbinop('leu', { i32 = 0x4c, i64 = 0x57 }, i32)
 mkbinop('les', { i32 = 0x4d, i64 = 0x58 }, i32)
 mkbinop('ges', { i32 = 0x4e, i64 = 0x59 }, i32)
 mkbinop('geu', { i32 = 0x4f, i64 = 0x5a }, i32)
-mkbinop('add', { i32 = 0x6a, i64 = 0x7c, f32 = 0x91, f64 = 0xa0 })
-mkbinop('sub', { i32 = 0x6b, i64 = 0x7d, f32 = 0x92, f64 = 0xa1 })
+mkbinop('lt', { f32 = 0x5d, f64 = 0x63 }, i32)
+mkbinop('gt', { f32 = 0x5e, f64 = 0x64 }, i32)
+mkbinop('le', { f32 = 0x5f, f64 = 0x65 }, i32)
+mkbinop('ge', { f32 = 0x60, f64 = 0x66 }, i32)
+mkunop('clz', { i32 = 0x67, i64 = 0x79 })
+mkunop('ctz', { i32 = 0x68, i64 = 0x7a })
+mkunop('popcnt', { i32 = 0x69, i64 = 0x7b })
+mkbinop('add', { i32 = 0x6a, i64 = 0x7c, f32 = 0x92, f64 = 0xa0 })
+mkbinop('sub', { i32 = 0x6b, i64 = 0x7d, f32 = 0x93, f64 = 0xa1 })
+mkbinop('mul', { i32 = 0x6c, i64 = 0x7e, f32 = 0x94, f64 = 0xa2 })
+mkbinop('divs', { i32 = 0x6d, i64 = 0x7f })
+mkbinop('divu', { i32 = 0x6e, i64 = 0x80 })
+mkbinop('rems', { i32 = 0x6f, i64 = 0x81 })
+mkbinop('remu', { i32 = 0x70, i64 = 0x82 })
+mkbinop('band', { i32 = 0x71, i64 = 0x83 })
+mkbinop('bor', { i32 = 0x72, i64 = 0x84 })
+mkbinop('xor', { i32 = 0x73, i64 = 0x85 })
+mkbinop('shl', { i32 = 0x74, i64 = 0x86 })
+mkbinop('shrs', { i32 = 0x75, i64 = 0x87 })
+mkbinop('shru', { i32 = 0x76, i64 = 0x88 })
+mkbinop('rotl', { i32 = 0x77, i64 = 0x89 })
+mkbinop('rotr', { i32 = 0x78, i64 = 0x8a })
+mkunop('abs', { f32 = 0x8b, f64 = 0x99 })
+mkunop('neg', { f32 = 0x8c, f64 = 0x9a })
+mkunop('ceil', { f32 = 0x8d, f64 = 0x9b })
+mkunop('floor', { f32 = 0x8e, f64 = 0x9c })
+mkunop('trunc', { f32 = 0x8f, f64 = 0x9d })
+mkunop('nearest', { f32 = 0x90, f64 = 0x9e })
+mkunop('sqrt', { f32 = 0x91, f64 = 0x9f })
+mkbinop('div', { f32 = 0x95, f64 = 0xa3 })
+mkbinop('min', { f32 = 0x96, f64 = 0xa4 })
+mkbinop('max', { f32 = 0x97, f64 = 0xa5 })
+mkbinop('copysign', { f32 = 0x98, f64 = 0xa6 })
+mkunop('i32wrap', { i64 = 0xa7 }, i32)
+mkunop('i32truncs', { f32 = 0xa8, f64 = 0xaa }, i32)
+mkunop('i32truncu', { f32 = 0xa9, f64 = 0xab }, i32)
+mkunop('i64extends', { i32 = 0xac }, i64)
+mkunop('i64extendu', { i32 = 0xad }, i64)
+mkunop('i64truncs', { f32 = 0xae, f64 = 0xb0 }, i64)
+mkunop('i64truncu', { f32 = 0xaf, f64 = 0xb1 }, i64)
+mkunop('f32converts', { i32 = 0xb2, i64 = 0xb4 }, i64)
+mkunop('f32convertu', { i32 = 0xb3, i64 = 0xb5 }, i64)
+mkunop('f32demote', { f64 = 0xb6 }, f32)
+mkunop('f64converts', { i32 = 0xb7, i64 = 0xb9 }, f64)
+mkunop('f64convertu', { i32 = 0xb8, i64 = 0xba }, f64)
+mkunop('f64promote', { f32 = 0xbb }, f64)
+mkunop('i32reinterpret', { f32 = 0xbc }, i32)
+mkunop('i64reinterpret', { f64 = 0xbd }, i64)
+mkunop('f32reinterpret', { i32 = 0xbe }, f32)
+mkunop('f64reinterpret', { i64 = 0xbf }, f64)
 
 function funcmeta:call(f)
 	self:emit(0x10)
-	self:emituint(M.impfid + f.id)
+	if getmetatable(f) == funcmt then
+		self:emituint(M.impfid + f.id)
+	else
+		self:emituint(f.id)
+	end
 	-- TODO typeck
 end
 
@@ -365,7 +452,7 @@ function func(name, rety, block)
 		bcode = {},
 		scope = 0,
 		stack = {},
-		polystack = false,
+		polystack = false, -- TODO polystack should work with unreachable scopes (eg block i32 ret loop i64 end end)
 		block = block,
 		id = Mod.fid,
 	}, funcmt)
@@ -381,6 +468,14 @@ end
 
 -- Global
 
+function global(ty, mut, func)
+	fty = type(func)
+	assert(ty == i32 or ty == i64 or ty == f32 or ty == f64)
+	local globe = { type = ty, mut = mut, init = func }
+	push(Mod.global, globe)
+	return globe
+end
+
 -- Export
 
 -- Start
@@ -391,7 +486,7 @@ end
 
 -- Main
 
-local files = table.pack(...)
+local files = {...}
 for f = 2, #files do
 	print(files[f])
 	dofile(files[f])
@@ -406,8 +501,16 @@ local function writeSection(id, bc)
 	local bclen = {}
 	encode_varuint(bclen, #bc)
 	outf:write(string.char(table.unpack(bclen)))
+	local n, nn, nbc = 1, 4096, #bc
+	while n <= nbc do
+		if nn > nbc then
+			nn = nbc
+		end
+		outf:write(string.char(table.unpack(bc, n, nn)))
+		n = nn + 1
+		nn = nn + 4096
+	end
 	-- TODO chunk unpacking
-	outf:write(string.char(table.unpack(bc)))
 end
 
 for i = 1, #Mod.func do
@@ -476,6 +579,37 @@ if #Mod.func > 0 then
 		encode_varuint(bc, Mod.tymap[Mod.func[i].sig])
 	end
 	writeSection(3, bc)
+end
+
+if #Mod.global > 0 then
+	local bc = {}
+	encode_varuint(bc, #Mod.global)
+	for i = 1, #Mod.global do
+		local globe = Mod.global[i]
+		local ty, init = globe.ty, globe.init
+		bc[#bc+1] = ty
+		if not init then
+			init = 0
+		end
+		if type(init) == 'number' then
+			if ty == i32 then
+				bc[#bc+1] = 0x41
+				encode_varint(bc, init)
+			elseif ty == i64 then
+				bc[#bc+1] = 0x42
+				encode_varint(bc, init)
+			elseif ty == f32 then
+				bc[#bc+1] = 0x43
+				encode_f32(bc, init)
+			else
+				bc[#bc+1] = 0x44
+				encode_f64(bc, init)
+			end
+		else
+			error('NYI get_global init_expr')
+		end
+	end
+	writeSection(6, bc)
 end
 
 outf:close()
