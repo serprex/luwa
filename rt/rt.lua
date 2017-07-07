@@ -1,6 +1,6 @@
 importmemory('', 'm', 1)
-gcfix = importfunc('', 'gcfix')
-gcmark = importfunc('', 'gcmark')
+igcfix = importfunc('', 'gcfix')
+igcmark = importfunc('', 'gcmark')
 echo = importfunc('', 'echo', i32, i32)
 
 echodrop = func(function(f)

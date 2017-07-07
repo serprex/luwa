@@ -256,15 +256,22 @@ end
 function funcmeta:store(x)
 	self:emit(0x21)
 	self:emituint(x-1)
-	self:pop()
+	assert(self:pop() == self.locals[x])
 end
 function funcmeta:tee(x)
 	self:emit(0x22)
 	self:emituint(x-1)
+	assert(self:peep() == self.locals[x])
 end
 function funcmeta:loadg(x)
+	self:emit(0x23)
+	self:emituint(x.id+Mod.impgid)
+	assert(self:pop() == x.type)
 end
 function funcmeta:storeg(x)
+	self:emit(0x24)
+	self:emituint(x.id+Mod.impgid)
+	self:push(x.type)
 end
 function funcmeta:drop()
 	self:emit(0x1a)
@@ -472,8 +479,9 @@ end
 function global(ty, mut, func)
 	fty = type(func)
 	assert(ty == i32 or ty == i64 or ty == f32 or ty == f64)
-	local globe = { type = ty, mut = mut, init = func }
+	local globe = { type = ty, mut = mut, init = func, id = Mod.gid }
 	push(Mod.global, globe)
+	Mod.gid = Mod.gid + 1
 	return globe
 end
 
