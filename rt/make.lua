@@ -13,17 +13,18 @@ Mod = {
 	table = {},
 	memory = {},
 	global = {},
-	exportfun = {},
-	exporttab = {},
-	exportmem = {},
-	exportglo = {},
+	export = {},
 	start = nil,
 	element = {},
 	code = {},
 	data = {},
 	impfid = 0,
-	fid = 0,
+	imptid = 0,
+	impmid = 0,
 	impgid = 0,
+	fid = 0,
+	tid = 0,
+	mid = 0,
 	gid = 0,
 	tymap = {},
 	fumap = {},
@@ -478,7 +479,28 @@ end
 
 -- Export
 
+function export(name, obj)
+	local kind
+	if obj.bcode then
+		kind = 0
+	elseif obj.istable then
+		kind = 1
+	elseif obj.ismem then
+		kind = 2
+	elseif obj.mut then
+		kind = 3
+	end
+	push(Mod.export, { f = name, obj = obj, kind = kind })
+	return obj
+end
+
 -- Start
+
+function start(fu)
+	assert(not Mod.start and fu.sig == "")
+	Mod.start = fu
+	return fu
+end
 
 -- Element
 
@@ -610,6 +632,55 @@ if #Mod.global > 0 then
 		end
 	end
 	writeSection(6, bc)
+end
+
+if #Mod.export then
+	local bc = {}
+	encode_varuint(bc, #Mod.export)
+	for i = 1, #Mod.export do
+		local expo = Mod.export[i]
+		encode_string(expo.f)
+		bc[#bc+1] = expo.kind
+		if expo.kind == 0 then
+			encode_varuint(bc, Mod.impfid + expo.obj.id)
+		elseif expo.kind == 1 then
+			encode_varuint(bc, Mod.imptid + expo.obj.id)
+		elseif expo.kind == 2 then
+			encode_varuint(bc, Mod.impmid + expo.obj.id)
+		else
+			encode_varuint(bc, Mod.impgid + expo.obj.id)
+		end
+	end
+	writeSection(7, bc)
+end
+
+if Mod.start then
+	local bc = {}
+	encode_varuint(bc, Mod.impfid + Mod.start.id)
+	writeSection(8, bc)
+end
+
+if #Mod.func > 0 then
+	local bc = {}
+	encode_varuint(bc, #Mod.global)
+	for i = 1, #Mod.func do
+		local fu = Mod.func[i]
+		local fc = {}
+		encode_varuint(fu, #fu.locals - fu.pcount)
+		for i = fu.pcount+1, #fu.locals do
+			bc[#bc+1] = 1
+			bc[#bc+1] = fu.locals[i]
+		end
+		for i = 1, #fu.locals do
+			bc[#bc+1] = fu.bcode[i]
+		end
+		bc[#bc+1] = 0x0b
+		encode_varuint(bc, #fc)
+		for i = 1, #fc do
+			bc[#bc+1] = fc[i]
+		end
+	end
+	writeSection(10, bc)
 end
 
 outf:close()

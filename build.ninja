@@ -6,4 +6,4 @@ rule mkrt
  command=./rt/make.lua $out $in
 build quire.js:mkcjs ast.js bc.js env.js func.js jit.js lex.js luwa.js obj.js rt.js runbc.js string.js table.js thread.js trace.js utf8.js util.js
 build rt-old.wasm:wawa rt/alloc.wawa rt/gc.wawa rt/lex.wawa rt/rt.wawa rt/obj.wawa rt/std.wawa rt/table.wawa rt/init.wawa
-build rt.wasm:mkrt rt/import.lua rt/global.lua rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/obj.lua rt/std.lua rt/table.lua rt/init.lua
+build rt.wasm:mkrt rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/obj.lua rt/std.lua rt/table.lua rt/init.lua
