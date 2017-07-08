@@ -327,6 +327,14 @@ function funcmeta:brif(scope)
 	self:emit(0x0d)
 	return self:emitscope(scope)
 end
+function funcmeta:brtable(...)
+	self:emit(0x0e)
+	local n = select('#', ...)
+	self:emituint(n)
+	for i = 1, n do
+		self:emitscope(select(i, ...))
+	end
+end
 function funcmeta:ret()
 	self.polystack = true
 	self:emit(0x0f)
