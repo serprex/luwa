@@ -10,7 +10,7 @@ struct Table {
 }
 ]]
 
-tabset = export(func(function(f)
+tabset = export('tabset', func(function(f)
 	local tab, key, val = f:params(i32, i32, i32)
 	local kv, mx = f:i32(), f:i32()
 	f:load(tab)
@@ -159,7 +159,7 @@ tabset = export(func(function(f)
 	end)
 end))
 
-tabget = export(func(i32, function(f)
+tabget = export('tabget', func(i32, function(f)
 	local tab, key = f:params(i32, i32)
 	local kv, mx = f:i32(), f:i32()
 	

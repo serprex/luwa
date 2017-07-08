@@ -59,7 +59,7 @@ $temp i64
 	i32wrap
 	]]
 
-lex = export(func(function(f)
+lex = export('lex', func(function(f)
 	local src = f:params(i32)
 	local i, ch, lxlen, j, k, srclen, numlen, strlen, tlen = f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32()
 	local temp64, temp642, double, flt10 = f:i64(), f:i64(), f:i64(), f:i64()
