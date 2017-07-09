@@ -25,7 +25,6 @@ function table.insert(list, pos, value)
 		list[pos] = value
 	end
 end
-
 function table.remove(list, pos)
 	local ret
 	if pos then
@@ -39,7 +38,6 @@ function table.remove(list, pos)
 	end
 	return ret
 end
-
 function table.move(a1, f, e, t, a2)
 	if not a2 then
 		a2 = a1
@@ -56,6 +54,57 @@ function table.move(a1, f, e, t, a2)
 	end
 end
 
+-- TODO use a better sort; this fails on a big list of 0s
+local function partitioncmp(list, comp, lo, hi)
+	local pivot, i = list[hi], lo
+	for j = lo, hi-1 do
+		local t = list[j]
+		if comp(t, pivot) then
+			list[j] = list[i]
+			list[i] = t
+			i = i + 1
+		end
+	end
+	list[hi] = list[i]
+	list[i] = pivot
+	return i
+end
+local function qsortcmp(list, comp, lo, hi)
+	if lo < hi then
+		local p = partitioncmp(list, comp, lo, hi)
+		qsortcmp(list, comp, lo, p - 1)
+		return qsortcmp(list, comp, p + 1, hi)
+	end
+end
+local function partition(list, lo, hi)
+	local pivot, i = list[hi], lo
+	for j = lo, hi-1 do
+		local t = list[j]
+		if t < pivot then
+			list[j] = list[i]
+			list[i] = t
+			i = i + 1
+		end
+	end
+	list[hi] = list[i]
+	list[i] = pivot
+	return i
+end
+local function qsort(list, lo, hi)
+	if lo < hi then
+		local p = partition(list, lo, hi)
+		qsort(list, lo, p - 1)
+		return qsort(list, p + 1, hi)
+	end
+end
+function table.sort(list, comp)
+	if comp then
+		return qsortcmp(list, comp, 1, #list)
+	else
+		return qsort(list, 1, #list)
+	end
+end
+
 function assert(v, message, ...)
 	if v then
 		return error(message, 2)
@@ -65,10 +114,11 @@ function assert(v, message, ...)
 end
 
 function print(...)
-	for i in 1 .. select('#', ...) do
+	for i = 1, select('#', ...) do
 		if i > 0 then
 			io.write('\t')
 		end
-		io.write(select(i, ...))
+		io.write(tostring(select(i, ...)))
 	end
+	io.write('\n')
 end
