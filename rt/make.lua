@@ -34,7 +34,7 @@ Mod = {
 function encode_varint(dst, val)
 	while true do
 		local b = val & 0x7f
-		val = val >> 7
+		val = math.floor(val / 128) -- Lua's >> is unsigned
 		if (val == 0 and (b & 0x40) == 0) or (val == -1 and ((b & 0x40) == 0x40)) then
 			dst[#dst+1] = b
 			return
@@ -85,27 +85,25 @@ function remove_from(tbl, n)
 end
 
 -- Type
-function Mod:decltype(...)
-	local types = {...}
+function Mod:decltype(types)
 	if types[1] == void then
-		types[1] = nil
+		assert(#types == 1)
+		types = {}
 	end
-	return self:typefromsig(table.concat(types))
-end
-
-function Mod:typefromsig(sig)
+	local sig = table.concat(types)
 	local t = self.tymap[sig]
 	if not t then
 		t = #self.type+1
 		self.tymap[sig] = t
 		self.type[t] = types
 	end
-	return t
+	return t-1
 end
 
 -- Import
 function importfunc(m, f, ...)
-	local impf = { m = m, f = f, ty = 0, type = {...}, tid = Mod:decltype(...), id = Mod.impfid }
+	local sig = {...}
+	local impf = { m = m, f = f, ty = 0, type = sig, tid = Mod:decltype(sig), id = Mod.impfid }
 	Mod.impfid = Mod.impfid + 1
 	push(Mod.import, impf)
 	return impf
@@ -179,7 +177,6 @@ function funcmeta:params(...)
 	for i = 1, self.pcount do
 		ret[i] = i
 	end
-	self.sig = table.concat(self.locals) .. self.sig
 	return table.unpack(ret)
 end
 
@@ -308,7 +305,7 @@ function funcmeta:drop()
 end
 function funcmeta:select()
 	-- TODO typesig
-	self:pop()
+	assert(self:pop() == i32)
 	local a = self:pop()
 	local b = self:pop()
 	assert(a == b)
@@ -358,7 +355,8 @@ end
 function funcmeta:brtable(...)
 	self:emit(0x0e)
 	local n = select('#', ...)
-	self:emituint(n)
+	assert(n > 0)
+	self:emituint(n-1)
 	for i = 1, n do
 		self:emitscope(select(i, ...))
 	end
@@ -574,6 +572,7 @@ function func(rety, bgen)
 		polystack = false, -- TODO polystack should work with unreachable scopes (eg block i32 ret loop i64 end end)
 		bgen = bgen,
 		id = Mod.fid,
+		tid = -1,
 	}, funcmt)
 	Mod.fid = Mod.fid + 1
 	push(Mod.func, f)
@@ -589,6 +588,14 @@ end
 function global(ty, mut, func)
 	fty = type(func)
 	assert_isvty(ty)
+	if not mut then
+		mut = 0
+	elseif mut ~= 0 then
+		mut = 1
+	end
+	if not func then
+		func = 0
+	end
 	local globe = { type = ty, mut = mut, init = func, id = Mod.gid }
 	push(Mod.global, globe)
 	Mod.gid = Mod.gid + 1
@@ -616,7 +623,7 @@ end
 -- Start
 
 function start(fu)
-	assert(not Mod.start and fu.sig == "")
+	assert(not Mod.start and fu.pcount == 0 and (not fu.rety or fu.rety == void))
 	Mod.start = fu
 	return fu
 end
@@ -650,12 +657,23 @@ local function writeSection(id, bc)
 		n = nn + 1
 		nn = nn + 4096
 	end
-	-- TODO chunk unpacking
 end
 
 for i = 1, #Mod.func do
-	Mod.func[i]:bgen()
-	Mod:typefromsig(Mod.func[i].sig)
+	local fu = Mod.func[i]
+	fu:bgen()
+	local fty = {}
+	for i = 1, fu.pcount do
+		fty[i] = fu.locals[i]
+	end
+	local rety
+	if not fu.rety then
+		rety = void
+	else
+		rety = fu.rety
+	end
+	fty[#fty+1] = rety
+	fu.tid = Mod:decltype(fty)
 end
 
 if #Mod.type > 0 then
@@ -663,18 +681,23 @@ if #Mod.type > 0 then
 	encode_varuint(bc, #Mod.type)
 	for i = 1, #Mod.type do
 		local ty = Mod.type[i]
-		local ret = ty[#ty]
-		local pcount = #ty-1
 		bc[#bc+1] = 0x60
-		encode_varuint(bc, #ty)
-		for j = 1, pcount do
-			bc[#bc+1] = ty
-		end
-		if ret == 0x40 then
+		if #ty == 0 then
+			bc[#bc+1] = 0
 			bc[#bc+1] = 0
 		else
-			bc[#bc+1] = 1
-			bc[#bc+1] = ret
+			local ret = ty[#ty]
+			local pcount = #ty-1
+			encode_varuint(bc, pcount)
+			for j = 1, pcount do
+				bc[#bc+1] = ty[j]
+			end
+			if ret == 0x40 then
+				bc[#bc+1] = 0
+			else
+				bc[#bc+1] = 1
+				bc[#bc+1] = ret
+			end
 		end
 	end
 	writeSection(1, bc)
@@ -714,7 +737,7 @@ if #Mod.func > 0 then
 	local bc = {}
 	encode_varuint(bc, #Mod.func)
 	for i = 1, #Mod.func do
-		encode_varuint(bc, Mod.tymap[Mod.func[i].sig])
+		encode_varuint(bc, Mod.func[i].tid)
 	end
 	writeSection(3, bc)
 end
@@ -724,24 +747,26 @@ if #Mod.global > 0 then
 	encode_varuint(bc, #Mod.global)
 	for i = 1, #Mod.global do
 		local globe = Mod.global[i]
-		local ty, init = globe.ty, globe.init
+		local ty, init = globe.type, globe.init
 		bc[#bc+1] = ty
-		if not init then
-			init = 0
-		end
+		bc[#bc+1] = globe.mut
 		if type(init) == 'number' then
 			if ty == i32 then
 				bc[#bc+1] = 0x41
 				encode_varint(bc, init)
+				bc[#bc+1] = 0x0b
 			elseif ty == i64 then
 				bc[#bc+1] = 0x42
 				encode_varint(bc, init)
+				bc[#bc+1] = 0x0b
 			elseif ty == f32 then
 				bc[#bc+1] = 0x43
 				encode_f32(bc, init)
+				bc[#bc+1] = 0x0b
 			else
 				bc[#bc+1] = 0x44
 				encode_f64(bc, init)
+				bc[#bc+1] = 0x0b
 			end
 		else
 			error('NYI get_global init_expr')
@@ -778,22 +803,23 @@ end
 
 if #Mod.func > 0 then
 	local bc = {}
-	encode_varuint(bc, #Mod.global)
+	encode_varuint(bc, #Mod.func)
 	for i = 1, #Mod.func do
-		local fu = Mod.func[i]
-		local fc = {}
-		encode_varuint(fu, #fu.locals - fu.pcount)
-		for i = fu.pcount+1, #fu.locals do
-			bc[#bc+1] = 1
-			bc[#bc+1] = fu.locals[i]
+		local fu, fc = Mod.func[i], {}
+		encode_varuint(fc, #fu.locals - fu.pcount)
+		for j = fu.pcount+1, #fu.locals do
+			fc[#fc+1] = 1
+			fc[#fc+1] = fu.locals[j]
 		end
-		for i = 1, #fu.locals do
-			bc[#bc+1] = fu.bcode[i]
+		for j = 1, #fu.bcode do
+			fc[#fc+1] = fu.bcode[j]
 		end
-		bc[#bc+1] = 0x0b
+		fc[#fc+1] = 0x0b
+
+		print(i, table.concat(fc, ':'))
 		encode_varuint(bc, #fc)
-		for i = 1, #fc do
-			bc[#bc+1] = fc[i]
+		for j = 1, #fc do
+			bc[#bc+1] = fc[j]
 		end
 	end
 	writeSection(10, bc)
