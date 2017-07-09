@@ -11,7 +11,7 @@ echodrop = func(function(f)
 end)
 
 echodrop2 = func(function(f)
-	local x, y = f:params(i32)
+	local x, y = f:params(i32, i32)
 	f:load(x)
 	f:load(y)
 	f:call(echodrop)

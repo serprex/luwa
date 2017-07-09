@@ -138,6 +138,10 @@ end
 local funcmeta = {}
 local funcmt = { __index = funcmeta }
 
+function funcmeta:prstack()
+	return print(table.concat(self.stack, ", "))
+end
+
 function funcmeta:emit(val)
 	self.bcode[#self.bcode+1] = val
 end
@@ -341,7 +345,6 @@ function funcmeta:iff(ty, brif, brelse)
 		self:push(tyval)
 	end
 end
-funcmeta.ifelse = iff
 
 function funcmeta:br(scope)
 	self.polystack = true
@@ -461,8 +464,8 @@ mkunop('i64extends', { [i32] = 0xac }, i64)
 mkunop('i64extendu', { [i32] = 0xad }, i64)
 mkunop('i64truncs', { [f32] = 0xae, [f64] = 0xb0 }, i64)
 mkunop('i64truncu', { [f32] = 0xaf, [f64] = 0xb1 }, i64)
-mkunop('f32converts', { [i32] = 0xb2, [i64] = 0xb4 }, i64)
-mkunop('f32convertu', { [i32] = 0xb3, [i64] = 0xb5 }, i64)
+mkunop('f32converts', { [i32] = 0xb2, [i64] = 0xb4 }, f32)
+mkunop('f32convertu', { [i32] = 0xb3, [i64] = 0xb5 }, f32)
 mkunop('f32demote', { [f64] = 0xb6 }, f32)
 mkunop('f64converts', { [i32] = 0xb7, [i64] = 0xb9 }, f64)
 mkunop('f64convertu', { [i32] = 0xb8, [i64] = 0xba }, f64)
@@ -531,16 +534,16 @@ function funcmeta:call(f)
 	if getmetatable(f) == funcmt then
 		self:emituint(Mod.impfid + f.id)
 		for i = 1, f.pcount do
-			assert(self:pop() == f.locals[i])
+			assert(self:pop() == f.locals[f.pcount-i+1])
 		end
-		if self.rety and self.rety ~= 0x40 then
-			self:push(self.rety)
+		if f.rety and f.rety ~= 0x40 then
+			self:push(f.rety)
 		end
 	else
 		self:emituint(f.id)
 		local pcount, ret = #f.type-1, f.type[#f.type]
 		for i = 1, pcount do
-			assert(self:pop() == f.type[i])
+			assert(self:pop() == f.type[pcount-i+1])
 		end
 		if ret and ret ~= 0x40 then
 			self:push(ret)
@@ -595,6 +598,7 @@ end
 -- Export
 
 function export(name, obj)
+	assert(type(name) == 'string')
 	local kind
 	if obj.bcode then
 		kind = 0
@@ -625,7 +629,6 @@ end
 
 local files = {...}
 for f = 2, #files do
-	print(files[f])
 	dofile(files[f])
 end
 
@@ -684,7 +687,7 @@ if #Mod.import > 0 then
 		local imp = Mod.import[i]
 		encode_string(bc, imp.m)
 		encode_string(bc, imp.f)
-		bc[#bc+1] = string.char(imp.ty)
+		bc[#bc+1] = imp.ty
 		if imp.ty == 0 then
 			encode_varuint(bc, imp.tid)
 		elseif imp.ty == 1 then
@@ -752,7 +755,7 @@ if #Mod.export then
 	encode_varuint(bc, #Mod.export)
 	for i = 1, #Mod.export do
 		local expo = Mod.export[i]
-		encode_string(expo.f)
+		encode_string(bc, expo.f)
 		bc[#bc+1] = expo.kind
 		if expo.kind == 0 then
 			encode_varuint(bc, Mod.impfid + expo.obj.id)
