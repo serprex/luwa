@@ -219,7 +219,7 @@ end
 function funcmeta:f64(x)
 	local xty = type(x)
 	if xty == 'number' then
-		self:emit(0x43)
+		self:emit(0x44)
 		encode_f64(self.bcode, x)
 		self:push(f64)
 	else
@@ -419,8 +419,8 @@ mkbinop('lts', { [i32] = 0x48, [i64] = 0x53 }, i32)
 mkbinop('ltu', { [i32] = 0x49, [i64] = 0x54 }, i32)
 mkbinop('gts', { [i32] = 0x4a, [i64] = 0x55 }, i32)
 mkbinop('gtu', { [i32] = 0x4b, [i64] = 0x56 }, i32)
-mkbinop('leu', { [i32] = 0x4c, [i64] = 0x57 }, i32)
-mkbinop('les', { [i32] = 0x4d, [i64] = 0x58 }, i32)
+mkbinop('les', { [i32] = 0x4c, [i64] = 0x57 }, i32)
+mkbinop('leu', { [i32] = 0x4d, [i64] = 0x58 }, i32)
 mkbinop('ges', { [i32] = 0x4e, [i64] = 0x59 }, i32)
 mkbinop('geu', { [i32] = 0x4f, [i64] = 0x5a }, i32)
 mkbinop('lt', { [f32] = 0x5d, [f64] = 0x63 }, i32)
@@ -813,7 +813,6 @@ if #Mod.func > 0 then
 				gcnt = gcnt + 1
 			end
 		end
-		print(i, gcnt)
 		encode_varuint(fc, gcnt)
 		while j <= nlocals do
 			local jty, k = fu.locals[j], 1
@@ -830,7 +829,7 @@ if #Mod.func > 0 then
 		end
 		fc[#fc+1] = 0x0b
 
-		print(i, table.concat(fc, ':'))
+		print(Mod.impfid + i - 1, table.concat(fc, ':'))
 		encode_varuint(bc, #fc)
 		for j = 1, #fc do
 			bc[#bc+1] = fc[j]

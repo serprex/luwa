@@ -10,7 +10,7 @@ echodrop = func(function(f)
 	f:drop()
 end)
 
-echodrop2 = func(function(f)
+echodrop2 = func(i32, function(f)
 	local x, y = f:params(i32, i32)
 	f:load(x)
 	f:load(y)
