@@ -176,7 +176,7 @@ tabget = export('tabget', func(i32, function(f)
 
 	-- kv = tab.hash + H
 	f:load(mx)
-	f:i32(add)
+	f:add()
 	f:store(kv)
 
 	-- mx = tab.hash + tab.hash.len

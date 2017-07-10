@@ -300,6 +300,7 @@ lex = export('lex', func(function(f)
 									f:brtable(ca, cb, noesc, noesc, noesc, cf, noesc, noesc, noesc, noesc, noesc, noesc, noesc, cn, noesc, noesc, noesc, cr, noesc, ct, cu, cv, noesc, cx, noesc, cz, noesc)
 								end) -- 'noesc
 									f:unreachable()
+									f:br(tblbr) -- TODO remove, keeping to stay in sync with wawa for now
 								end) -- 'z
 									f:loop(function(loop)
 										f:i32(0)

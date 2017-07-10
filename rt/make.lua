@@ -247,6 +247,7 @@ function funcmeta:block(ty, block)
 	local sclen = #self.stack + 1
 	self.scope = self.scope + 1
 	block(self.scope)
+	self:emit(0x0b)
 	self.scope = self.scope - 1
 	self.polystack = false
 	remove_from(self.stack, sclen)
@@ -267,6 +268,7 @@ function funcmeta:loop(ty, block)
 	local sclen = #self.stack + 1
 	self.scope = self.scope + 1
 	block(self.scope)
+	self:emit(0x0b)
 	self.scope = self.scope - 1
 	self.polystack = false
 	remove_from(self.stack, sclen)
@@ -336,7 +338,6 @@ function funcmeta:iff(ty, brif, brelse)
 		remove_from(self.stack, sclen)
 	end
 	self:emit(0x0b)
-
 	self.scope = self.scope - 1
 	if tyval ~= 0x40 then
 		self:push(tyval)
@@ -806,10 +807,23 @@ if #Mod.func > 0 then
 	encode_varuint(bc, #Mod.func)
 	for i = 1, #Mod.func do
 		local fu, fc = Mod.func[i], {}
-		encode_varuint(fc, #fu.locals - fu.pcount)
-		for j = fu.pcount+1, #fu.locals do
-			fc[#fc+1] = 1
-			fc[#fc+1] = fu.locals[j]
+		local j, nlocals, gcnt = fu.pcount+1, #fu.locals, 0
+		for k = j, nlocals do
+			if fu.locals[k] ~= fu.locals[k+1] then
+				gcnt = gcnt + 1
+			end
+		end
+		print(i, gcnt)
+		encode_varuint(fc, gcnt)
+		while j <= nlocals do
+			local jty, k = fu.locals[j], 1
+			while j + k <= nlocals and fu.locals[j+k] == jty do
+				k = k + 1
+			end
+			print(i, k, jty)
+			encode_varuint(fc, k)
+			fc[#fc+1] = jty
+			j = j + k
 		end
 		for j = 1, #fu.bcode do
 			fc[#fc+1] = fu.bcode[j]
