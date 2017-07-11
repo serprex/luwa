@@ -12,7 +12,7 @@ struct Table {
 
 tabset = export('tabset', func(function(f)
 	local tab, key, val = f:params(i32, i32, i32)
-	local kv, mx = f:i32(), f:i32()
+	local kv, mx = f:locals(i32, 2)
 	f:load(tab)
 	f:storeg(otmp)
 
@@ -161,7 +161,7 @@ end))
 
 tabget = export('tabget', func(i32, function(f)
 	local tab, key = f:params(i32, i32)
-	local kv, mx = f:i32(), f:i32()
+	local kv, mx = f:locals(i32, 2)
 	
 	-- H <- (hash(key) % tab.hash.len) & -8
 	f:load(key)

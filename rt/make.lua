@@ -170,64 +170,43 @@ function funcmeta:peek()
 end
 
 function funcmeta:params(...)
-	assert(#self.locals == 0)
-	self.locals = {...}
-	self.pcount = #self.locals
+	assert(#self.localty == 0)
+	self.localty = {...}
+	self.pcount = #self.localty
 	local ret = {}
 	for i = 1, self.pcount do
 		ret[i] = i
 	end
 	return table.unpack(ret)
 end
+function funcmeta:locals(lty, n)
+	assert_isvty(lty)
+	if not n then
+		n = 1
+	end
+	local ret = {}
+	for i=1,n do
+		self.localty[#self.localty+1] = lty
+		ret[i] = #self.localty
+	end
+	self.localbcn = self.localbcn + 1
+	encode_varuint(self.localbc, n)
+	self.localbc[#self.localbc+1] = lty
+	return table.unpack(ret)
+end
 
-function funcmeta:i32(x)
-	local xty = type(x)
-	if xty == 'number' then
-		self:emit(0x41)
-		self:emitint(x)
-		self:push(i32)
-	else
-		local n = #self.locals+1
-		self.locals[n] = 0x7f
-		return n
+function mkconstop(name, ty, op, encoder)
+	funcmeta[name] = function(self, x)
+		assert(x)
+		self:emit(op)
+		encoder(self.bcode, x)
+		self:push(ty)
 	end
 end
-function funcmeta:i64(x)
-	local xty = type(x)
-	if xty == 'number' then
-		self:emit(0x42)
-		self:emitint(x)
-		self:push(i64)
-	else
-		local n = #self.locals+1
-		self.locals[n] = 0x7e
-		return n
-	end
-end
-function funcmeta:f32(x)
-	local xty = type(x)
-	if xty == 'number' then
-		self:emit(0x43)
-		encode_f32(self.bcode, x)
-		self:push(f32)
-	else
-		local n = #self.locals+1
-		self.locals[n] = 0x7d
-		return n
-	end
-end
-function funcmeta:f64(x)
-	local xty = type(x)
-	if xty == 'number' then
-		self:emit(0x44)
-		encode_f64(self.bcode, x)
-		self:push(f64)
-	else
-		local n = #self.locals+1
-		self.locals[n] = 0x7c
-		return n
-	end
-end
+mkconstop('i32', i32, 0x41, encode_varint)
+mkconstop('i64', i64, 0x42, encode_varint)
+mkconstop('f32', f32, 0x43, encode_f32)
+mkconstop('f64', f64, 0x44, encode_f64)
 function funcmeta:unreachable()
 	self:emit(0x00)
 end
@@ -279,17 +258,17 @@ end
 function funcmeta:load(x)
 	self:emit(0x20)
 	self:emituint(x-1)
-	self:push(self.locals[x])
+	self:push(self.localty[x])
 end
 function funcmeta:store(x)
 	self:emit(0x21)
 	self:emituint(x-1)
-	assert(self:pop() == self.locals[x])
+	assert(self:pop() == self.localty[x])
 end
 function funcmeta:tee(x)
 	self:emit(0x22)
 	self:emituint(x-1)
-	assert(self:peek() == self.locals[x])
+	assert(self:peek() == self.localty[x])
 end
 function funcmeta:loadg(x)
 	self:emit(0x23)
@@ -533,7 +512,7 @@ function funcmeta:call(f)
 	if getmetatable(f) == funcmt then
 		self:emituint(Mod.impfid + f.id)
 		for i = 1, f.pcount do
-			assert(self:pop() == f.locals[f.pcount-i+1])
+			assert(self:pop() == f.localty[f.pcount-i+1])
 		end
 		if f.rety and f.rety ~= 0x40 then
 			self:push(f.rety)
@@ -564,7 +543,9 @@ function func(rety, bgen)
 	-- takes out scope/stack/polystack
 	local f = setmetatable({
 		rety = rety,
-		locals = {},
+		localty = {},
+		localbc = {},
+		localbcn = 0,
 		pcount = 0,
 		sig = sig,
 		bcode = {},
@@ -665,7 +646,7 @@ for i = 1, #Mod.func do
 	fu:bgen()
 	local fty = {}
 	for i = 1, fu.pcount do
-		fty[i] = fu.locals[i]
+		fty[i] = fu.localty[i]
 	end
 	local rety
 	if not fu.rety then
@@ -807,22 +788,9 @@ if #Mod.func > 0 then
 	encode_varuint(bc, #Mod.func)
 	for i = 1, #Mod.func do
 		local fu, fc = Mod.func[i], {}
-		local j, nlocals, gcnt = fu.pcount+1, #fu.locals, 0
-		for k = j, nlocals do
-			if fu.locals[k] ~= fu.locals[k+1] then
-				gcnt = gcnt + 1
-			end
-		end
-		encode_varuint(fc, gcnt)
-		while j <= nlocals do
-			local jty, k = fu.locals[j], 1
-			while j + k <= nlocals and fu.locals[j+k] == jty do
-				k = k + 1
-			end
-			print(i, k, jty)
-			encode_varuint(fc, k)
-			fc[#fc+1] = jty
-			j = j + k
+		encode_varuint(fc, fu.localbcn)
+		for j=1, #fu.localbc do
+			fc[#fc+1] = fu.localbc[j]
 		end
 		for j = 1, #fu.bcode do
 			fc[#fc+1] = fu.bcode[j]

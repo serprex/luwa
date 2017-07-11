@@ -1,6 +1,6 @@
 lxaddval = func(i64, function(f)
 	local o, tmpid, len = f:params(i32, i32, i32)
-	local boxlen = f:i32()
+	local boxlen = f:locals(i32)
 	f:i32(3)
 	f:call(nthtmp)
 	f:load(o)
@@ -61,9 +61,9 @@ $temp i64
 
 lex = export('lex', func(function(f)
 	local src = f:params(i32)
-	local i, ch, lxlen, j, k, srclen, numlen, strlen, tlen = f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32(), f:i32()
-	local temp64, temp642 = f:i64(), f:i64()
-	local double, flt10 = f:f64(), f:f64()
+	local i, ch, lxlen, j, k, srclen, numlen, strlen, tlen = f:locals(i32,9)
+	local temp64, temp642 = f:locals(i64, 2)
+	local double, flt10 = f:locals(f64, 2)
 	f:block(function(loopwrap)
 		f:load(src)
 		f:i32load(5)
@@ -1018,6 +1018,7 @@ lex = export('lex', func(function(f)
 									f:store(double)
 
 									f:f64(1)
+									f:prstack()
 									f:store(flt10)
 
 									f:i32(1)
