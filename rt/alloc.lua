@@ -1,10 +1,3 @@
-heaptip = global(i32, true)
-markbit = global(i32, true)
-onil = global(i32, true)
-otrue = global(i32, true)
-ofalse = global(i32, true)
-otmp = global(i32, true)
-
 otypes = {
 	int = 0,
 	float = 1,
@@ -153,11 +146,12 @@ newtable = export('newtable', func(i32, function(f)
 	assert(tbl.hash == tbl.arr + 4)
 	-- Need to set arr/hash before alloc in case of gc
 	f:loadg(otmp) -- arr, hash = nil
-	f:loadg(onilnil64)
+	assert(NIL == 0)
+	f:i64(0)
 	f:i64store(tbl.arr)
 
 	f:loadg(otmp) -- meta = nil
-	f:loadg(onil)
+	f:i32(NIL)
 	f:i32store(tbl.meta)
 
 	f:loadg(otmp) -- arr = newvec(4*4)
@@ -278,7 +272,7 @@ newvec = export('newvec', func(i32, function(f)
 	f:band()
 	f:iff(function()
 		f:load(p)
-		f:loadg(onil)
+		f:i32(NIL)
 		f:i32store(vec.base)
 		f:i32(4)
 		f:store(n)
@@ -292,7 +286,8 @@ newvec = export('newvec', func(i32, function(f)
 		f:brif(f)
 		f:load(n)
 		f:add()
-		f:loadg(onilnil64)
+		assert(NIL == 0)
+		f:i64(0)
 		f:i64store(vec.base)
 
 		f:load(n)
@@ -302,14 +297,3 @@ newvec = export('newvec', func(i32, function(f)
 		f:br(loop)
 	end)
 end))
-
-istrue = func(i32, function(f)
-	local x = f:params(i32)
-	f:load(x)
-	f:loadg(onil)
-	f:eq()
-	f:load(x)
-	f:loadg(ofalse)
-	f:eq()
-	f:bor()
-end)

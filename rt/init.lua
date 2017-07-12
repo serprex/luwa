@@ -1,46 +1,23 @@
-onilnil64 = global(i64, true)
-onil = global(i32, true)
-otrue = global(i32, true)
-ofalse = global(i32, true)
+NIL = 0
+TRUE = 8
+FALSE = 16
+HEAPBASE = 24
 otmp = global(i32, true)
 otmpstack = global(i32, true)
 otmpstacklen = global(i32, true)
+heaptip = global(i32, true, HEAPBASE)
+markbit = global(i32, true)
+
+data(0, 0, {
+	-- nil
+	0, 0, 0, 0, 2, 0, 0, 0,
+	-- false
+	0, 0, 0, 0, 3, 0, 0 ,0,
+	-- true
+	0, 0, 0, 0, 3, 1, 0, 0,
+})
 
 init = start(func(function(f)
-	f:i32(8)
-	f:i32(2)
-	f:call(newobj)
-	f:storeg(onil)
-
-	f:loadg(onil)
-	f:storeg(otmp)
-
-	f:loadg(onil)
-	f:i64extendu()
-	f:storeg(onilnil64)
-	f:loadg(onilnil64)
-	f:loadg(onilnil64)
-	f:i64(32)
-	f:shl()
-	f:bor()
-	f:storeg(onilnil64)
-
-	f:i32(8)
-	f:i32(3)
-	f:call(newobj)
-	f:storeg(ofalse)
-	f:loadg(ofalse)
-	f:i32(0)
-	f:i32store8(obj.type)
-
-	f:i32(8)
-	f:i32(3)
-	f:call(newobj)
-	f:storeg(otrue)
-	f:loadg(otrue)
-	f:i32(1)
-	f:i32store8(obj.type)
-
 	f:i32(32)
 	f:call(newvec)
 	f:storeg(otmpstack)

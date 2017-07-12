@@ -614,6 +614,10 @@ end
 
 -- Data
 
+function data(idx, offexpr, data)
+	Mod.data[#Mod.data+1] = { idx = idx, offexpr = offexpr, data = data }
+end
+
 -- Main
 
 local files = {...}
@@ -804,6 +808,27 @@ if #Mod.func > 0 then
 		end
 	end
 	writeSection(10, bc)
+end
+
+if #Mod.data > 0 then
+	local bc = {}
+	encode_varuint(bc, #Mod.data)
+	for i = 1, #Mod.data do
+		local data = Mod.data[i]
+		encode_varuint(bc, data.idx)
+		if type(data.offexpr) == 'number' then
+			bc[#bc+1] = 0x41
+			encode_varint(bc, data.offexpr)
+			bc[#bc+1] = 0x0b
+		else
+			error('NYI data offexpr init_expr')
+		end
+		encode_varuint(bc, #data.data)
+		for j = 1, #data.data do
+			bc[#bc+1] = data.data[j]
+		end
+	end
+	writeSection(11, bc)
 end
 
 outf:close()
