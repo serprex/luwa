@@ -5,6 +5,50 @@ otrue = global(i32, true)
 ofalse = global(i32, true)
 otmp = global(i32, true)
 
+otypes = {
+	int = 0,
+	float = 1,
+	['nil'] = 2,
+	bool = 3,
+	tbl = 4,
+	str = 5,
+	vec = 6,
+}
+obj = {
+	gc = 0,
+	type = 4,
+}
+tbl = {
+	gc = 0,
+	type = 4,
+	len = 5,
+	hlen = 9,
+	arr = 13, -- vec
+	hash = 17, -- vec
+	meta = 21, -- tbl
+}
+num = {
+	gc = 0,
+	type = 4,
+	val = 5,
+}
+int = num
+float = num
+bool = num
+vec = {
+	gc = 0,
+	type = 4,
+	len = 5,
+	base = 9,
+}
+str = {
+	gc = 0,
+	type = 4,
+	len = 5,
+	hash = 9,
+	base = 13,
+}
+
 allocsize = func(i32, function(f)
 	local sz = f:params(i32)
 	f:load(sz)
@@ -63,10 +107,10 @@ newobj = func(i32, function(f)
 	-- store header to p
 	f:load(p)
 	f:loadg(markbit)
-	f:i32store()
+	f:i32store(obj.gc)
 	f:load(p)
 	f:load(t)
-	f:i32store8(4)
+	f:i32store8(obj.type)
 	f:load(p)
 end)
 
@@ -78,7 +122,7 @@ newi64 = export('newi64', func(i32, function(f)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
-	f:i64store(5)
+	f:i64store(int.val)
 	f:load(p)
 end))
 
@@ -90,7 +134,7 @@ newf64 = export('newf64', func(i32, function(f)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
-	f:f64store(5)
+	f:f64store(int.val)
 	f:load(p)
 end))
 
@@ -101,27 +145,30 @@ newtable = export('newtable', func(i32, function(f)
 	f:call(newobj)
 	f:storeg(otmp)
 
+	assert(tbl.hlen == tbl.len + 4)
 	f:loadg(otmp) -- len, hlen = 0
 	f:i64(0)
-	f:i64store(5)
+	f:i64store(tbl.len)
 
+	assert(tbl.hash == tbl.arr + 4)
+	-- Need to set arr/hash before alloc in case of gc
 	f:loadg(otmp) -- arr, hash = nil
 	f:loadg(onilnil64)
-	f:i64store(13)
+	f:i64store(tbl.arr)
 
 	f:loadg(otmp) -- meta = nil
 	f:loadg(onil)
-	f:i32store(21)
+	f:i32store(tbl.meta)
 
 	f:loadg(otmp) -- arr = newvec(4*4)
 	f:i32(16)
 	f:call(newvec)
-	f:i32store(13)
+	f:i32store(tbl.arr)
 
 	f:loadg(otmp) -- hash = newvec(4*8)
 	f:i32(32)
 	f:call(newvec)
-	f:i32store(17)
+	f:i32store(tbl.hash)
 
 	f:loadg(otmp)
 end))
@@ -137,10 +184,10 @@ newstr = export('newstr', func(i32, function(f)
 	f:call(newobj)
 	f:tee(p)
 	f:load(sz)
-	f:i32store(5)
+	f:i32store(str.len)
 	f:load(p)
 	f:i32(0)
-	f:i32store(9)
+	f:i32store(str.hash)
 
 	f:load(p)
 	f:load(sz)
@@ -162,64 +209,55 @@ newstr = export('newstr', func(i32, function(f)
 								end) -- 0
 								f:load(psz)
 								f:i32(0)
-								f:i32store(13)
+								f:i32store(str.base)
 								f:load(psz)
 								f:i32(0)
-								f:i32store16(17)
+								f:i32store16(str.base + 4)
 								f:load(psz)
 								f:i32(0)
-								f:i32store8(19)
+								f:i32store8(str.base + 2)
 								f:br(bl7)
 							end) -- 1
 							f:load(psz)
 							f:i32(0)
-							f:i32store(13)
+							f:i32store(str.base)
 							f:load(psz)
 							f:i32(0)
-							f:i32store16(17)
+							f:i32store16(str.base + 4)
 							f:br(bl7)
 						end) -- 2
 						f:load(psz)
 						f:i32(0)
-						f:i32store(13)
+						f:i32store(str.base)
 						f:load(psz)
 						f:i32(0)
-						f:i32store8(17)
+						f:i32store8(str.base + 4)
 						f:br(bl7)
 					end) -- 3
 					f:load(psz)
 					f:i32(0)
-					f:i32store(13)
+					f:i32store(str.base)
 					f:br(bl7)
 				end) -- 4
 				f:load(psz)
 				f:i32(0)
-				f:i32store16(13)
+				f:i32store16(str.base)
 				f:load(psz)
 				f:i32(0)
-				f:i32store8(15)
+				f:i32store8(str.base + 2)
 				f:br(bl7)
 			end) -- 5
 			f:load(psz)
 			f:i32(0)
-			f:i32store16(13)
+			f:i32store16(str.base)
 			f:br(bl7)
 		end) -- 6
 		f:load(psz)
 		f:i32(0)
-		f:i32store8(13)
+		f:i32store8(str.base)
 	end) -- 7
 	f:load(p)
 end))
-
---[[
-struct Vec {
-	00 i32
-	04 i8 type6
-	05 i32 len
-	09 ...
-}
---]]
 
 newvec = export('newvec', func(i32, function(f)
 	local sz = f:params(i32)
@@ -232,7 +270,7 @@ newvec = export('newvec', func(i32, function(f)
 	f:call(newobj)
 	f:tee(p)
 	f:load(sz)
-	f:i32store(5)
+	f:i32store(vec.len)
 
 	-- need to start with (sz - n)%8 == 0
 	f:load(sz)
@@ -241,7 +279,7 @@ newvec = export('newvec', func(i32, function(f)
 	f:iff(function()
 		f:load(p)
 		f:loadg(onil)
-		f:i32store(9)
+		f:i32store(vec.base)
 		f:i32(4)
 		f:store(n)
 	end)
@@ -255,7 +293,7 @@ newvec = export('newvec', func(i32, function(f)
 		f:load(n)
 		f:add()
 		f:loadg(onilnil64)
-		f:i64store(9)
+		f:i64store(vec.base)
 
 		f:load(n)
 		f:i32(8)
