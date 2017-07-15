@@ -29,13 +29,13 @@ function table.remove(list, pos)
 	local ret
 	if pos then
 		ret = list[pos]
-		for i = pos,#list do
+		for i = pos,#list-1 do
 			list[i] = list[i+1]
 		end
 	else
 		ret = list[#list]
-		list[#list] = nil
 	end
+	list[#list] = nil
 	return ret
 end
 function table.move(a1, f, e, t, a2)
@@ -121,4 +121,20 @@ function print(...)
 		io.write(tostring(select(i, ...)))
 	end
 	io.write('\n')
+end
+
+function pairs(t)
+	return next, t, nil
+end
+
+local function inext(a, b)
+	b = b + 1
+	if b < 1 or b >= #a then
+		return nil
+	else
+		return a[b], b
+	end
+end
+function ipairs(t)
+	return inext, t, 0
 end
