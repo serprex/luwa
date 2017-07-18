@@ -45,25 +45,32 @@ lxaddval = func(i64, function(f)
 	end)
 end)
 
---[[ macro lxaddnum
-$temp i64
-	i32 1
-	load numlen
-	call lxaddval
-	tee $temp
-	i32wrap
-	store numlen
-	load $temp
-	i64 32
-	shru
-	i32wrap
-	]]
 
 lex = export('lex', func(function(f)
 	local src = f:params(i32)
 	local i, ch, lxlen, j, k, srclen, numlen, strlen, tlen = f:locals(i32,9)
 	local temp64, temp642 = f:locals(i64, 2)
 	local double, flt10 = f:locals(f64, 2)
+
+	local function lxadd(ty, len, t64)
+		f:i32(ty)
+		f:load(len)
+		f:call(lxaddval)
+		f:tee(t64)
+		f:i32wrap()
+		f:store(len)
+		f:load(t64)
+		f:i64(32)
+		f:shru()
+		f:i32wrap()
+	end
+	local function lxaddnum(t64)
+		return lxadd(1, numlen, t64)
+	end
+	local function lxaddstr(t64)
+		return lxadd(2, strlen, t64)
+	end
+
 	f:block(function(loopwrap)
 		f:load(src)
 		f:i32load(str.len)
@@ -595,16 +602,7 @@ lex = export('lex', func(function(f)
 				f:call(tmppop)
 
 				f:load(ch)
-				f:i32(2)
-				f:load(strlen)
-				f:call(lxaddval)
-				f:tee(temp64)
-				f:i32wrap()
-				f:store(strlen)
-				f:load(temp64)
-				f:i64(32)
-				f:shru()
-				f:i32wrap()
+				lxaddstr(temp64)
 				f:store(ch)
 
 				f:load(ch)
@@ -1301,16 +1299,7 @@ lex = export('lex', func(function(f)
 					f:load(temp64)
 					f:call(newi64)
 				end)
-				f:i32(1)
-				f:load(numlen)
-				f:call(lxaddval)
-				f:tee(temp64)
-				f:i32wrap()
-				f:store(numlen)
-				f:load(temp64)
-				f:i64(32)
-				f:shru()
-				f:i32wrap()
+				lxaddnum(temp64)
 				f:store(ch)
 
 				f:load(ch)
@@ -1563,16 +1552,7 @@ lex = export('lex', func(function(f)
 				f:call(memcpy1rl)
 
 				f:load(src)
-				f:i32(2)
-				f:load(strlen)
-				f:call(lxaddval)
-				f:tee(temp64)
-				f:i32wrap()
-				f:store(strlen)
-				f:load(temp64)
-				f:i64(32)
-				f:shru()
-				f:i32wrap()
+				lxaddstr(temp64)
 				f:store(ch)
 
 				f:load(ch)
@@ -1758,16 +1738,7 @@ lex = export('lex', func(function(f)
 								f:call(memcpy1rl)
 
 								f:load(src)
-								f:i32(2)
-								f:load(strlen)
-								f:call(lxaddval)
-								f:tee(temp64)
-								f:i32wrap()
-								f:store(strlen)
-								f:load(temp64)
-								f:i64(32)
-								f:shru()
-								f:i32wrap()
+								lxaddstr(temp64)
 								f:store(ch)
 
 								f:load(ch)
