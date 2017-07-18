@@ -78,7 +78,7 @@ function assert_isvty(ty)
 	assert(ty == i32 or ty == i64 or ty == f32 or ty == f64, ty)
 end
 
-function remove_from(tbl, n)
+local function remove_from(tbl, n)
 	for i = n, #tbl do
 		tbl[i] = nil
 	end
@@ -195,7 +195,7 @@ function funcmeta:locals(lty, n)
 	return table.unpack(ret)
 end
 
-function mkconstop(name, ty, op, encoder)
+local function mkconstop(name, ty, op, encoder)
 	funcmeta[name] = function(self, x)
 		assert(x)
 		self:emit(op)
@@ -356,7 +356,7 @@ function funcmeta:grow_memory()
 	self:emit(0)
 end
 
-function mkopcore(self, name, tymap, a, tyret)
+local function mkopcore(self, name, tymap, a, tyret)
 	if tymap[a] then
 		self:emit(tymap[a])
 		if tyret then
@@ -368,7 +368,7 @@ function mkopcore(self, name, tymap, a, tyret)
 		return error(name .. ' not implemented for ' .. a)
 	end
 end
-function mkunop(name, tymap, tyret)
+local function mkunop(name, tymap, tyret)
 	funcmeta[name] = function(self)
 		local a = self:pop()
 		if not a then
@@ -377,7 +377,7 @@ function mkunop(name, tymap, tyret)
 		return mkopcore(self, name, tymap, a, tyret)
 	end
 end
-function mkbinop(name, tymap, tyret)
+local function mkbinop(name, tymap, tyret)
 	funcmeta[name] = function(self)
 		local a = self:pop()
 		local b = self:pop()
@@ -453,7 +453,7 @@ mkunop('i64reinterpret', { [f64] = 0xbd }, i64)
 mkunop('f32reinterpret', { [i32] = 0xbe }, f32)
 mkunop('f64reinterpret', { [i64] = 0xbf }, f64)
 
-function mkstoreop(name, opcode, ty)
+local function mkstoreop(name, opcode, ty)
 	funcmeta[name] = function(self, off, flags)
 		if not off then
 			off = 0
@@ -468,7 +468,7 @@ function mkstoreop(name, opcode, ty)
 		self:emituint(off)
 	end
 end
-function mkloadop(name, opcode, ty)
+local function mkloadop(name, opcode, ty)
 	funcmeta[name] = function(self, off, flags)
 		if not off then
 			off = 0

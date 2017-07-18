@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 "use strict";
 
-const assert = require("assert"),
-	lua = require("../luwa"),
-	e = require("../env")();
-
-lua.eval("x = 3 * 5 + 2", e);
-assert.equal(e.get("x"), 17);
-lua.eval("y = 0 while y < x do y = y + 1 end", e);
-assert.equal(e.get("y"), 17);
-
 if (!('TRAVIS' in process.env)) {
 	require("../rt")().then(rt => {
+		const assert = require("assert"),
+			lua = require("../luwa"),
+			e = require("../env")();
+
+		lua.eval(rt, "x = 3 * 5 + 2", e);
+		assert.equal(e.get("x"), 17);
+		lua.eval(rt, "y = 0 while y < x do y = y + 1 end", e);
+		assert.equal(e.get("y"), 17);
+
 		let newt = rt.newtable();
 		let news = rt.newstr("asdf");
 		let newf = rt.newf64(4.2);

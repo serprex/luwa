@@ -49,12 +49,13 @@ FFI.prototype.free = function(h) {
 FFI.prototype.mkref = function(p) {
 	switch (p) {
 		case 0: return this.nil;
-		case 4: return this.false;
-		case 8: return this.true;
-		default:
-		let h = new Handle(p);
-		this.handles.add(h);
-		return h;
+		case 8: return this.false;
+		case 16: return this.true;
+		default: {
+			let h = new Handle(p);
+			this.handles.add(h);
+			return h;
+		}
 	}
 }
 FFI.prototype.newtable = function() {

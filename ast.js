@@ -162,14 +162,14 @@ function Builder(li, nx, mo, fa, ty) {
 	this.fathered = [];
 }
 Builder.prototype.val = function(lx) {
-	return lx.lex[this.li];
+	return lx.val(this.li);
 }
 Builder.prototype.skipint = function(lx) {
-	while (lx.lex[this.nx++] & 128);
+	this.nx = lx.skipint(this.nx);
 	return this;
 }
 Builder.prototype.int = function(lx) {
-	return util.readvaruint(lx.lex, this.li + 1);
+	return lx.int(this.li + 1);
 }
 Builder.prototype.next = function(p) {
 	return new Builder(this.nx, this.nx+1, ~this.type ? this.mother : this, p, -1);

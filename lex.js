@@ -309,3 +309,42 @@ function Lex(src) {
 }
 
 exports.Lex = Lex;
+Lex.prototype.val = function(i) {
+	return this.lex[i];
+}
+Lex.prototype.skipint = function(i) {
+	while (this.lex[i++] & 128);
+	return i;
+}
+Lex.prototype.int = function(i) {
+	return util.readvaruint(this.lex, i + 1);
+}
+Lex.prototype.free = function() {
+}
+
+const rt = require("./rt");
+
+function Lex2(rt, src) {
+	var srcstr = rt.newstr(src);
+	rt.mod.lex(srcstr.val);
+	rt.free(srcstr);
+	this.rt = rt;
+	this.nums = rt.mkref(rt.mod.nthtmp(1)),
+	this.strs = rt.mkref(rt.mod.nthtmp(2)),
+	this.lex = rt.mkref(rt.mod.nthtmp(3));
+}
+Lex2.prototype.val = function(i) {
+	return new Uint8Array(this.rt.mem.buffer)[this.lex.val + 13 + i];
+}
+Lex2.prototype.int = function(i) {
+	return util.readuint32(new Uint8Array(this.rt.mem.buffer), this.lex.val + 13 + i);
+}
+Lex2.prototype.skipint = function(i) {
+	return i + 4;
+}
+Lex2.prototype.free = function() {
+	this.rt.free(this.nums);
+	this.rt.free(this.strs);
+	this.rt.free(this.lex);
+}
+exports.Lex2 = Lex2;
