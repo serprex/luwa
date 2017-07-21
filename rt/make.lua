@@ -6,6 +6,8 @@ i32 = 0x7f
 i64 = 0x7e
 f32 = 0x7d
 f64 = 0x7c
+anyfunc = 0x70
+functy = 0x60
 void = 0x40
 
 Mod = {
@@ -73,6 +75,16 @@ function encode_string(dst, str)
 		dst[#dst+1] = string.byte(str, i)
 	end
 end
+function encode_limits(bc, sz, mxsz)
+	if mxsz then
+		bc[#bc+1] = 1
+		encode_varuint(bc, sz)
+		encode_varuint(bc, mxsz)
+	else
+		bc[#bc+1] = 0
+		encode_varuint(bc, sz)
+	end
+end
 
 function assert_isvty(ty)
 	assert(ty == i32 or ty == i64 or ty == f32 or ty == f64, ty)
@@ -108,8 +120,8 @@ function importfunc(m, f, ...)
 	push(Mod.import, impf)
 	return impf
 end
-function importtable(m, f)
-	local impt = { m = m, f = f, ty = 1, id = Mod.imptid }
+function importtable(m, f, elety, sz, mxsz)
+	local impt = { m = m, f = f, ty = 1, id = Mod.imptid, elety = elety, sz = sz, mxsz = mxsz }
 	Mod.imptid = Mod.imptid + 1
 	push(Mod.import, impt)
 	return impt
@@ -563,7 +575,15 @@ end
 
 -- Table
 
+function tbl(elems)
+	Mod.table[#Mod.table+1] = elems
+end
+
 -- Memory
+
+function memory(sz, mxsz)
+	Mod.memory[#Mod.memory+1] = { sz = sz, mxsz = mxsz }
+end
 
 -- Global
 
@@ -610,8 +630,6 @@ function start(fu)
 	return fu
 end
 
--- Element
-
 -- Data
 
 function data(idx, offexpr, data)
@@ -644,6 +662,16 @@ local function writeSection(id, bc)
 		nn = nn + 4096
 	end
 end
+local function loopSection(id, elems, bcfu)
+	if #elems then
+		local bc = {}
+		encode_varuint(bc, #elems)
+		for i = 1, #elems do
+			bcfu(bc, elems[i])
+		end
+		writeSection(id, bc)
+	end
+end
 
 for i = 1, #Mod.func do
 	local fu = Mod.func[i]
@@ -662,124 +690,98 @@ for i = 1, #Mod.func do
 	fu.tid = Mod:decltype(fty)
 end
 
-if #Mod.type > 0 then
-	local bc = {}
-	encode_varuint(bc, #Mod.type)
-	for i = 1, #Mod.type do
-		local ty = Mod.type[i]
-		bc[#bc+1] = 0x60
-		if #ty == 0 then
+loopSection(1, Mod.type, function(bc, ty)
+	bc[#bc+1] = 0x60
+	if #ty == 0 then
+		bc[#bc+1] = 0
+		bc[#bc+1] = 0
+	else
+		local ret = ty[#ty]
+		local pcount = #ty-1
+		encode_varuint(bc, pcount)
+		for j = 1, pcount do
+			bc[#bc+1] = ty[j]
+		end
+		if ret == 0x40 then
 			bc[#bc+1] = 0
-			bc[#bc+1] = 0
 		else
-			local ret = ty[#ty]
-			local pcount = #ty-1
-			encode_varuint(bc, pcount)
-			for j = 1, pcount do
-				bc[#bc+1] = ty[j]
-			end
-			if ret == 0x40 then
-				bc[#bc+1] = 0
-			else
-				bc[#bc+1] = 1
-				bc[#bc+1] = ret
-			end
+			bc[#bc+1] = 1
+			bc[#bc+1] = ret
 		end
 	end
-	writeSection(1, bc)
-end
+end)
 
-if #Mod.import > 0 then
-	local bc = {}
-	encode_varuint(bc, #Mod.import)
-	for i = 1, #Mod.import do
-		local imp = Mod.import[i]
-		encode_string(bc, imp.m)
-		encode_string(bc, imp.f)
-		bc[#bc+1] = imp.ty
-		if imp.ty == 0 then
-			encode_varuint(bc, imp.tid)
-		elseif imp.ty == 1 then
-			error('NYI table imp')
-		elseif imp.ty == 2 then
-			if imp.mxsz then
-				bc[#bc+1] = 1
-				encode_varuint(bc, imp.sz)
-				encode_varuint(bc, imp.mxsz)
-			else
-				bc[#bc+1] = 0
-				encode_varuint(bc, imp.sz)
-			end
-		elseif imp.ty == 3 then
-			error('NYI global imp')
+loopSection(2, Mod.import, function(bc, imp)
+	encode_string(bc, imp.m)
+	encode_string(bc, imp.f)
+	bc[#bc+1] = imp.ty
+	if imp.ty == 0 then
+		encode_varuint(bc, imp.tid)
+	elseif imp.ty == 1 then
+		encode_varuint(bc, imp.elety)
+		encode_varuint(bc, imp.sz, imp.mxsz)
+	elseif imp.ty == 2 then
+		encode_limits(bc, imp.sz, imp.mxsz)
+	elseif imp.ty == 3 then
+		encode_varuint(imp.type)
+		encode_varuint(imp.mut)
+	else
+		error("Unknown import type: " .. imp.ty)
+	end
+end)
+
+loopSection(3, Mod.func, function(bc, fu)
+	encode_varuint(bc, fu.tid)
+end)
+
+loopSection(4, Mod.table, function(bc, tbl)
+	error("NYI tables")
+end)
+
+loopSection(5, Mod.memory, function(bc, mem)
+	encode_limits(mem.sz, mem.mxsz)
+end)
+
+loopSection(6, Mod.global, function(bc, globe)
+	local ty, init = globe.type, globe.init
+	bc[#bc+1] = ty
+	bc[#bc+1] = globe.mut
+	if type(init) == 'number' then
+		if ty == i32 then
+			bc[#bc+1] = 0x41
+			encode_varint(bc, init)
+			bc[#bc+1] = 0x0b
+		elseif ty == i64 then
+			bc[#bc+1] = 0x42
+			encode_varint(bc, init)
+			bc[#bc+1] = 0x0b
+		elseif ty == f32 then
+			bc[#bc+1] = 0x43
+			encode_f32(bc, init)
+			bc[#bc+1] = 0x0b
 		else
-			error("Unknown import type: " .. imp.ty)
+			bc[#bc+1] = 0x44
+			encode_f64(bc, init)
+			bc[#bc+1] = 0x0b
 		end
+	else
+		error('NYI get_global init_expr')
 	end
-	writeSection(2, bc)
-end
+end)
 
-if #Mod.func > 0 then
-	local bc = {}
-	encode_varuint(bc, #Mod.func)
-	for i = 1, #Mod.func do
-		encode_varuint(bc, Mod.func[i].tid)
+loopSection(7, Mod.export, function(bc, expo)
+	encode_string(bc, expo.f)
+	bc[#bc+1] = expo.kind
+	if expo.kind == 0 then
+		encode_varuint(bc, Mod.impfid + expo.obj.id)
+	elseif expo.kind == 1 then
+		encode_varuint(bc, Mod.imptid + expo.obj.id)
+	elseif expo.kind == 2 then
+		encode_varuint(bc, Mod.impmid + expo.obj.id)
+	else
+		encode_varuint(bc, Mod.impgid + expo.obj.id)
 	end
-	writeSection(3, bc)
-end
-
-if #Mod.global > 0 then
-	local bc = {}
-	encode_varuint(bc, #Mod.global)
-	for i = 1, #Mod.global do
-		local globe = Mod.global[i]
-		local ty, init = globe.type, globe.init
-		bc[#bc+1] = ty
-		bc[#bc+1] = globe.mut
-		if type(init) == 'number' then
-			if ty == i32 then
-				bc[#bc+1] = 0x41
-				encode_varint(bc, init)
-				bc[#bc+1] = 0x0b
-			elseif ty == i64 then
-				bc[#bc+1] = 0x42
-				encode_varint(bc, init)
-				bc[#bc+1] = 0x0b
-			elseif ty == f32 then
-				bc[#bc+1] = 0x43
-				encode_f32(bc, init)
-				bc[#bc+1] = 0x0b
-			else
-				bc[#bc+1] = 0x44
-				encode_f64(bc, init)
-				bc[#bc+1] = 0x0b
-			end
-		else
-			error('NYI get_global init_expr')
-		end
-	end
-	writeSection(6, bc)
-end
-
-if #Mod.export then
-	local bc = {}
-	encode_varuint(bc, #Mod.export)
-	for i = 1, #Mod.export do
-		local expo = Mod.export[i]
-		encode_string(bc, expo.f)
-		bc[#bc+1] = expo.kind
-		if expo.kind == 0 then
-			encode_varuint(bc, Mod.impfid + expo.obj.id)
-		elseif expo.kind == 1 then
-			encode_varuint(bc, Mod.imptid + expo.obj.id)
-		elseif expo.kind == 2 then
-			encode_varuint(bc, Mod.impmid + expo.obj.id)
-		else
-			encode_varuint(bc, Mod.impgid + expo.obj.id)
-		end
-	end
-	writeSection(7, bc)
-end
+end)
 
 if Mod.start then
 	local bc = {}
@@ -787,48 +789,38 @@ if Mod.start then
 	writeSection(8, bc)
 end
 
-if #Mod.func > 0 then
-	local bc = {}
-	encode_varuint(bc, #Mod.func)
-	for i = 1, #Mod.func do
-		local fu, fc = Mod.func[i], {}
-		encode_varuint(fc, fu.localbcn)
-		for j=1, #fu.localbc do
-			fc[#fc+1] = fu.localbc[j]
-		end
-		for j = 1, #fu.bcode do
-			fc[#fc+1] = fu.bcode[j]
-		end
-		fc[#fc+1] = 0x0b
-
-		print(Mod.impfid + i - 1, table.concat(fc, ':'))
-		encode_varuint(bc, #fc)
-		for j = 1, #fc do
-			bc[#bc+1] = fc[j]
-		end
+loopSection(10, Mod.func, function(bc, fu)
+	local fc = {}
+	encode_varuint(fc, fu.localbcn)
+	for j=1, #fu.localbc do
+		fc[#fc+1] = fu.localbc[j]
 	end
-	writeSection(10, bc)
-end
-
-if #Mod.data > 0 then
-	local bc = {}
-	encode_varuint(bc, #Mod.data)
-	for i = 1, #Mod.data do
-		local data = Mod.data[i]
-		encode_varuint(bc, data.idx)
-		if type(data.offexpr) == 'number' then
-			bc[#bc+1] = 0x41
-			encode_varint(bc, data.offexpr)
-			bc[#bc+1] = 0x0b
-		else
-			error('NYI data offexpr init_expr')
-		end
-		encode_varuint(bc, #data.data)
-		for j = 1, #data.data do
-			bc[#bc+1] = data.data[j]
-		end
+	for j = 1, #fu.bcode do
+		fc[#fc+1] = fu.bcode[j]
 	end
-	writeSection(11, bc)
-end
+	fc[#fc+1] = 0x0b
+
+	print(Mod.impfid + i - 1, table.concat(fc, ':'))
+	encode_varuint(bc, #fc)
+	for j = 1, #fc do
+		bc[#bc+1] = fc[j]
+	end
+end)
+
+loopSection(11, Mod.data, function(bc, data)
+	local data = Mod.data[i]
+	encode_varuint(bc, data.idx)
+	if type(data.offexpr) == 'number' then
+		bc[#bc+1] = 0x41
+		encode_varint(bc, data.offexpr)
+		bc[#bc+1] = 0x0b
+	else
+		error('NYI data offexpr init_expr')
+	end
+	encode_varuint(bc, #data.data)
+	for j = 1, #data.data do
+		bc[#bc+1] = data.data[j]
+	end
+end)
 
 outf:close()

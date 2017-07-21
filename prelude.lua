@@ -1,4 +1,4 @@
-_VERSION = "Luwa 0.0.1"
+_VERSION = "Luwa 0.1"
 _G = _ENV
 
 math.mininteger = -9223372036854775808
