@@ -1,9 +1,3 @@
---[[
-Header:
-i32 ref
-i8 type
-]]
-
 eq = func(i32, function(f)
 	local a, b = f:params(i32, i32)
 	local i, j = f:locals(i32, 2)

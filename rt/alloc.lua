@@ -6,6 +6,7 @@ otypes = {
 	tbl = 4,
 	str = 5,
 	vec = 6,
+	func = 7,
 }
 obj = {
 	gc = 0,
@@ -14,6 +15,7 @@ obj = {
 tbl = {
 	gc = 0,
 	type = 4,
+	-- TODO id = 5,
 	len = 5,
 	hlen = 9,
 	arr = 13, -- vec
@@ -40,6 +42,15 @@ str = {
 	len = 5,
 	hash = 9,
 	base = 13,
+}
+func = {
+	gc = 0,
+	type = 4,
+	id = 5,
+	consts = 9,
+	bc = 13,
+	isdotdotdot = 17,
+	freelist = 18,
 }
 
 allocsize = func(i32, function(f)
@@ -111,7 +122,7 @@ newi64 = export('newi64', func(i32, function(f)
 	local x = f:params(i64)
 	local p = f:locals(i32)
 	f:i32(16)
-	f:i32(0)
+	f:i32(otypes.int)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
@@ -123,7 +134,7 @@ newf64 = export('newf64', func(i32, function(f)
 	local x = f:params(f64)
 	local p = f:locals(i32)
 	f:i32(16)
-	f:i32(1)
+	f:i32(otypes.float)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
@@ -134,7 +145,7 @@ end))
 newtable = export('newtable', func(i32, function(f)
 	local p = f:locals(i32)
 	f:i32(32)
-	f:i32(4)
+	f:i32(otypes.tbl)
 	f:call(newobj)
 	f:storeg(otmp)
 
@@ -174,7 +185,7 @@ newstr = export('newstr', func(i32, function(f)
 	f:load(sz)
 	f:add()
 	f:call(allocsize)
-	f:i32(5)
+	f:i32(otypes.str)
 	f:call(newobj)
 	f:tee(p)
 	f:load(sz)
@@ -260,7 +271,7 @@ newvec = export('newvec', func(i32, function(f)
 	f:load(sz)
 	f:add()
 	f:call(allocsize)
-	f:i32(6)
+	f:i32(otypes.vec)
 	f:call(newobj)
 	f:tee(p)
 	f:load(sz)
