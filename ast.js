@@ -48,8 +48,8 @@ const _s = [], s = r => _s[r] || (_s[r] = function*(lx, x, p) {
 const _o = [], o = n => _o[n] || (_o[n] = function*(lx, x, p) {
 	yield *rules[n](lx, x, p);
 });
-function seqcore(args) {
-	return function *seqf(lx, x, p, i) {
+function seq(...args) {
+	return function *seqf(lx, x, p, i = 0) {
 		if (i == args.length - 1) {
 			yield *args[i](lx, x, p);
 		} else {
@@ -59,13 +59,9 @@ function seqcore(args) {
 		}
 	}
 }
-function seq(...args) {
-	const seqf = seqcore(args);
-	return (lx, x, p) => seqf(lx, x, p, 0);
-}
 function sf(o, ...args) {
-	const seqf = seqcore(args);
-	rules[o] = (lx, x, p) => seqf(lx, x, x.spawn(o, p), 0);
+	const seqf = seq(...args);
+	rules[o] = (lx, x, p) => seqf(lx, x, x.spawn(o, p));
 }
 var many = f => function*manyf(lx, x, p) {
 	for (let fx of f(lx, x, p)) {
@@ -181,7 +177,7 @@ Builder.prototype.spawn = function(ty, p) {
 function parse(lx) {
 	const root = new Builder(-1, 0, null, null, -2);
 	for (let child of rules[Block](lx, root, root)) {
-		if (child.nx == lx.lex.length - 1) {
+		if (child.nx == lx.length()) {
 			do {
 				let father = child.father, prev_father = child;
 				while (father) {

@@ -242,7 +242,7 @@ math_frexp = export("math_frexp", func(i32, function(f)
 	-- Replace param x with ret of frexp
 	-- 2nd retval is already in place
 	f:call(newf64)
-	f:call(setnthtmp)
 	f:i32(2)
+	f:call(setnthtmp)
 	f:i32(0)
 end))

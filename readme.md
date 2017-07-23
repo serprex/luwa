@@ -6,7 +6,7 @@ I'll try avoid my usual stream of consciousness here, instead that's at [my devl
 
 `luwa.js` shows the pipeline: `lex.js` -> `ast.js` -> `bc.js` -> `runbc.js`
 
-`lex.js` is a linear scan, so I'll leave that as an exercise for the reader
+`lex.js` is a linear scan, so I'll leave that as an exercise for the reader. It's lined up to be replaced by `rt/lex.lua`
 
 `ast.js` is some adhoc parser combinator thing with generators. Combinators return the rightmost AST node. The rest of their function is left as an exercise to the reader
 AST is immutable during the parse phase so that backtracking has no cleanup
@@ -19,7 +19,7 @@ Some post processing is done to convert from children pointing at parents to par
 ### Other js files
 File | Description
 --- | ---
-\_test.js | unit tests
+scripts\test.js | unit tests
 env.js | exports a function which returns the default `_ENV`
 func.js | ast.js's Assembler can be boiled down to func.js's Func, which is what runbc uses in conjuction with a stack to interpret
 main.js | this should be fixed up to be a node frontend
@@ -29,3 +29,11 @@ table.js | table type
 thread.js | thread type returned by `coroutine.create`
 ui.js | index.html's js logic
 uf8.js | this'll matter more once strings are Uint8Arrays
+
+### The Real Deal
+
+While there's a semi functional implementation of Lua now in JS, it isn't WASM. Work towards the wasm engine is in `rt/`. `rt/make.lua` is the entry point for the assmembler. This produces an `rt.wasm` which `rt.js` contains glue code for
+
+The GC is a LISP2 compacting GC
+
+The VM needs to be reentrant. Ideally this means having a constant WASM stack depths in the face of nested pcalls & coroutines. This means CALL\_FUNC can't use the `call` opcode unless it's a builtin. `pcall` will need to function through an exception handler frame on the in-memory callstack

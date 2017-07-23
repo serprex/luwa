@@ -309,6 +309,9 @@ function Lex(src) {
 }
 
 exports.Lex = Lex;
+Lex.prototype.length = function() {
+	return this.lex.length - 1;
+}
 Lex.prototype.val = function(i) {
 	return this.lex[i];
 }
@@ -332,6 +335,9 @@ function Lex2(rt, src) {
 	this.nums = rt.mkref(rt.mod.nthtmp(1)),
 	this.strs = rt.mkref(rt.mod.nthtmp(2)),
 	this.lex = rt.mkref(rt.mod.nthtmp(3));
+}
+Lex2.prototype.length = function() {
+	return util.readuint32(new Uint8Array(this.rt.mem.buffer), this.lex.val + 5);
 }
 Lex2.prototype.val = function(i) {
 	return new Uint8Array(this.rt.mem.buffer)[this.lex.val + 13 + i];

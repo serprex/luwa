@@ -800,7 +800,6 @@ loopSection(10, Mod.func, function(bc, fu)
 	end
 	fc[#fc+1] = 0x0b
 
-	print(Mod.impfid + i - 1, table.concat(fc, ':'))
 	encode_varuint(bc, #fc)
 	for j = 1, #fc do
 		bc[#bc+1] = fc[j]
@@ -808,7 +807,6 @@ loopSection(10, Mod.func, function(bc, fu)
 end)
 
 loopSection(11, Mod.data, function(bc, data)
-	local data = Mod.data[i]
 	encode_varuint(bc, data.idx)
 	if type(data.offexpr) == 'number' then
 		bc[#bc+1] = 0x41

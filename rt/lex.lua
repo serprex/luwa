@@ -962,7 +962,6 @@ lex = export('lex', func(function(f)
 									f:store(double)
 
 									f:f64(1)
-									f:prstack()
 									f:store(flt10)
 
 									f:i32(1)
