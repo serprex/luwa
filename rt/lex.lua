@@ -80,46 +80,46 @@ lex = export('lex', func(function(f)
 		f:store(lxlen)
 	end
 
+	f:load(src)
+	f:i32load(str.len)
+	f:store(srclen)
+
+	-- TODO move src+revmap to top of stack so we can efficiently pop without popping other 3
+	-- 5 src
+	f:load(src)
+	f:call(tmppush)
+
+	-- 4 lex
+	f:i32(1011)
+	f:call(newstr)
+	f:call(tmppush)
+
+	-- 3 reverse mapping of strs/nums
+	f:call(newtable)
+	f:call(tmppush)
+
+	-- 2 [strs]
+	f:i32(256)
+	f:call(newvec)
+	f:call(tmppush)
+
+	-- 1 [nums]
+	f:i32(64)
+	f:call(newvec)
+	f:call(tmppush)
+
+	f:i32(5)
+	f:call(nthtmp)
+	f:i32load(str.len)
+	f:eqz()
+	f:brif(f)
+
 	f:block(function(loopwrap)
-		f:load(src)
-		f:i32load(str.len)
-		f:store(srclen)
-
-		-- TODO move src+revmap to top of stack so we can efficiently pop without popping other 3
-		-- 5 src
-		f:load(src)
-		f:call(tmppush)
-
-		-- 4 lex
-		f:i32(1011)
-		f:call(newstr)
-		f:call(tmppush)
-
-		-- 3 reverse mapping of strs/nums
-		f:call(newtable)
-		f:call(tmppush)
-
-		-- 2 [strs]
-		f:i32(256)
-		f:call(newvec)
-		f:call(tmppush)
-
-		-- 1 [nums]
-		f:i32(64)
-		f:call(newvec)
-		f:call(tmppush)
-
-		f:i32(5)
-		f:call(nthtmp)
-		f:i32load(str.len)
-		f:eqz()
-		f:brif(f)
-
 		f:loop(function(loopnoinc)
 			f:block(function(blloop)
 				f:load(i)
 				f:load(srclen)
-				f:eq()
+				f:geu()
 				f:brif(loopwrap)
 
 				f:i32(5)
@@ -1245,6 +1245,8 @@ lex = export('lex', func(function(f)
 					f:call(newi64)
 				end)
 				lxaddnum(temp64)
+				f:i32(2)
+				f:shru()
 				f:store(ch)
 
 				f:load(ch)
@@ -1267,7 +1269,7 @@ lex = export('lex', func(function(f)
 
 				f:i32(192)
 				f:i32(4)
-				pushtolex()
+				pushtolex(5)
 
 				f:br(loopnoinc)
 				end) --@colon :
@@ -1415,45 +1417,47 @@ lex = export('lex', func(function(f)
 				f:load(i)
 				f:store(j)
 
-				f:loop(function(loop) -- scan until not 0-9A-Z_a-z
-					f:load(i)
-					f:i32(1)
-					f:add()
-					f:tee(i)
-					f:load(srclen)
-					f:eq()
-					f:brif(loopnoinc)
+				f:block(function(block)
+					f:loop(function(loop) -- scan until not 0-9A-Z_a-z
+						f:load(i)
+						f:i32(1)
+						f:add()
+						f:tee(i)
+						f:load(srclen)
+						f:eq()
+						f:brif(block)
 
-					f:load(src)
-					f:load(i)
-					f:add()
-					f:i32load8u(str.base)
-					f:i32(48)
-					f:sub()
-					f:tee(ch)
-					f:i32(10)
-					f:ltu()
-					f:brif(loop)
+						f:load(src)
+						f:load(i)
+						f:add()
+						f:i32load8u(str.base)
+						f:i32(48)
+						f:sub()
+						f:tee(ch)
+						f:i32(10)
+						f:ltu()
+						f:brif(loop)
 
-					f:load(ch)
-					f:i32(17) -- 65-48 ('A - '0)
-					f:sub()
-					f:tee(ch)
-					f:i32(26)
-					f:ltu()
-					f:brif(loop)
+						f:load(ch)
+						f:i32(17) -- 65-48 ('A - '0)
+						f:sub()
+						f:tee(ch)
+						f:i32(26)
+						f:ltu()
+						f:brif(loop)
 
-					f:load(ch)
-					f:i32(30) -- 95-65-48 ('_ - 'A - '0)
-					f:eq()
-					f:brif(loop)
+						f:load(ch)
+						f:i32(30) -- 95-65-48 ('_ - 'A - '0)
+						f:eq()
+						f:brif(loop)
 
-					f:load(ch)
-					f:i32(32) -- 97-65-48 ('a - 'A - '0)
-					f:sub()
-					f:i32(26)
-					f:ltu()
-					f:brif(loop)
+						f:load(ch)
+						f:i32(32) -- 97-65-48 ('a - 'A - '0)
+						f:sub()
+						f:i32(26)
+						f:ltu()
+						f:brif(loop)
+					end)
 				end)
 
 				f:load(i)
@@ -1463,7 +1467,6 @@ lex = export('lex', func(function(f)
 
 				-- Check whether keyword
 				-- TODO assert we won't read out of memory
-				-- TODO group pushtolex into a trailing block
 				f:block(function(kwbl)
 					-- do if in or
 					f:block(function(kw2)
@@ -1478,6 +1481,7 @@ lex = export('lex', func(function(f)
 										-- function
 										f:block(function(kw8)
 											f:load(ch)
+											f:call(echo)
 											f:brtable(kwbl, kwbl, kw2, kw3, kw4, kw5, kw6, kwbl, kw8, kwbl)
 										end) -- 8
 										f:load(j)
@@ -1971,21 +1975,8 @@ lex = export('lex', func(function(f)
 	f:i32(4)
 	pushtolex()
 
-	f:load(lxlen)
-	f:call(newstr)
-	f:tee(i)
 	f:i32(4)
 	f:call(nthtmp)
-	f:load(lxlen)
-	f:i32(13)
-	f:add()
-	f:call(allocsize)
-	f:call(memcpy8)
-	f:load(i)
-	f:load(lxlen)
-	f:i32store(str.len)
-
-	f:load(i)
 	f:i32(2)
 	f:call(nthtmp)
 	f:i32(1)

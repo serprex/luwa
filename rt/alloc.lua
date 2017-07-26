@@ -6,7 +6,7 @@ otypes = {
 	tbl = 4,
 	str = 5,
 	vec = 6,
-	func = 7,
+	functy = 7,
 }
 obj = {
 	gc = 0,
@@ -43,7 +43,7 @@ str = {
 	hash = 9,
 	base = 13,
 }
-func = {
+functy = {
 	gc = 0,
 	type = 4,
 	id = 5,

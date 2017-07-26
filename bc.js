@@ -1074,6 +1074,7 @@ Assembler.prototype.scopeBlock = function(node, nolocal = false) {
 }
 
 function assemble(lx, root) {
+	console.log(root);
 	var asm = new Assembler(lx, 0, false, null);
 	asm.pushScope();
 	asm.nameScope(0, -1); // _ENV

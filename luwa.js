@@ -6,6 +6,21 @@ const lex = require("./lex"),
 
 exports.eval = function(rt, line, e = require("./env")()) {
 	const l = new lex.Lex2(rt, line);
+	console.log(rt.obj2js(l.lex));
+	const a = ast.parse(l);
+	const b = bc.assemble(l, a);
+	const r = runbc.run(b, e);
+	l.free();
+	return r;
+	/*let l = new lex.Lex(line);
+	let a = ast.parse(l);
+	let b = bc.assemble(l, a);
+	return runbc.run(b, e);*/
+}
+
+exports.eval2 = function(line, e = require("./env")()) {
+	const l = new lex.Lex(line);
+	console.log(l.lex);
 	const a = ast.parse(l);
 	const b = bc.assemble(l, a);
 	const r = runbc.run(b, e);

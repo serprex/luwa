@@ -165,7 +165,7 @@ Builder.prototype.skipint = function(lx) {
 	return this;
 }
 Builder.prototype.int = function(lx) {
-	return lx.int(this.li + 1);
+	return lx.int(this.li);
 }
 Builder.prototype.next = function(p) {
 	return new Builder(this.nx, this.nx+1, ~this.type ? this.mother : this, p, -1);
@@ -177,7 +177,7 @@ Builder.prototype.spawn = function(ty, p) {
 function parse(lx) {
 	const root = new Builder(-1, 0, null, null, -2);
 	for (let child of rules[Block](lx, root, root)) {
-		if (child.nx == lx.length()) {
+		if (!lx.val(child.nx)) {
 			do {
 				let father = child.father, prev_father = child;
 				while (father) {

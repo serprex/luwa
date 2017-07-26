@@ -309,15 +309,12 @@ function Lex(src) {
 }
 
 exports.Lex = Lex;
-Lex.prototype.length = function() {
-	return this.lex.length - 1;
-}
 Lex.prototype.val = function(i) {
 	return this.lex[i];
 }
-Lex.prototype.skipint = function(i) {
-	while (this.lex[i++] & 128);
-	return i;
+Lex.prototype.skipint = function(nx) {
+	while (this.lex[nx++] & 128);
+	return nx;
 }
 Lex.prototype.int = function(i) {
 	return util.readvaruint(this.lex, i + 1);
@@ -332,25 +329,33 @@ function Lex2(rt, src) {
 	rt.mod.lex(srcstr.val);
 	rt.free(srcstr);
 	this.rt = rt;
-	this.nums = rt.mkref(rt.mod.nthtmp(1)),
-	this.strs = rt.mkref(rt.mod.nthtmp(2)),
+	this.snr = rt.rawobj2js(rt.mod.nthtmp(1));
+	for (let i = 0; i<this.snr.length; i++) {
+		if (this.snr[i]) {
+			this.snr[i] = this.snr[i][0];
+		}
+	}
+	this.ssr = rt.rawobj2js(rt.mod.nthtmp(2));
+	for (let i = 0; i<this.snr.length; i++) {
+		if (this.ssr[i]) {
+			this.ssr[i] = util.fromUtf8(this.ssr[i]);
+		}
+	}
 	this.lex = rt.mkref(rt.mod.nthtmp(3));
-}
-Lex2.prototype.length = function() {
-	return util.readuint32(new Uint8Array(this.rt.mem.buffer), this.lex.val + 5);
+	rt.mod.tmppop();
+	rt.mod.tmppop();
+	rt.mod.tmppop();
 }
 Lex2.prototype.val = function(i) {
 	return new Uint8Array(this.rt.mem.buffer)[this.lex.val + 13 + i];
 }
 Lex2.prototype.int = function(i) {
-	return util.readuint32(new Uint8Array(this.rt.mem.buffer), this.lex.val + 13 + i);
+	return util.readuint32(new Uint8Array(this.rt.mem.buffer), this.lex.val + 14 + i);
 }
-Lex2.prototype.skipint = function(i) {
-	return i + 4;
+Lex2.prototype.skipint = function(nx) {
+	return nx + 4;
 }
 Lex2.prototype.free = function() {
-	this.rt.free(this.nums);
-	this.rt.free(this.strs);
 	this.rt.free(this.lex);
 }
 exports.Lex2 = Lex2;

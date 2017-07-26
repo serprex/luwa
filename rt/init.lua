@@ -10,7 +10,7 @@ odatastacklen = global(i32, true)
 heaptip = global(i32, true, HEAPBASE + 48 + 48) -- 48 + 48 == allocsize(vec.base + 32) + allocsize(str.base + 32)
 markbit = global(i32, true)
 
-data(4, 0, {
+data(0, 4, {
 	-- nil
 	2, 0, 0, 0,
 	-- false
@@ -20,6 +20,6 @@ data(4, 0, {
 	-- otmpstack = vec(32)
 	0, 0, 0, 0, 6, 32, -- 35 zeroes
 })
-data(HEAPBASE + 48 + 4, 0, {
+data(0, HEAPBASE + 48 + 4, {
 	5, 32, -- 35 zeroes
 })
