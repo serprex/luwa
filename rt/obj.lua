@@ -1,5 +1,4 @@
-eq = func(i32, function(f)
-	local a, b = f:params(i32, i32)
+eq = func(i32, i32, i32, function(f, a, b)
 	local i, j = f:locals(i32, 2)
 	f:load(a)
 	f:i32load8u(obj.type)
@@ -141,8 +140,7 @@ eq = func(i32, function(f)
 	end)
 end)
 
-hash = func(i32, function(f)
-	local o = f:params(i32)
+hash = func(i32, i32, function(f, o)
 	local n, m = f:locals(i32, 2)
 	local h = f:locals(i64, 2)
 	f:block(function(bl3)
@@ -235,41 +233,32 @@ hash = func(i32, function(f)
 	f:i32load(str.hash)
 end)
 
-sizeof = func(i32, function(f)
-	local o = f:params(i32)
-	f:block(function(bl6)
-	f:block(function(bl5)
-	f:block(function(bl4)
-	f:block(function(bl3)
-	f:block(function(bl2)
-	f:block(function(bl1)
-	f:block(function(bl0)
+sizeof = func(i32, i32, function(f, o)
+	f:block(function(blvec)
+	f:block(function(blstr)
+	f:block(function(bl32)
+	f:block(function(bl16)
+	f:block(function(bl8)
 	f:load(o)
 	f:i32load8u(obj.type)
-	f:brtable(bl0, bl1, bl2, bl3, bl4, bl5, bl6)
-	end) -- 0 i64
-	f:i32(16)
-	f:ret()
-	end) -- 1 f64
-	f:i32(16)
-	f:ret()
-	end) -- 2 nil
+	f:brtable(bl16, bl16, bl8, bl8, bl32, blstr, blvec, bl16)
+	end) -- nil, bool
 	f:i32(8)
 	f:ret()
-	end) -- 3 bool
-	f:i32(8)
+	end) -- int, flt, buf
+	f:i32(16)
 	f:ret()
-	end) -- 4 table
+	end) -- tbl
 	f:i32(32)
 	f:ret()
-	end) -- 5 str
+	end) -- str
 	f:load(o)
 	f:i32load(str.len)
 	f:i32(str.base)
 	f:add()
 	f:call(allocsize)
 	f:ret()
-	end) -- 6 vec
+	end) -- vec
 	f:load(o)
 	f:i32load(vec.len)
 	f:i32(vec.base)

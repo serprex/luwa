@@ -6,12 +6,21 @@ otypes = {
 	tbl = 4,
 	str = 5,
 	vec = 6,
-	functy = 7,
+	buf = 7,
+	functy = 8,
 }
 obj = {
 	gc = 0,
 	type = 4,
 }
+num = {
+	gc = 0,
+	type = 4,
+	val = 5,
+}
+int = num
+float = num
+bool = num
 tbl = {
 	gc = 0,
 	type = 4,
@@ -22,26 +31,24 @@ tbl = {
 	hash = 17, -- vec
 	meta = 21, -- tbl
 }
-num = {
-	gc = 0,
-	type = 4,
-	val = 5,
-}
-int = num
-float = num
-bool = num
-vec = {
-	gc = 0,
-	type = 4,
-	len = 5,
-	base = 9,
-}
 str = {
 	gc = 0,
 	type = 4,
 	len = 5,
 	hash = 9,
 	base = 13,
+}
+vec = {
+	gc = 0,
+	type = 4,
+	len = 5,
+	base = 9,
+}
+buf = {
+	gc = 0,
+	type = 4,
+	len = 5,
+	ptr = 9,
 }
 functy = {
 	gc = 0,
@@ -53,8 +60,7 @@ functy = {
 	freelist = 18,
 }
 
-allocsize = func(i32, function(f)
-	local sz = f:params(i32)
+allocsize = func(i32, i32, function(f, sz)
 	f:load(sz)
 	f:i32(7)
 	f:band()
@@ -69,8 +75,7 @@ allocsize = func(i32, function(f)
 	end)
 end)
 
-newobj = func(i32, function(f)
-	local sz, t = f:params(i32, i32)
+newobj = func(i32, i32, i32, function(f, sz, t)
 	local p, ht = f:locals(i32, 2)
 	f:loadg(heaptip)
 	f:tee(p)
@@ -118,8 +123,7 @@ newobj = func(i32, function(f)
 	f:load(p)
 end)
 
-newi64 = export('newi64', func(i32, function(f)
-	local x = f:params(i64)
+newi64 = export('newi64', func(i64, i32, function(f, x)
 	local p = f:locals(i32)
 	f:i32(16)
 	f:i32(otypes.int)
@@ -130,8 +134,7 @@ newi64 = export('newi64', func(i32, function(f)
 	f:load(p)
 end))
 
-newf64 = export('newf64', func(i32, function(f)
-	local x = f:params(f64)
+newf64 = export('newf64', func(f64, i32, function(f, x)
 	local p = f:locals(i32)
 	f:i32(16)
 	f:i32(otypes.float)
@@ -178,8 +181,7 @@ newtable = export('newtable', func(i32, function(f)
 	f:loadg(otmp)
 end))
 
-newstr = export('newstr', func(i32, function(f)
-	local sz = f:params(i32)
+newstr = export('newstr', func(i32, i32, function(f, sz)
 	local p, psz = f:locals(i32, 2)
 	f:i32(13)
 	f:load(sz)
@@ -264,8 +266,7 @@ newstr = export('newstr', func(i32, function(f)
 	f:load(p)
 end))
 
-newvec = export('newvec', func(i32, function(f)
-	local sz = f:params(i32)
+newvec = export('newvec', func(i32, i32, function(f, sz)
 	local p, n = f:locals(i32, 2)
 	f:i32(9)
 	f:load(sz)
@@ -307,4 +308,34 @@ newvec = export('newvec', func(i32, function(f)
 		f:store(n)
 		f:br(loop)
 	end)
+end))
+
+newbuf = func(i32, function(f)
+	local p = f:locals(i32)
+	f:i32(13)
+	f:i32(otypes.buf)
+	f:call(newobj)
+	f:tee(p)
+	f:loadg(otmp)
+	f:i32store(buf.ptr)
+
+	f:load(p)
+	f:i32(0)
+	f:i32store(buf.len)
+
+	f:load(p)
+end)
+
+newstrbuf = export('newstrbuf', func(i32, i32, function(f, sz)
+	f:load(sz)
+	f:call(newstr)
+	f:storeg(otmp)
+	f:call(newbuf)
+end))
+
+newvecbuf = export('newvecbuf', func(i32, i32, function(f, sz)
+	f:load(sz)
+	f:call(newvec)
+	f:storeg(otmp)
+	f:call(newbuf)
 end))

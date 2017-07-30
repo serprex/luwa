@@ -1,10 +1,12 @@
-eval = func(i32, function(f)
-	local base = f:params(i32)
+eval = func(i32, i32, function(f, base)
 	-- stack frame consists of
 	-- tmpstack: locals, frees, consts, bytecode, stack
 	-- datastack: tmpframesz, ispcall?, pc
 
 	f:block(function(nop)
+		f:block(function(opcallret)
+		f:block(function(opcall)
+		f:block(function(opret)
 		f:block(function(opmktab)
 			f:block(function(opnot)
 				f:block(function(opadd)
@@ -20,7 +22,7 @@ eval = func(i32, function(f)
 								f:i32(4)
 								f:add()
 								f:store(pc)
-								f:brtable(nop, oploadnil, oploadfalse, oploadtrue, opadd, opnot, opmktab)
+								f:brtable(nop, oploadnil, oploadfalse, oploadtrue, opadd, opnot, opmktab, opret, opcall, opcallret)
 							end) -- LOAD_NIL
 							f:i32(NIL)
 							f:call(tmppush)
@@ -52,6 +54,15 @@ eval = func(i32, function(f)
 		end) -- MAKE_TABLE
 		f:call(newtable)
 		f:call(tmppush)
+		f:br(nop)
+	end) -- RETURN
+	-- pop stack frame
+		f:br(nop)
+	end) -- CALL
+	-- push stack frame header
+		f:br(nop)
+	end) -- RETURN_CALL
+	-- pop stack frame, then call
 		f:br(nop)
 	end) -- NOP
 

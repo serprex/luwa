@@ -1,5 +1,4 @@
-tabset = export('tabset', func(function(f)
-	local tab, key, val = f:params(i32, i32, i32)
+tabset = export('tabset', func(i32, i32, i32, void, function(f, tab, key, val)
 	local kv, mx = f:locals(i32, 2)
 	f:load(tab)
 	f:storeg(otmp)
@@ -148,8 +147,7 @@ tabset = export('tabset', func(function(f)
 	end)
 end))
 
-tabget = export('tabget', func(i32, function(f)
-	local tab, key = f:params(i32, i32)
+tabget = export('tabget', func(i32, i32, i32, function(f, tab, key)
 	local kv, mx = f:locals(i32, 2)
 	
 	-- H <- (hash(key) % tab.hash.len) & -8

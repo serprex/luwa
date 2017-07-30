@@ -58,21 +58,21 @@ function encode_varuint(dst, val)
 	end
 end
 function encode_f32(dst, val)
-	local repr = string.pack('<f', val)
+	local repr = ('<f'):pack(val)
 	for i = 1, 4 do
-		dst[#dst+1] = string.byte(repr, i)
+		dst[#dst+1] = repr:byte(i)
 	end
 end
 function encode_f64(dst, val)
-	local repr = string.pack('<d', val)
+	local repr = ('<d'):pack(val)
 	for i = 1, 8 do
-		dst[#dst+1] = string.byte(repr, i)
+		dst[#dst+1] = repr:byte(i)
 	end
 end
 function encode_string(dst, str)
 	encode_varuint(dst, #str)
 	for i = 1, #str do
-		dst[#dst+1] = string.byte(str, i)
+		dst[#dst+1] = str:byte(i)
 	end
 end
 function encode_limits(bc, sz, mxsz)
@@ -221,6 +221,7 @@ mkconstop('f32', f32, 0x43, encode_f32)
 mkconstop('f64', f64, 0x44, encode_f64)
 function funcmeta:unreachable()
 	self:emit(0x00)
+	self.polystack = true
 end
 function funcmeta:nop()
 	self:emit(0x01)
@@ -235,16 +236,24 @@ function funcmeta:block(ty, block)
 	end
 	self:emit(0x02)
 	self:emit(tyval)
-	local sclen = #self.stack + 1
+	local sclen = #self.stack
 	self.scope = self.scope + 1
 	block(self.scope)
+	if not self.polystack then
+		if tyval ~= 0x40 then
+			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
+		else
+			assert(#self.stack == sclen)
+		end
+	elseif tyval ~= 0x40 then
+		remove_from(self.stack, sclen + 1)
+		self:push(tyval)
+	else
+		remove_from(self.stack, sclen + 1)
+	end
+	self.polystack = false
 	self:emit(0x0b)
 	self.scope = self.scope - 1
-	self.polystack = false
-	remove_from(self.stack, sclen)
-	if tyval ~= 0x40 then
-		self:push(tyval)
-	end
 end
 function funcmeta:loop(ty, block)
 	local tyty, tyval = type(ty)
@@ -256,16 +265,24 @@ function funcmeta:loop(ty, block)
 	end
 	self:emit(0x03)
 	self:emit(tyval)
-	local sclen = #self.stack + 1
+	local sclen = #self.stack
 	self.scope = self.scope + 1
 	block(self.scope)
+	if not self.polystack then
+		if tyval ~= 0x40 then
+			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
+		else
+			assert(#self.stack == sclen)
+		end
+	elseif tyval ~= 0x40 then
+		remove_from(self.stack, sclen + 1)
+		self:push(tyval)
+	else
+		remove_from(self.stack, sclen + 1)
+	end
+	self.polystack = false
 	self:emit(0x0b)
 	self.scope = self.scope - 1
-	self.polystack = false
-	remove_from(self.stack, sclen)
-	if tyval ~= 0x40 then
-		self:push(tyval)
-	end
 end
 function funcmeta:load(x)
 	self:emit(0x20)
@@ -307,6 +324,7 @@ function funcmeta:select()
 end
 function funcmeta:iff(ty, brif, brelse)
 	local tyty, tyval = type(ty)
+	assert(self:pop() == i32)
 	self:emit(0x04)
 	if tyty == 'number' then
 		tyval = ty
@@ -315,24 +333,51 @@ function funcmeta:iff(ty, brif, brelse)
 		brelse = brif
 		brif = ty
 	end
+	assert(brelse or tyval == 0x40)
 	self:emit(tyval)
 	self.scope = self.scope + 1
 
-	local sclen = #self.stack + 1
+	local sclen = #self.stack
 	brif(self.scope)
+	if not self.polystack then
+		if tyval ~= 0x40 then
+			print(#self.stack, sclen, table.concat(self.stack, ","))
+			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
+		else
+			print(#self.stack, sclen, table.concat(self.stack, ","))
+			assert(#self.stack == sclen)
+		end
+	elseif tyval ~= 0x40 then
+		remove_from(self.stack, sclen + 1)
+		self:push(tyval)
+	else
+		remove_from(self.stack, sclen + 1)
+	end
 	self.polystack = false
-	remove_from(self.stack, sclen)
 	if brelse then
+		if tyval ~= 0x40 then
+			self:pop()
+		end
 		self:emit(0x05)
+		sclen = #self.stack
 		brelse(self.scope)
+		if not self.polystack then
+			if tyval ~= 0x40 then
+				print(#self.stack, sclen, table.concat(self.stack, ","))
+				assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
+			else
+				assert(#self.stack == sclen)
+			end
+		elseif tyval ~= 0x40 then
+			remove_from(self.stack, sclen + 1)
+			self:push(tyval)
+		else
+			remove_from(self.stack, sclen + 1)
+		end
 		self.polystack = false
-		remove_from(self.stack, sclen)
 	end
 	self:emit(0x0b)
 	self.scope = self.scope - 1
-	if tyval ~= 0x40 then
-		self:push(tyval)
-	end
 end
 
 function funcmeta:br(scope)
@@ -341,10 +386,13 @@ function funcmeta:br(scope)
 	return self:emitscope(scope)
 end
 function funcmeta:brif(scope)
+	assert(self:pop() == i32)
 	self:emit(0x0d)
 	return self:emitscope(scope)
 end
 function funcmeta:brtable(...)
+	self.polystack = true
+	assert(self:pop() == i32)
 	self:emit(0x0e)
 	local n = select('#', ...)
 	assert(n > 0)
@@ -354,6 +402,7 @@ function funcmeta:brtable(...)
 	end
 end
 function funcmeta:ret()
+	assert(not self.rety or self.rety == 0x40 or self.stack[#self.stack] == self.rety)
 	self.polystack = true
 	self:emit(0x0f)
 end
@@ -383,9 +432,7 @@ end
 local function mkunop(name, tymap, tyret)
 	funcmeta[name] = function(self)
 		local a = self:pop()
-		if not a then
-			return error('Stack underflow')
-		end
+		assert(a, 'Stack underflow')
 		return mkopcore(self, name, tymap, a, tyret)
 	end
 end
@@ -523,6 +570,7 @@ function funcmeta:call(f)
 	self:emit(0x10)
 	if getmetatable(f) == funcmt then
 		self:emituint(Mod.impfid + f.id)
+		print(f, f.pcount, f.rety)
 		for i = 1, f.pcount do
 			assert(self:pop() == f.localty[f.pcount-i+1])
 		end
@@ -541,8 +589,19 @@ function funcmeta:call(f)
 	end
 end
 
-function func(rety, bgen)
-	local sig
+function func(...)
+	local sig, params, rety, bgen
+	local params = {}
+	local n = select('#', ...)
+	bgen = select(n, ...)
+	if n == 1 then
+		rety = void
+	else
+		rety = select(n-1, ...)
+		for i=1, n-2 do
+			params[i] = select(i, ...)
+		end
+	end
 	if not bgen then
 		bgen = rety
 		rety = void
@@ -555,10 +614,10 @@ function func(rety, bgen)
 	-- takes out scope/stack/polystack
 	local f = setmetatable({
 		rety = rety,
-		localty = {},
+		localty = params,
 		localbc = {},
 		localbcn = 0,
-		pcount = 0,
+		pcount = #params,
 		sig = sig,
 		bcode = {},
 		scope = 0,
@@ -632,8 +691,8 @@ end
 
 -- Data
 
-function data(idx, offexpr, data)
-	Mod.data[#Mod.data+1] = { idx = idx, offexpr = offexpr, data = data }
+function data(mem, offexpr, data)
+	Mod.data[#Mod.data+1] = { memid = mem.id, offexpr = offexpr, data = data }
 end
 
 -- Main
@@ -675,7 +734,11 @@ end
 
 for i = 1, #Mod.func do
 	local fu = Mod.func[i]
-	fu:bgen()
+	local params = {}
+	for i=1, fu.pcount do
+		params[i] = i
+	end
+	fu:bgen(table.unpack(params))
 	local fty = {}
 	for i = 1, fu.pcount do
 		fty[i] = fu.localty[i]
@@ -808,7 +871,7 @@ loopSection(10, Mod.func, function(bc, fu)
 end)
 
 loopSection(11, Mod.data, function(bc, data)
-	encode_varuint(bc, data.idx)
+	encode_varuint(bc, data.memid)
 	if type(data.offexpr) == 'number' then
 		bc[#bc+1] = 0x41
 		encode_varint(bc, data.offexpr)
