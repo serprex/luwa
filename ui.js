@@ -53,9 +53,9 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 			"local y = 'x' + 'z' + 'z' + [[z]] + [=[x]=];" +
 			"return 'a\\na'");
 		rt.mod.lex(codestr.val);
-		let lexstr = rt.mkref(rt.mod.nthtmp(3));
-		let svec = rt.mkref(rt.mod.nthtmp(2));
-		let nvec = rt.mkref(rt.mod.nthtmp(1));
+		let lexstr = rt.mkref(rt.mod.nthtmp(12));
+		let svec = rt.mkref(rt.mod.nthtmp(8));
+		let nvec = rt.mkref(rt.mod.nthtmp(4));
 		rt.mod.tmppop();
 		rt.mod.tmppop();
 		rt.mod.tmppop();

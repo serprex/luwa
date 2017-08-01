@@ -329,19 +329,19 @@ function Lex2(rt, src) {
 	rt.mod.lex(srcstr.val);
 	rt.free(srcstr);
 	this.rt = rt;
-	this.snr = rt.rawobj2js(rt.mod.nthtmp(1));
+	this.snr = rt.rawobj2js(rt.mod.nthtmp(4));
 	for (let i = 0; i<this.snr.length; i++) {
 		if (this.snr[i]) {
 			this.snr[i] = this.snr[i][0];
 		}
 	}
-	this.ssr = rt.rawobj2js(rt.mod.nthtmp(2));
+	this.ssr = rt.rawobj2js(rt.mod.nthtmp(8));
 	for (let i = 0; i<this.snr.length; i++) {
 		if (this.ssr[i]) {
 			this.ssr[i] = util.fromUtf8(this.ssr[i]);
 		}
 	}
-	this.lex = rt.mkref(rt.mod.nthtmp(3));
+	this.lex = rt.mkref(rt.mod.nthtmp(12));
 	rt.mod.tmppop();
 	rt.mod.tmppop();
 	rt.mod.tmppop();
