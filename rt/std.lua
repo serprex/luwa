@@ -1,7 +1,7 @@
-pcall = func(i32, i32, i32, i32, function(f, stack, base, retc)
+pcall = func(i32, i32, i32, i32, function(f, stack)
 	-- > func, p1, p2, ...
 	-- < true, p1, p2, ...
-	-- push to datastack: 2, 0, retc, base+1, 0
+	-- modify datastack: 2, 0, framesz, retc, base+1
 	f:load(stack)
 	f:i32load(buf.ptr)
 	f:load(base)
@@ -9,8 +9,6 @@ pcall = func(i32, i32, i32, i32, function(f, stack, base, retc)
 	f:i32(TRUE)
 	f:i32store(vec.base)
 
-	f:i32(13)
-	f:call(alloca)
 	f:loadg(odatastack)
 	f:loadg(odatastacklen)
 	f:add()

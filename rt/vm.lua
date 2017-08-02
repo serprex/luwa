@@ -1,38 +1,46 @@
 --[[
 VM needs to support both coroutines & yielding to JS thread at frequent intervals
 
-stack frame consists of
-tmpstack: locals, frees, consts, bc, stack
-datastack: callty, pc, retc, base, pc
-
-callty is
-0 norm Reload locals
-1 init Return stack
-2 prot Reload locals
-3 call Continue call chain
+stack frame layout:
+objstack (none of these are allocated at call sites)
+	bytecode
+	intermediate stack (return values are intemediates)
+	consts
+	frees (free slots are vecs of length 1)
+	locals... store local slots inline on stack frame
+	datastack 17b blocks per call
+		i8 call type
+			0 norm Reload locals
+			1 init Return stack
+			2 prot Reload locals
+			3 call Continue call chain
+			4 push Append intermediates to table
+		i32 pc
+		i32 frame size
+		i32 retc
+			# of values requested from call (-1 for chained calls)
+		i32 base
+			index of parameter 0 on intermediate stack
 
 pcall sets up stack frame & returns control to calling VM loop. No nested VM loops
 ]]
 
-eval = func(i32, i32, function(f)
+eval = func(i32, i32, i32, function(f)
 	local a, b = f:locals(i32, 2)
-	local locals, frees, consts, bc, stack, ispcall, pc = f:locals(i32, 8)
+	local locals, frees, consts, bc, stack, datastack, ispcall, pc = f:locals(i32, 9)
 
-	f:loadg(odatastack)
-	f:loadg(odatastacklen)
+	f:loadg(oluastack)
+	f:i32load(buf.ptr)
+	f:store(a)
+	f:loadg(oluastack)
+	f:i32load(buf.len)
+	f:store(b)
+
+	f:load(a)
+	f:load(b)
 	f:add()
-	f:i32load(str.base - 4)
-	f:store(pc)
-
-	f:i32(4)
-	f:call(nthtmp)
-	f:store(stack)
-	f:i32(8)
-	f:call(nthtmp)
-	f:store(bc)
-	f:i32(12)
-	f:call(nthtmp)
-	f:store(consts)
+	f:i32load(vec.base - 4)
+	f:store(datastack)
 
 	f:block(function(nop)
 		f:block(function(opconst)

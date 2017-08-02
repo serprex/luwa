@@ -8,6 +8,7 @@ otypes = {
 	vec = 6,
 	buf = 7,
 	functy = 8,
+	coroty = 9,
 }
 obj = {
 	gc = 0,
@@ -58,6 +59,13 @@ functy = {
 	bc = 13,
 	isdotdotdot = 17,
 	freelist = 18,
+}
+coro = {
+	gc = 0,
+	type = 4,
+	id = 5,
+	state = 9,
+	stack = 13,
 }
 
 allocsize = func(i32, i32, function(f, sz)

@@ -17,6 +17,8 @@ gccollect = func(function(f)
 	f:call(gcmark)
 	f:loadg(odatastack)
 	f:call(gcmark)
+	f:loadg(oluastack)
+	f:call(gcmark)
 
 	f:call(igcmark)
 
@@ -71,6 +73,12 @@ gccollect = func(function(f)
 	f:i32(-8)
 	f:band()
 	f:storeg(odatastack)
+
+	f:loadg(oluastack)
+	f:i32load(obj.gc)
+	f:i32(-8)
+	f:band()
+	f:storeg(oluastack)
 
 	f:i32(0)
 	f:store(livetip)
