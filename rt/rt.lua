@@ -12,6 +12,24 @@ markbit = global(i32, true)
 
 memory = importmemory('', 'm', 1)
 
+--[[TODO
+Builtin's need these strings as global constants:
+(some may only be needed for compare-- may specialize)
+math.type: float integer
+corountine.status: running suspended normal dead
+type: nil number string boolean table function thread userdata
+select: #
+load: b t bt
+gc: collect stop restart count step setpause setstepmul isrunning
+os.execute: exit, signal
+io.seek: set cur end
+io.setvbuf: no full line
+io.type: file 'closed file'
+closed file
+io.read: n a l L
+io.open: r w r+ w+ a+
+]]
+
 data(memory, 4, {
 	-- nil
 	2, 0, 0, 0,

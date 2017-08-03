@@ -11,6 +11,8 @@ function string.len(s)
 	return #s
 end
 
+utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
+
 function table.pack(...)
 	return { n = select('#', ...), ... }
 end
@@ -105,7 +107,25 @@ function table.sort(list, comp)
 	end
 end
 
+function io.read(...)
+	return io.input():read(...)
+end
+
+function os.difftime(t2, t1)
+	return t2 - t1
+end
+function os.setlocal(locale)
+	if not locale or locale == "" then
+		return "C"
+	else
+		return nil
+	end
+end
+
 function assert(v, message, ...)
+	if not message then
+		message = "assertion failed!"
+	end
 	if v then
 		return error(message, 2)
 	else
