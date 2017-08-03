@@ -138,3 +138,21 @@ end
 function ipairs(t)
 	return inext, t, 0
 end
+
+local function xpcallguard(res, ...)
+	if res then
+		return ...
+	else
+		return 'error in error handling'
+	end
+end
+local function xpcallcore(msgh, res, ...)
+	if res then
+		return true, ...
+	else
+		return false, xpcallguard(pcall(msgh, ...))
+	end
+end
+function xpcall(f, msgh, ...)
+	return xpcallcore(msgh, pcall(f, ...))
+end

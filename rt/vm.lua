@@ -3,8 +3,8 @@ VM needs to support both coroutines & yielding to JS thread at frequent interval
 
 stack frame layout:
 
-objstack (none of these are allocated at call sites)
-	0: intermediate stack (return values are intemediates)
+intermediate stack buf
+objstack... (none of these are allocated at call sites)
 	bytecode
 	consts
 	frees (free slots are vecs of length 1)
@@ -12,7 +12,7 @@ objstack (none of these are allocated at call sites)
 	datastack 17b blocks per call
 		i8 call type
 			0 norm Reload locals
-			1 init Return stack
+			1 init Return stack to coro src (src nil for main thread)
 			2 prot Reload locals
 			3 call Continue call chain
 			4 push Append intermediates to table
