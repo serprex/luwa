@@ -138,7 +138,7 @@ pushvec = func(i32, i32, i32, function(f, dst, o)
 	f:load(dst)
 end)
 
-popvec = func(i32, void, function(f, box)
+popvec = func(i32, i32, function(f, box)
 	local len = f:locals(i32)
 	f:load(box)
 	f:load(box)
@@ -152,9 +152,47 @@ popvec = func(i32, void, function(f, box)
 	f:i32load(buf.ptr)
 	f:load(len)
 	f:add()
+	f:tee(len)
+	f:i32load(vec.base)
+	f:load(len)
 	f:i32(NIL)
 	f:i32store(vec.base)
 end)
+
+peekvec = func(i32, i32, i32, function(f, box, n)
+	local len = f:locals(i32)
+	f:load(box)
+	f:i32load(buf.ptr)
+	f:load(box)
+	f:i32load(buf.len)
+	f:load(n)
+	f:sub()
+	f:add()
+	f:i32load(vec.base)
+end)
+
+function loadvecminus(f, x)
+	if x >= vec.base then
+		f:i32load(vec.base - x)
+	else
+		f:i32(x)
+		f:sub()
+		f:i32load(vec.base)
+	end
+end
+
+function loadstrminus(f, x, meth)
+	if not meth then
+		meth = 'i32load'
+	end
+	if x >= str.base then
+		f[meth](f, str.base - x)
+	else
+		f:i32(x)
+		f:sub()
+		f[meth](f, str.base)
+	end
+end
 
 local mkhole = func(i32, i32, void, function(f, start, len)
 	f:load(len)

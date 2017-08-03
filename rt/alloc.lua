@@ -65,7 +65,8 @@ coro = {
 	type = 4,
 	id = 5,
 	state = 9,
-	stack = 13,
+	srcstack = 13,
+	dststack = 17,
 }
 
 allocsize = func(i32, i32, function(f, sz)
