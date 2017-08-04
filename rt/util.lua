@@ -180,7 +180,6 @@ function loadvecminus(f, x)
 		f:i32load(vec.base)
 	end
 end
-
 function loadstrminus(f, x, meth)
 	if not meth then
 		meth = 'i32load'
