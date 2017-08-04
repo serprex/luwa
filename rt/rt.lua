@@ -5,6 +5,7 @@ HEAPBASE = 24
 otmp = global(i32, true)
 otmpstack = global(i32, true, HEAPBASE)
 otmpstacklen = global(i32, true)
+odatastack = global(i32, true, HEAPBASE + 48)
 odatastacklen = global(i32, true)
 oluastack = global(i32, true) -- default to NIL
 heaptip = global(i32, true, HEAPBASE + 48 + 48) -- 48 + 48 == allocsize(vec.base + 32) + allocsize(str.base + 32)

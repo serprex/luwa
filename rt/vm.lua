@@ -24,19 +24,10 @@ objstack... (none of these are allocated at call sites)
 pcall sets up stack frame & returns control to calling VM loop. No nested VM loops
 ]]
 
-local readArgFunc = func(i32, i32, i32, function(f, bc, pc)
-	f:load(bc)
-	f:load(pc)
-	f:add()
-	f:i32load(str.base)
-	f:load(pc)
-	f:i32(4)
-	f:add()
-end)
-
 eval = func(i32, i32, i32, function(f)
-	local a, b, c, d, datastack, baseptr, valstack, valvec,
-		callty, pc, localc, retc, base = f:locals(i32, 7+5)
+	local a, b, c, d,
+		datastack, bc, baseptr, valstack, valvec,
+		callty, pc, localc, retc, base = f:locals(i32, 4+5+5)
 	local offBc, offConst, offFree, offLocal = 0, 4, 8, 12
 
 	local function loadframe()
@@ -69,13 +60,17 @@ eval = func(i32, i32, i32, function(f)
 		f:store(pc)
 
 		f:load(c)
-		loadstrminus(f, 17, 'i32load8')
+		loadstrminus(f, 17, 'i32load8u')
 		f:store(callty)
 	end
 	local function readArg()
 		f:load(bc)
 		f:load(pc)
-		f:call(readArgFunc)
+		f:add()
+		f:i32load(str.base)
+		f:load(pc)
+		f:i32(4)
+		f:add()
 		f:store(pc)
 	end
 
@@ -92,6 +87,7 @@ eval = func(i32, i32, i32, function(f)
 		f:block(function(optabset)
 		f:block(function(opmktab)
 			f:block(function(opnot)
+				f:block(function(opidx)
 				f:block(function(opadd)
 					f:block(function(oploadtrue)
 						f:block(function(oploadfalse)
@@ -116,7 +112,7 @@ eval = func(i32, i32, i32, function(f)
 								f:i32(1)
 								f:add()
 								f:store(pc)
-								f:brtable(nop, oploadnil, oploadfalse, oploadtrue, opadd, opnot, opmktab, optabset, optabset, opret, opcall, opcallret, opconst, oploadlocal, opstorelocal)
+								f:brtable(nop, oploadnil, oploadfalse, oploadtrue, opadd, opidx, opnot, opmktab, optabset, optabset, opret, opcall, opcallret, opconst, oploadlocal, opstorelocal)
 							end) -- LOAD_NIL
 							f:load(valstack)
 							f:i32(NIL)
@@ -136,6 +132,11 @@ eval = func(i32, i32, i32, function(f)
 					f:drop()
 					f:br(nop)
 				end) -- BIN_ADD
+				-- pop x, y
+				-- metacheck
+				-- typecheck
+				f:br(nop)
+				end) -- BIN_IDX
 				-- pop x, y
 				-- metacheck
 				-- typecheck
@@ -274,6 +275,7 @@ eval = func(i32, i32, i32, function(f)
 					f:loop(function(loop)
 						f:load(valstack)
 						f:call(popvec)
+						f:drop()
 						f:load(b)
 						f:i32(1)
 						f:sub()
@@ -302,7 +304,7 @@ eval = func(i32, i32, i32, function(f)
 			-- LOADFRAME
 			f:br(nop)
 		end) -- endprog
-		f:load(stack)
+		f:load(valstack)
 		f:ret()
 	end) -- CALL
 	-- push stack frame header
