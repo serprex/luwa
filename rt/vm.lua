@@ -56,8 +56,10 @@ eval = func(i32, i32, i32, function(f)
 	local function loadframe()
 		f:loadg(oluastack)
 		f:i32load(buf.ptr)
+		f:tee(c)
 		f:i32load(vec.base + 4)
 		f:tee(datastack)
+		f:load(c)
 		f:i32load(buf.len)
 		f:add()
 		f:tee(c)
@@ -210,6 +212,7 @@ eval = func(i32, i32, i32, function(f)
 										f:loadg(oluastack)
 										f:i32load(buf.ptr)
 										f:i32load(vec.base + 4)
+										f:i32(17)
 										f:call(extendstr)
 										-- defer until writedataframe
 
@@ -238,7 +241,7 @@ eval = func(i32, i32, i32, function(f)
 
 										f:load(d)
 										f:load(c)
-										f:i32load(func.frees)
+										f:i32load(functy.frees)
 										f:i32store(vec.base + 8)
 
 										-- write dataframe
