@@ -590,25 +590,25 @@ function funcmeta:call(f)
 end
 
 function func(...)
-	local sig, params, rety, bgen
-	local params = {}
+	local rety
+	local params, fty = {}, {}
 	local n = select('#', ...)
-	bgen = select(n, ...)
+	local bgen = select(n, ...)
 	if n == 1 then
 		rety = void
 	else
 		rety = select(n-1, ...)
 		for i=1, n-2 do
-			params[i] = select(i, ...)
+			local t = select(i, ...)
+			params[i] = t
+			fty[i] = t
 		end
 	end
 	if not bgen then
 		bgen = rety
 		rety = void
-		sig = ""
-	else
-		sig = rety .. ""
 	end
+	fty[#fty+1] = rety
 	-- TODO create a separate context object
 	-- which will be used for calling block
 	-- takes out scope/stack/polystack
@@ -618,14 +618,13 @@ function func(...)
 		localbc = {},
 		localbcn = 0,
 		pcount = #params,
-		sig = sig,
 		bcode = {},
 		scope = 0,
 		stack = {},
 		polystack = false, -- TODO polystack should work with unreachable scopes (eg block i32 ret loop i64 end end)
 		bgen = bgen,
 		id = Mod.fid,
-		tid = -1,
+		tid = Mod:decltype(fty),
 	}, funcmt)
 	Mod.fid = Mod.fid + 1
 	push(Mod.func, f)
@@ -732,27 +731,6 @@ local function loopSection(id, elems, bcfu)
 	end
 end
 
-for i = 1, #Mod.func do
-	local fu = Mod.func[i]
-	local params = {}
-	for i=1, fu.pcount do
-		params[i] = i
-	end
-	fu:bgen(table.unpack(params))
-	local fty = {}
-	for i = 1, fu.pcount do
-		fty[i] = fu.localty[i]
-	end
-	local rety
-	if not fu.rety then
-		rety = void
-	else
-		rety = fu.rety
-	end
-	fty[#fty+1] = rety
-	fu.tid = Mod:decltype(fty)
-end
-
 loopSection(1, Mod.type, function(bc, ty)
 	bc[#bc+1] = 0x60
 	if #ty == 0 then
@@ -853,6 +831,12 @@ if Mod.start then
 end
 
 loopSection(10, Mod.func, function(bc, fu)
+	local params = {}
+	for i=1, fu.pcount do
+		params[i] = i
+	end
+	fu:bgen(table.unpack(params))
+
 	local fc = {}
 	encode_varuint(fc, fu.localbcn)
 	for j=1, #fu.localbc do

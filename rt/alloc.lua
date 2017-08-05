@@ -55,10 +55,11 @@ functy = {
 	gc = 0,
 	type = 4,
 	id = 5,
-	consts = 9,
-	bc = 13,
+	bc = 9,
+	consts = 13,
 	isdotdotdot = 17,
-	freelist = 18,
+	frees = 18,
+	localc = 22,
 }
 coro = {
 	gc = 0,

@@ -4,23 +4,23 @@ VM needs to support both coroutines & yielding to JS thread at frequent interval
 stack frame layout:
 
 intermediate stack buf
+datastack 17b blocks per call
+	i8 call type
+		0 norm Reload locals
+		1 init Return stack to coro src (src nil for main thread)
+		2 prot Reload locals
+		3 call Continue call chain
+		4 push Append intermediates to table
+		5 bool Cast result to bool
+	i32 pc
+	i32 localc # of locals
+	i32 retc # of values requested from call (-1 for chained calls)
+	i32 base index of parameter 0 on intermediate stack
 objstack... (none of these are allocated at call sites)
 	bytecode
 	consts
 	frees (free slots are vecs of length 1)
 	locals... store local slots inline on stack frame
-	datastack 17b blocks per call
-		i8 call type
-			0 norm Reload locals
-			1 init Return stack to coro src (src nil for main thread)
-			2 prot Reload locals
-			3 call Continue call chain
-			4 push Append intermediates to table
-			5 bool Cast result to bool
-		i32 pc
-		i32 localc # of locals
-		i32 retc # of values requested from call (-1 for chained calls)
-		i32 base index of parameter 0 on intermediate stack
 
 pcall sets up stack frame & returns control to calling VM loop. No nested VM loops
 ]]
@@ -34,14 +34,8 @@ eval = func(i32, i32, i32, function(f)
 	local function loadframe()
 		f:loadg(oluastack)
 		f:i32load(buf.ptr)
-		f:loadg(oluastack)
-		f:i32load(buf.len)
-		f:add()
-		f:tee(a)
-		loadvecminus(f, 4)
+		f:i32load(vec.base + 4)
 		f:tee(datastack)
-		f:i32load(buf.ptr)
-		f:load(datastack)
 		f:i32load(buf.len)
 		f:add()
 		f:tee(c)
@@ -172,9 +166,40 @@ eval = func(i32, i32, i32, function(f)
 								f:iff(function()
 									f:load(c)
 									f:i32(0) -- TODO "__eq"
-									f:call(tblget)
+									f:call(tabget)
+									f:tee(d)
 									f:iff(function()
-										-- PUSHFRAME(tbl.meta) 
+										-- bc consts
+										f:load(d)
+										-- TODO otmp invalidated by vecextend
+										f:storeg(otmp)
+										f:loadg(oluastack)
+										f:i32load(buf.len)
+										f:store(a)
+										f:loadg(oluastack)
+										f:i32(16)
+										f:load(d)
+										f:i32load(functy.localc)
+										f:i32(2)
+										f:shl()
+										f:tee(c)
+										f:add()
+										f:call(vecextend)
+										f:i32load(buf.ptr)
+										f:load(a)
+										f:add()
+										f:tee(d)
+										assert(functy.consts == functy.bc + 4)
+										f:loadg(otmp)
+										f:i64load(functy.bc)
+										f:i64store(vec.base)
+
+										f:load(d)
+										f:loadg(otmp)
+										f:i32load(func.frees)
+										f:i32store(vec.base + 8)
+
+										-- TODO push datastack
 										f:br(resmeta)
 									end)
 								end)
