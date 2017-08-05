@@ -191,10 +191,7 @@ eval = func(i32, i32, i32, function(f)
 									f:call(tabget)
 									f:tee(d)
 									f:iff(function()
-										-- bc consts
-										f:load(d)
-										-- TODO otmp invalidated by extendvec
-										f:storeg(otmp)
+										-- push objframe
 										f:loadg(oluastack)
 										f:i32load(buf.len)
 										f:store(a)
@@ -207,25 +204,44 @@ eval = func(i32, i32, i32, function(f)
 										f:tee(c)
 										f:add()
 										f:call(extendvec)
-										f:i32load(buf.ptr)
-										f:load(a)
-										f:add()
-										f:tee(d)
-										assert(functy.consts == functy.bc + 4)
-										f:loadg(otmp)
-										f:i64load(functy.bc)
-										f:i64store(vec.base)
-
-										f:load(d)
-										f:loadg(otmp)
-										f:i32load(func.frees)
-										f:i32store(vec.base + 8)
+										f:drop()
 
 										-- push dataframe
 										f:loadg(oluastack)
 										f:i32load(buf.ptr)
 										f:i32load(vec.base + 4)
 										f:call(extendstr)
+										-- defer until writedataframe
+
+										-- writeobjframe
+										f:loadg(oluastack)
+										f:i32load(buf.ptr)
+										f:tee(c)
+										f:load(a)
+										f:add()
+										f:tee(d)
+										assert(functy.consts == functy.bc + 4)
+
+										-- reload metafunc
+										f:load(c)
+										f:i32load(vec.base)
+										f:tee(c)
+										f:load(c)
+										f:i32load(buf.ptr)
+										f:i32load(buf.len)
+										f:add()
+										loadvecminus(f, 4)
+										f:i32load(tbl.meta)
+										f:tee(c)
+										f:i64load(functy.bc)
+										f:i64store(vec.base)
+
+										f:load(d)
+										f:load(c)
+										f:i32load(func.frees)
+										f:i32store(vec.base + 8)
+
+										-- write dataframe
 										f:tee(datastack)
 										f:load(datastack)
 										f:i32load(buf.ptr)
@@ -246,7 +262,7 @@ eval = func(i32, i32, i32, function(f)
 										f:load(d)
 										f:i32(17 - dataframe.localc)
 										f:sub()
-										f:loadg(otmp)
+										f:load(c)
 										f:i32load(functy.localc)
 										f:i32store(str.base)
 
