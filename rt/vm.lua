@@ -25,6 +25,28 @@ objstack... (none of these are allocated at call sites)
 pcall sets up stack frame & returns control to calling VM loop. No nested VM loops
 ]]
 
+calltypes = {
+	norm = 0, -- Reload locals
+	init = 1, -- Return stack to coro src, src nil for main
+	prot = 2, -- Reload locals
+	call = 3, -- Continue call chain
+	push = 4, -- Append intermediates to table
+	bool = 5, -- Cast result to bool
+}
+dataframe = {
+	type = 0,
+	pc = 1,
+	localc = 5, -- # of locals
+	retc = 9, -- # of values requested from call, -1 for no limit
+	base = 13, -- index of parameter 0 on intermediate stack
+}
+objframe = {
+	bytecode = 8,
+	consts = 12,
+	frees = 16,
+	locals = 20,
+}
+
 eval = func(i32, i32, i32, function(f)
 	local a, b, c, d,
 		datastack, bc, baseptr, valstack, valvec,
@@ -171,7 +193,7 @@ eval = func(i32, i32, i32, function(f)
 									f:iff(function()
 										-- bc consts
 										f:load(d)
-										-- TODO otmp invalidated by vecextend
+										-- TODO otmp invalidated by extendvec
 										f:storeg(otmp)
 										f:loadg(oluastack)
 										f:i32load(buf.len)
@@ -184,7 +206,7 @@ eval = func(i32, i32, i32, function(f)
 										f:shl()
 										f:tee(c)
 										f:add()
-										f:call(vecextend)
+										f:call(extendvec)
 										f:i32load(buf.ptr)
 										f:load(a)
 										f:add()
@@ -199,7 +221,52 @@ eval = func(i32, i32, i32, function(f)
 										f:i32load(func.frees)
 										f:i32store(vec.base + 8)
 
-										-- TODO push datastack
+										-- push dataframe
+										f:loadg(oluastack)
+										f:i32load(buf.ptr)
+										f:i32load(vec.base + 4)
+										f:call(extendstr)
+										f:tee(datastack)
+										f:load(datastack)
+										f:i32load(buf.ptr)
+										f:i32load(buf.len)
+										f:add()
+										f:tee(d)
+										f:i32(17 - dataframe.type)
+										f:sub()
+										f:i32(calltypes.bool)
+										f:i32store8(str.base)
+
+										f:load(d)
+										f:i32(17 - dataframe.pc)
+										f:sub()
+										f:i32(0)
+										f:i32store(str.base)
+
+										f:load(d)
+										f:i32(17 - dataframe.localc)
+										f:sub()
+										f:loadg(otmp)
+										f:i32load(functy.localc)
+										f:i32store(str.base)
+
+										f:load(d)
+										f:i32(17 - dataframe.retc)
+										f:sub()
+										f:i32(1)
+										f:i32store()
+
+										f:load(d)
+										f:i32(17 - dataframe.base)
+										f:sub()
+										f:loadg(oluastack)
+										f:i32load(buf.ptr)
+										f:i32load(vec.base)
+										f:i32load(buf.len)
+										f:i32(2)
+										f:sub()
+										f:i32store()
+
 										f:br(resmeta)
 									end)
 								end)
