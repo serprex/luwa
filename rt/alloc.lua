@@ -1,4 +1,4 @@
-otypes = {
+types = {
 	int = 0,
 	float = 1,
 	['nil'] = 2,
@@ -8,23 +8,19 @@ otypes = {
 	vec = 6,
 	buf = 7,
 	functy = 8,
-	coroty = 9,
+	coro = 9,
 }
 obj = {
 	gc = 0,
 	type = 4,
 }
 num = {
-	gc = 0,
-	type = 4,
 	val = 5,
 }
 int = num
 float = num
 bool = num
 tbl = {
-	gc = 0,
-	type = 4,
 	-- TODO id = 5,
 	len = 5,
 	hlen = 9,
@@ -33,27 +29,19 @@ tbl = {
 	meta = 21, -- tbl
 }
 str = {
-	gc = 0,
-	type = 4,
 	len = 5,
 	hash = 9,
 	base = 13,
 }
 vec = {
-	gc = 0,
-	type = 4,
 	len = 5,
 	base = 9,
 }
 buf = {
-	gc = 0,
-	type = 4,
 	len = 5,
 	ptr = 9,
 }
 functy = {
-	gc = 0,
-	type = 4,
 	id = 5,
 	bc = 9,
 	consts = 13,
@@ -62,12 +50,12 @@ functy = {
 	localc = 22,
 }
 coro = {
-	gc = 0,
-	type = 4,
 	id = 5,
 	state = 9,
-	srcstack = 13,
-	dststack = 17,
+	caller = 10,
+	stack = 14,
+	data = 18,
+	obj = 22,
 }
 
 allocsize = func(i32, i32, function(f, sz)
@@ -136,7 +124,7 @@ end)
 newi64 = export('newi64', func(i64, i32, function(f, x)
 	local p = f:locals(i32)
 	f:i32(16)
-	f:i32(otypes.int)
+	f:i32(types.int)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
@@ -147,7 +135,7 @@ end))
 newf64 = export('newf64', func(f64, i32, function(f, x)
 	local p = f:locals(i32)
 	f:i32(16)
-	f:i32(otypes.float)
+	f:i32(types.float)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
@@ -158,7 +146,7 @@ end))
 newtable = export('newtable', func(i32, function(f)
 	local p = f:locals(i32)
 	f:i32(32)
-	f:i32(otypes.tbl)
+	f:i32(types.tbl)
 	f:call(newobj)
 	f:storeg(otmp)
 
@@ -197,7 +185,7 @@ newstr = export('newstr', func(i32, i32, function(f, sz)
 	f:load(sz)
 	f:add()
 	f:call(allocsize)
-	f:i32(otypes.str)
+	f:i32(types.str)
 	f:call(newobj)
 	f:tee(p)
 	f:load(sz)
@@ -282,7 +270,7 @@ newvec = export('newvec', func(i32, i32, function(f, sz)
 	f:load(sz)
 	f:add()
 	f:call(allocsize)
-	f:i32(otypes.vec)
+	f:i32(types.vec)
 	f:call(newobj)
 	f:tee(p)
 	f:load(sz)
@@ -323,7 +311,7 @@ end))
 newbuf = func(i32, function(f)
 	local p = f:locals(i32)
 	f:i32(13)
-	f:i32(otypes.buf)
+	f:i32(types.buf)
 	f:call(newobj)
 	f:tee(p)
 	f:loadg(otmp)

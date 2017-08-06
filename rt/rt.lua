@@ -26,7 +26,6 @@ os.execute: exit, signal
 io.seek: set cur end
 io.setvbuf: no full line
 io.type: file 'closed file'
-closed file
 io.read: n a l L
 io.open: r w r+ w+ a+
 metamethods: index newindex mode call metatable tostring len gc eq lt le

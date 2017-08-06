@@ -3,6 +3,7 @@ VM needs to support both coroutines & yielding to JS thread at frequent interval
 
 stack frame layout:
 
+coroid
 intermediate stack buf
 datastack 17b blocks per call
 	i8 call type
@@ -34,17 +35,17 @@ calltypes = {
 	bool = 5, -- Cast result to bool
 }
 dataframe = {
-	type = 0,
-	pc = 1,
-	localc = 5, -- # of locals
-	retc = 9, -- # of values requested from call, -1 for no limit
-	base = 13, -- index of parameter 0 on intermediate stack
+	type = str.base + 0,
+	pc = str.base + 1,
+	localc = str.base + 5, -- # of locals
+	retc = str.base + 9, -- # of values requested from call, -1 for no limit
+	base = str.base + 13, -- index of parameter 0 on intermediate stack
 }
 objframe = {
-	bytecode = 8,
-	consts = 12,
-	frees = 16,
-	locals = 20,
+	bc = vec.base + 0,
+	consts = vec.base + 4,
+	frees = vec.base + 8,
+	locals = vec.base + 16,
 }
 
 eval = func(i32, i32, i32, function(f)
@@ -53,32 +54,31 @@ eval = func(i32, i32, i32, function(f)
 		callty, pc, localc, retc, base = f:locals(i32, 4+5+5)
 	local offBc, offConst, offFree, offLocal = 0, 4, 8, 12
 
-	local function loadframe()
+	local function loadframe(tmp)
 		f:loadg(oluastack)
-		f:i32load(buf.ptr)
-		f:tee(c)
-		f:i32load(vec.base + 4)
+		f:i32load(coro.data)
 		f:tee(datastack)
-		f:load(c)
+		f:load(datastack)
+		f:i32load(buf.ptr)
 		f:i32load(buf.len)
 		f:add()
-		f:tee(c)
+		f:tee(tmp)
 		loadstrminus(f, 4)
 		f:store(base)
 
-		f:load(c)
+		f:load(tmp)
 		loadstrminus(f, 8)
 		f:store(retc)
 
-		f:load(c)
+		f:load(tmp)
 		loadstrminus(f, 12)
 		f:store(localc)
 
-		f:load(c)
+		f:load(tmp)
 		loadstrminus(f, 16)
 		f:store(pc)
 
-		f:load(c)
+		f:load(tmp)
 		loadstrminus(f, 17, 'i32load8u')
 		f:store(callty)
 	end
@@ -93,7 +93,7 @@ eval = func(i32, i32, i32, function(f)
 		f:store(pc)
 	end
 
-	loadframe()
+	loadframe(c)
 
 	f:block(function(nop)
 		f:block(function(opstorelocal)
@@ -112,18 +112,21 @@ eval = func(i32, i32, i32, function(f)
 					f:block(function(oploadtrue)
 						f:block(function(oploadfalse)
 							f:block(function(oploadnil)
-								-- switch(bc[pc++])
+								-- valstack = ls.stack
+								-- baseptr = ls.obj.ptr + base
+								-- bc = baseptr.bc
+								-- switch bc[pc++]
 								f:loadg(oluastack)
+								f:i32load(obj.stack)
+								f:store(valstack)
+
+								f:loadg(oluastack)
+								f:i32load(coro.obj)
 								f:i32load(buf.ptr)
-								f:tee(baseptr)
-								f:load(baseptr)
-								f:tee(valstack)
-								f:i32load(vec.base)
-								f:store(valvec)
 								f:load(base)
 								f:add()
 								f:tee(baseptr)
-								f:i32load(vec.base)
+								f:i32load(objframe.bc)
 								f:tee(bc)
 								f:load(pc)
 								f:add()
@@ -173,11 +176,11 @@ eval = func(i32, i32, i32, function(f)
 							-- if same meta, push metaeqframe
 							f:load(c)
 							f:i32load8u(obj.type)
-							f:i32(otypes.tbl)
+							f:i32(types.tbl)
 							f:eq()
 							f:load(d)
 							f:i32load8u(obj.type)
-							f:i32(otypes.tbl)
+							f:i32(types.tbl)
 							f:eq()
 							f:band()
 							f:iff(function()
@@ -195,54 +198,55 @@ eval = func(i32, i32, i32, function(f)
 									f:iff(function()
 										-- push objframe
 										f:loadg(oluastack)
-										f:i32load(buf.len)
-										f:store(a)
+										f:i32load(coro.obj)
 										f:loadg(oluastack)
 										f:i32(16)
 										f:load(d)
 										f:i32load(functy.localc)
+										f:tee(b)
 										f:i32(2)
 										f:shl()
-										f:tee(c)
 										f:add()
 										f:call(extendvec)
 										f:drop()
 
 										-- push dataframe
 										f:loadg(oluastack)
-										f:i32load(buf.ptr)
-										f:i32load(vec.base + 4)
+										f:i32load(coro.data)
 										f:i32(17)
 										f:call(extendstr)
 										-- defer until writedataframe
 
 										-- writeobjframe
 										f:loadg(oluastack)
-										f:i32load(buf.ptr)
-										f:tee(c)
-										f:load(a)
-										f:add()
-										f:tee(d)
-										assert(functy.consts == functy.bc + 4)
-
-										-- reload metafunc
-										f:load(c)
-										f:i32load(vec.base)
+										f:i32load(coro.obj)
 										f:tee(c)
 										f:load(c)
 										f:i32load(buf.ptr)
 										f:i32load(buf.len)
 										f:add()
+										f:tee(c)
+										assert(functy.consts == functy.bc + 4)
+										assert(objframe.consts == objframe.bc + 4)
+
+										-- reload metafunc
+										f:loadg(oluastack)
+										f:i32load(coro.stack)
+										f:tee(d)
+										f:load(d)
+										f:i32load(buf.ptr)
+										f:i32load(buf.len)
+										f:add()
 										loadvecminus(f, 4)
 										f:i32load(tbl.meta)
-										f:tee(c)
+										f:tee(d)
 										f:i64load(functy.bc)
-										f:i64store(vec.base)
+										f:i64store(objframe.bc)
 
-										f:load(d)
 										f:load(c)
+										f:load(d)
 										f:i32load(functy.frees)
-										f:i32store(vec.base + 8)
+										f:i32store(objframe.frees)
 
 										-- write dataframe
 										f:tee(datastack)
@@ -250,41 +254,30 @@ eval = func(i32, i32, i32, function(f)
 										f:i32load(buf.ptr)
 										f:i32load(buf.len)
 										f:add()
+										f:i32(17)
+										f:sub()
 										f:tee(d)
-										f:i32(17 - dataframe.type)
 										f:sub()
 										f:i32(calltypes.bool)
-										f:i32store8(str.base)
+										f:i32store8(dataframe.type)
 
 										f:load(d)
-										f:i32(17 - dataframe.pc)
-										f:sub()
 										f:i32(0)
-										f:i32store(str.base)
+										f:i32store(dataframe.pc)
 
 										f:load(d)
-										f:i32(17 - dataframe.localc)
-										f:sub()
-										f:load(c)
-										f:i32load(functy.localc)
-										f:i32store(str.base)
+										f:load(b)
+										f:i32store(dataframe.localc)
 
 										f:load(d)
-										f:i32(17 - dataframe.retc)
-										f:sub()
 										f:i32(1)
-										f:i32store()
+										f:i32store(dataframe.retc)
 
 										f:load(d)
-										f:i32(17 - dataframe.base)
-										f:sub()
 										f:loadg(oluastack)
-										f:i32load(buf.ptr)
-										f:i32load(vec.base)
+										f:i32load(obj.stack)
 										f:i32load(buf.len)
-										f:i32(2)
-										f:sub()
-										f:i32store()
+										f:i32store(dataframe.base)
 
 										f:br(resmeta)
 									end)
@@ -338,8 +331,7 @@ eval = func(i32, i32, i32, function(f)
 		f:call(newtable)
 		f:store(a)
 		f:loadg(oluastack)
-		f:i32load(buf.ptr)
-		f:i32load(vec.base)
+		f:i32load(coro.stack)
 		f:load(a)
 		f:call(pushvec)
 		f:drop()
@@ -360,8 +352,7 @@ eval = func(i32, i32, i32, function(f)
 
 		-- del s[-2:]
 		f:loadg(oluastack)
-		f:i32load(buf.ptr)
-		f:i32load(vec.base)
+		f:i32load(coro.stack)
 		f:tee(a)
 		f:load(a)
 		f:i32load(buf.ptr)
@@ -384,8 +375,7 @@ eval = func(i32, i32, i32, function(f)
 
 		-- s[-2][c] = s[-1]
 		f:loadg(oluastack)
-		f:i32load(buf.ptr)
-		f:i32load(vec.base)
+		f:i32load(coro.stack)
 		f:tee(a)
 		f:load(a)
 		f:i32load(buf.ptr)
@@ -400,8 +390,7 @@ eval = func(i32, i32, i32, function(f)
 
 		-- del s[-1]
 		f:loadg(oluastack)
-		f:i32load(buf.ptr)
-		f:i32load(vec.base)
+		f:i32load(coro.stack)
 		f:tee(a)
 		f:load(a)
 		f:i32load(buf.ptr)
@@ -430,7 +419,7 @@ eval = func(i32, i32, i32, function(f)
 			f:block(function(loadframe)
 				-- read callty from freed memory
 				f:load(callty)
-				f:brtable(loadframe, endprog, loadframe)
+				f:brtable(loadframe, endprog, loadframe, 0, 0, 0)
 			end) -- loadframe
 			-- TODO -1 should always have a special case
 			-- Address once I've worked out call chains
