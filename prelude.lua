@@ -122,6 +122,20 @@ function os.setlocal(locale)
 	end
 end
 
+function coro_wrap_handler(t, ...)
+	if t then
+		return ...
+	else
+		return error(...)
+	end
+end
+function coroutine.wrap(f)
+	local c = coroutine.create(f)
+	return function(...)
+		return coro_wrap_handler(coroutine.resume(...))
+	end
+end
+
 function assert(v, message, ...)
 	if not message then
 		message = "assertion failed!"
