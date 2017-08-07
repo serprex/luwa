@@ -48,6 +48,7 @@ objframe = {
 	locals = vec.base + 16,
 }
 
+-- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
 eval = func(i32, i32, i32, function(f)
 	local a, b, c, d,
 		datastack, bc, baseptr, valstack, valvec,
