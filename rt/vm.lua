@@ -441,7 +441,7 @@ eval = func(i32, i32, i32, function(f)
 				f:block(function(loadframe)
 					-- read callty from freed memory
 					f:load(callty)
-					f:brtable(loadframe, endprog, loadframe, 0, 0, boolify)
+					f:brtable(loadframe, endprog, loadframe, loadframe, loadframe, boolify)
 				end) -- loadframe
 				-- LOADFRAME
 				f:br(nop)

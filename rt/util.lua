@@ -276,7 +276,7 @@ peekvec = func(i32, i32, i32, function(f, box, n)
 end)
 
 function loadvecminus(f, x)
-	if x >= vec.base then
+	if x <= vec.base then
 		f:i32load(vec.base - x)
 	else
 		f:i32(x)
@@ -288,7 +288,7 @@ function loadstrminus(f, x, meth)
 	if not meth then
 		meth = 'i32load'
 	end
-	if x >= str.base then
+	if x <= str.base then
 		f[meth](f, str.base - x)
 	else
 		f:i32(x)

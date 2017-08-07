@@ -46,6 +46,7 @@ function encode_varint(dst, val)
 	end
 end
 function encode_varuint(dst, val)
+	assert(val >= 0)
 	while true do
 		local b = val & 0x7f
 		val = val >> 7
