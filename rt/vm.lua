@@ -1,31 +1,3 @@
---[[
-VM needs to support both coroutines & yielding to JS thread at frequent intervals
-
-stack frame layout:
-
-coroid
-intermediate stack buf
-datastack 17b blocks per call
-	i8 call type
-		0 norm Reload locals
-		1 init Return stack to coro src (src nil for main thread)
-		2 prot Reload locals
-		3 call Continue call chain
-		4 push Append intermediates to table
-		5 bool Cast result to bool
-	i32 pc
-	i32 localc # of locals
-	i32 retc # of values requested from call (-1 for chained calls)
-	i32 base index of parameter 0 on intermediate stack
-objstack... (none of these are allocated at call sites)
-	bytecode
-	consts
-	frees (free slots are vecs of length 1)
-	locals... store local slots inline on stack frame
-
-pcall sets up stack frame & returns control to calling VM loop. No nested VM loops
-]]
-
 calltypes = {
 	norm = 0, -- Reload locals
 	init = 1, -- Return stack to coro src, src nil for main
