@@ -62,9 +62,9 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		console.log(rt.strbytes(lexstr));
 		console.log(rt.obj2js(svec));
 		console.log(rt.obj2js(nvec));
-		lexstr.free();
-		svec.free();
-		nvec.free();
+		rt.free(lexstr);
+		rt.free(svec);
+		rt.free(nvec);
 	}).catch(err => {
 		console.log("ERR", err);
 	});

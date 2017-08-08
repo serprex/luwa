@@ -436,59 +436,56 @@ eval = export('eval', func(i32, i32, i32, function(f)
 				end)
 			end)
 		end)
-		f:block(function(boolify)
-			f:block(function(endprog)
-				f:block(function(loadframe)
+		f:block(function(loadframe)
+			f:block(function(boolify)
+				f:block(function(endprog)
 					-- read callty from freed memory
 					f:load(callty)
 					f:brtable(loadframe, endprog, loadframe, loadframe, loadframe, boolify)
-				end) -- loadframe
-				-- LOADFRAME
-				f:br(nop)
-			end) -- endprog
-			f:load(oluastack)
-			f:i32load(coro.caller)
-			f:tee(a)
-			f:iff(function()
+				end) -- endprog
 				f:loadg(oluastack)
-				f:i32(corostate.dead)
-				f:i32store(coro.state)
-
-				-- a = dst
-				-- b = dst.stack.len
-				-- c = src.stack.len
-				-- concat src's stack to dst's stack
-				f:load(a)
-				f:i32load(coro.stack)
+				f:i32load(coro.caller)
 				f:tee(a)
-				f:i32load(buf.len)
-				f:store(b)
-				f:load(a)
-				f:loadg(oluastack)
-				f:i32load(coro.stack)
-				f:i32load(buf.len)
-				f:tee(c)
-				f:call(extendvec)
-				f:tee(a)
-				f:i32load(buf.ptr)
-				f:load(b)
-				f:add()
-				f:i32(vec.base)
-				f:add()
-				f:loadg(oluastack)
-				f:i32load(coro.stack)
-				f:i32load(buf.ptr)
-				f:i32(vec.base)
-				f:add()
-				f:load(c)
-				f:call(memcpy1rl)
+				f:iff(function()
+					f:loadg(oluastack)
+					f:i32(corostate.dead)
+					f:i32store(coro.state)
 
-				f:load(a)
-				f:storeg(oluastack)
-				-- LOADFRAME
-				f:br(nop)
-			end, function()
+					-- a = dst
+					-- b = dst.stack.len
+					-- c = src.stack.len
+					-- concat src's stack to dst's stack
+					f:load(a)
+					f:i32load(coro.stack)
+					f:tee(a)
+					f:i32load(buf.len)
+					f:store(b)
+					f:load(a)
+					f:loadg(oluastack)
+					f:i32load(coro.stack)
+					f:i32load(buf.len)
+					f:tee(c)
+					f:call(extendvec)
+					f:tee(a)
+					f:i32load(buf.ptr)
+					f:load(b)
+					f:add()
+					f:i32(vec.base)
+					f:add()
+					f:loadg(oluastack)
+					f:i32load(coro.stack)
+					f:i32load(buf.ptr)
+					f:i32(vec.base)
+					f:add()
+					f:load(c)
+					f:call(memcpy1rl)
+
+					f:load(a)
+					f:storeg(oluastack)
+					f:br(loadframe)
+				end, function()
 				f:load(valstack)
+				f:call(unbufvec)
 				f:ret()
 			end)
 		end) -- boolify
@@ -505,7 +502,8 @@ eval = export('eval', func(i32, i32, i32, function(f)
 		f:geu()
 		f:select()
 		f:i32store(vec.base - 4)
-		-- LOADFRAME
+	end) -- loadframe
+		loadframe(c)
 		f:br(nop)
 	end) -- CALL
 	-- push stack frame header
