@@ -21,7 +21,7 @@ objframe = {
 }
 
 -- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
-eval = func(i32, i32, i32, function(f)
+eval = export('eval', func(i32, i32, i32, function(f)
 	local a, b, c, d,
 		datastack, bc, baseptr, valstack, valvec,
 		callty, pc, localc, retc, base = f:locals(i32, 4+5+5)
@@ -446,8 +446,51 @@ eval = func(i32, i32, i32, function(f)
 				-- LOADFRAME
 				f:br(nop)
 			end) -- endprog
-			f:load(valstack)
-			f:ret()
+			f:load(oluastack)
+			f:i32load(coro.caller)
+			f:tee(a)
+			f:iff(function()
+				f:loadg(oluastack)
+				f:i32(corostate.dead)
+				f:i32store(coro.state)
+
+				-- a = dst
+				-- b = dst.stack.len
+				-- c = src.stack.len
+				-- concat src's stack to dst's stack
+				f:load(a)
+				f:i32load(coro.stack)
+				f:tee(a)
+				f:i32load(buf.len)
+				f:store(b)
+				f:load(a)
+				f:loadg(oluastack)
+				f:i32load(coro.stack)
+				f:i32load(buf.len)
+				f:tee(c)
+				f:call(extendvec)
+				f:tee(a)
+				f:i32load(buf.ptr)
+				f:load(b)
+				f:add()
+				f:i32(vec.base)
+				f:add()
+				f:loadg(oluastack)
+				f:i32load(coro.stack)
+				f:i32load(buf.ptr)
+				f:i32(vec.base)
+				f:add()
+				f:load(c)
+				f:call(memcpy1rl)
+
+				f:load(a)
+				f:storeg(oluastack)
+				-- LOADFRAME
+				f:br(nop)
+			end, function()
+				f:load(valstack)
+				f:ret()
+			end)
 		end) -- boolify
 		f:load(valstack)
 		f:i32load(buf.ptr)
@@ -500,4 +543,4 @@ eval = func(i32, i32, i32, function(f)
 
 	-- check whether to yield (for now we'll yield after each instruction)
 	f:i32(0)
-end)
+end))

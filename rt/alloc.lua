@@ -49,6 +49,12 @@ functy = {
 	frees = 18,
 	localc = 22,
 }
+corostate = {
+	dead = 0,
+	norm = 1,
+	live = 2,
+	wait = 3,
+}
 coro = {
 	id = 5,
 	state = 9,
