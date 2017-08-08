@@ -703,7 +703,6 @@ for f = 2, #files do
 end
 
 local outf = io.open(files[1], 'w')
-
 outf:write("\0asm\1\0\0\0")
 
 local function writeSection(id, bc)
@@ -731,143 +730,148 @@ local function loopSection(id, elems, bcfu)
 		writeSection(id, bc)
 	end
 end
-
-loopSection(1, Mod.type, function(bc, ty)
-	bc[#bc+1] = 0x60
-	if #ty == 0 then
-		bc[#bc+1] = 0
-		bc[#bc+1] = 0
-	else
-		local ret = ty[#ty]
-		local pcount = #ty-1
-		encode_varuint(bc, pcount)
-		for j = 1, pcount do
-			bc[#bc+1] = ty[j]
-		end
-		if ret == 0x40 then
+local success = pcall(function()
+	loopSection(1, Mod.type, function(bc, ty)
+		bc[#bc+1] = 0x60
+		if #ty == 0 then
+			bc[#bc+1] = 0
 			bc[#bc+1] = 0
 		else
-			bc[#bc+1] = 1
-			bc[#bc+1] = ret
+			local ret = ty[#ty]
+			local pcount = #ty-1
+			encode_varuint(bc, pcount)
+			for j = 1, pcount do
+				bc[#bc+1] = ty[j]
+			end
+			if ret == 0x40 then
+				bc[#bc+1] = 0
+			else
+				bc[#bc+1] = 1
+				bc[#bc+1] = ret
+			end
 		end
+	end)
+
+	loopSection(2, Mod.import, function(bc, imp)
+		encode_string(bc, imp.m)
+		encode_string(bc, imp.f)
+		bc[#bc+1] = imp.ty
+		if imp.ty == 0 then
+			encode_varuint(bc, imp.tid)
+		elseif imp.ty == 1 then
+			encode_varuint(bc, imp.elety)
+			encode_varuint(bc, imp.sz, imp.mxsz)
+		elseif imp.ty == 2 then
+			encode_limits(bc, imp.sz, imp.mxsz)
+		elseif imp.ty == 3 then
+			encode_varuint(imp.type)
+			encode_varuint(imp.mut)
+		else
+			error("Unknown import type: " .. imp.ty)
+		end
+	end)
+
+	loopSection(3, Mod.func, function(bc, fu)
+		encode_varuint(bc, fu.tid)
+	end)
+
+	loopSection(4, Mod.table, function(bc, tbl)
+		error("NYI tables")
+	end)
+
+	loopSection(5, Mod.memory, function(bc, mem)
+		encode_limits(mem.sz, mem.mxsz)
+	end)
+
+	loopSection(6, Mod.global, function(bc, globe)
+		local ty, init = globe.type, globe.init
+		bc[#bc+1] = ty
+		bc[#bc+1] = globe.mut
+		if type(init) == 'number' then
+			if ty == i32 then
+				bc[#bc+1] = 0x41
+				encode_varint(bc, init)
+				bc[#bc+1] = 0x0b
+			elseif ty == i64 then
+				bc[#bc+1] = 0x42
+				encode_varint(bc, init)
+				bc[#bc+1] = 0x0b
+			elseif ty == f32 then
+				bc[#bc+1] = 0x43
+				encode_f32(bc, init)
+				bc[#bc+1] = 0x0b
+			else
+				bc[#bc+1] = 0x44
+				encode_f64(bc, init)
+				bc[#bc+1] = 0x0b
+			end
+		else
+			error('NYI get_global init_expr')
+		end
+	end)
+
+	loopSection(7, Mod.export, function(bc, expo)
+		encode_string(bc, expo.f)
+		bc[#bc+1] = expo.kind
+		if expo.kind == 0 then
+			encode_varuint(bc, Mod.impfid + expo.obj.id)
+		elseif expo.kind == 1 then
+			encode_varuint(bc, Mod.imptid + expo.obj.id)
+		elseif expo.kind == 2 then
+			encode_varuint(bc, Mod.impmid + expo.obj.id)
+		else
+			encode_varuint(bc, Mod.impgid + expo.obj.id)
+		end
+	end)
+
+	if Mod.start then
+		local bc = {}
+		encode_varuint(bc, Mod.impfid + Mod.start.id)
+		writeSection(8, bc)
 	end
-end)
 
-loopSection(2, Mod.import, function(bc, imp)
-	encode_string(bc, imp.m)
-	encode_string(bc, imp.f)
-	bc[#bc+1] = imp.ty
-	if imp.ty == 0 then
-		encode_varuint(bc, imp.tid)
-	elseif imp.ty == 1 then
-		encode_varuint(bc, imp.elety)
-		encode_varuint(bc, imp.sz, imp.mxsz)
-	elseif imp.ty == 2 then
-		encode_limits(bc, imp.sz, imp.mxsz)
-	elseif imp.ty == 3 then
-		encode_varuint(imp.type)
-		encode_varuint(imp.mut)
-	else
-		error("Unknown import type: " .. imp.ty)
-	end
-end)
+	loopSection(10, Mod.func, function(bc, fu)
+		local params = {}
+		for i=1, fu.pcount do
+			params[i] = i
+		end
+		fu:bgen(table.unpack(params))
 
-loopSection(3, Mod.func, function(bc, fu)
-	encode_varuint(bc, fu.tid)
-end)
+		local fc = {}
+		encode_varuint(fc, fu.localbcn)
+		for j=1, #fu.localbc do
+			fc[#fc+1] = fu.localbc[j]
+		end
+		for j = 1, #fu.bcode do
+			fc[#fc+1] = fu.bcode[j]
+		end
+		fc[#fc+1] = 0x0b
 
-loopSection(4, Mod.table, function(bc, tbl)
-	error("NYI tables")
-end)
+		encode_varuint(bc, #fc)
+		for j = 1, #fc do
+			bc[#bc+1] = fc[j]
+		end
+		print(Mod.impfid + fu.id, table.concat(fu.bcode, ':'))
+	end)
 
-loopSection(5, Mod.memory, function(bc, mem)
-	encode_limits(mem.sz, mem.mxsz)
-end)
-
-loopSection(6, Mod.global, function(bc, globe)
-	local ty, init = globe.type, globe.init
-	bc[#bc+1] = ty
-	bc[#bc+1] = globe.mut
-	if type(init) == 'number' then
-		if ty == i32 then
+	loopSection(11, Mod.data, function(bc, data)
+		encode_varuint(bc, data.memid)
+		if type(data.offexpr) == 'number' then
 			bc[#bc+1] = 0x41
-			encode_varint(bc, init)
-			bc[#bc+1] = 0x0b
-		elseif ty == i64 then
-			bc[#bc+1] = 0x42
-			encode_varint(bc, init)
-			bc[#bc+1] = 0x0b
-		elseif ty == f32 then
-			bc[#bc+1] = 0x43
-			encode_f32(bc, init)
+			encode_varint(bc, data.offexpr)
 			bc[#bc+1] = 0x0b
 		else
-			bc[#bc+1] = 0x44
-			encode_f64(bc, init)
-			bc[#bc+1] = 0x0b
+			error('NYI data offexpr init_expr')
 		end
-	else
-		error('NYI get_global init_expr')
-	end
-end)
-
-loopSection(7, Mod.export, function(bc, expo)
-	encode_string(bc, expo.f)
-	bc[#bc+1] = expo.kind
-	if expo.kind == 0 then
-		encode_varuint(bc, Mod.impfid + expo.obj.id)
-	elseif expo.kind == 1 then
-		encode_varuint(bc, Mod.imptid + expo.obj.id)
-	elseif expo.kind == 2 then
-		encode_varuint(bc, Mod.impmid + expo.obj.id)
-	else
-		encode_varuint(bc, Mod.impgid + expo.obj.id)
-	end
-end)
-
-if Mod.start then
-	local bc = {}
-	encode_varuint(bc, Mod.impfid + Mod.start.id)
-	writeSection(8, bc)
-end
-
-loopSection(10, Mod.func, function(bc, fu)
-	local params = {}
-	for i=1, fu.pcount do
-		params[i] = i
-	end
-	fu:bgen(table.unpack(params))
-
-	local fc = {}
-	encode_varuint(fc, fu.localbcn)
-	for j=1, #fu.localbc do
-		fc[#fc+1] = fu.localbc[j]
-	end
-	for j = 1, #fu.bcode do
-		fc[#fc+1] = fu.bcode[j]
-	end
-	fc[#fc+1] = 0x0b
-
-	encode_varuint(bc, #fc)
-	for j = 1, #fc do
-		bc[#bc+1] = fc[j]
-	end
-	print(Mod.impfid + fu.id, table.concat(fu.bcode, ':'))
-end)
-
-loopSection(11, Mod.data, function(bc, data)
-	encode_varuint(bc, data.memid)
-	if type(data.offexpr) == 'number' then
-		bc[#bc+1] = 0x41
-		encode_varint(bc, data.offexpr)
-		bc[#bc+1] = 0x0b
-	else
-		error('NYI data offexpr init_expr')
-	end
-	encode_varuint(bc, #data.data)
-	for j = 1, #data.data do
-		bc[#bc+1] = data.data[j]
-	end
+		encode_varuint(bc, #data.data)
+		for j = 1, #data.data do
+			bc[#bc+1] = data.data[j]
+		end
+	end)
 end)
 
 outf:close()
+
+if not success then
+	os.remove(files[1])
+end

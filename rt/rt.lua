@@ -10,6 +10,7 @@ odatastacklen = global(i32, true)
 oluastack = global(i32, true) -- default to NIL
 heaptip = global(i32, true, HEAPBASE + 48 + 48) -- 48 + 48 == allocsize(vec.base + 32) + allocsize(str.base + 32)
 markbit = global(i32, true)
+idcount = global(i32, true)
 
 memory = importmemory('', 'm', 1)
 

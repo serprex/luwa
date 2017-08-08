@@ -43,9 +43,9 @@ buf = {
 }
 functy = {
 	id = 5,
-	bc = 9,
-	consts = 13,
-	isdotdotdot = 17,
+	isdotdotdot = 9,
+	bc = 10,
+	consts = 14,
 	frees = 18,
 	localc = 22,
 }
@@ -77,6 +77,14 @@ allocsize = func(i32, i32, function(f, sz)
 	end, function()
 		f:load(sz)
 	end)
+end)
+
+nextid = func(i32, function(f)
+	f:loadg(idcount)
+	f:loadg(idcount)
+	f:i32(1)
+	f:add()
+	f:storeg(idcount)
 end)
 
 newobj = func(i32, i32, i32, function(f, sz, t)
@@ -155,6 +163,10 @@ newtable = export('newtable', func(i32, function(f)
 	f:i32(types.tbl)
 	f:call(newobj)
 	f:storeg(otmp)
+
+	f:loadg(otmp)
+	f:call(nextid)
+	f:i32store(tbl.id)
 
 	assert(tbl.hlen == tbl.len + 4)
 	f:loadg(otmp) -- len, hlen = 0
@@ -316,7 +328,7 @@ end))
 
 newbuf = func(i32, function(f)
 	local p = f:locals(i32)
-	f:i32(13)
+	f:i32(16)
 	f:i32(types.buf)
 	f:call(newobj)
 	f:tee(p)
@@ -343,3 +355,34 @@ newvecbuf = export('newvecbuf', func(i32, i32, function(f, sz)
 	f:storeg(otmp)
 	f:call(newbuf)
 end))
+
+local newfuncorcoro = func(i32, i32, function(f, a)
+	f:i32(32)
+	f:load(a)
+	f:call(newobj)
+	f:tee(a)
+	f:call(nextid)
+	f:i32store(functy.id)
+
+	assert(functy.consts == functy.bc + 4)
+	f:load(a)
+	f:i64(0)
+	f:i64store(functy.bc)
+
+	assert(functy.localc == functy.frees + 4)
+	f:load(a)
+	f:i64(0)
+	f:i64store(functy.frees)
+
+	f:load(a)
+end)
+
+newfunc = func(i32, function(f)
+	f:i32(types.functy)
+	f:call(newfuncorcoro)
+end)
+
+newcoro = func(i32, function(f)
+	f:i32(types.coro)
+	f:call(newfuncorcoro)
+end)
