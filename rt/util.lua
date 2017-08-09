@@ -423,7 +423,6 @@ memcpy8 = func(i32, i32, i32, void, function(f, dst, src, len)
 end)
 
 -- returns exponent on otmpstack
--- TODO return on datastack?
 frexp = func(f64, f64, function(f, x)
 	local xi, ee = f:locals(i64, 2)
 	f:load(x)
