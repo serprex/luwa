@@ -13,6 +13,15 @@ const assert = {
 const util = require("./util");
 document.getElementById("btnRt").addEventListener("click", (s, e) => {
 	require("./rt")().then(rt => {
+		let luastack = rt.mkref(rt.mod.newcoro());
+		rt.mod.setluastack(luastack.val);
+		let luastackstack = rt.mkref(rt.mod.newvecbuf(32));
+		let mem = new Uint8Array(rt.mem.buffer);
+		let memaddr = new Uint8Array(new Uint32Array([luastackstack.val]).buffer);
+		for (let i = 0; i<4; i++) {
+			mem[luastack.val + 14 + i] = memaddr[i];
+		}
+
 		console.log(window.mod = rt);
 		let newt = rt.newtable();
 		let news = rt.newstr("asdf");

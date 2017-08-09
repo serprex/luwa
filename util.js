@@ -17,7 +17,7 @@ exports.readvarint = readvarint;
 exports.readvaruint = readvaruint;
 exports.readuint32 = readuint32;
 
-function varint (v, value) {
+function varint(v, value) {
 	while (true) {
 		let b = value & 127;
 		value >>= 7;
@@ -30,7 +30,7 @@ function varint (v, value) {
 	}
 }
 
-function varuint (v, value) {
+function varuint(v, value) {
 	while (true) {
 		let b = value & 127;
 		value >>= 7;
@@ -43,7 +43,7 @@ function varuint (v, value) {
 }
 
 if (typeof TextEncoder === 'undefined') {
-	TextEncoder = function () {
+	TextEncoder = function() {
 	};
 	TextEncoder.prototype.encode = function (s) {
 		let u8 = unescape(encodeURIComponent(s));
@@ -57,7 +57,7 @@ if (typeof TextEncoder === 'undefined') {
 if (typeof TextDecoder === 'undefined') {
 	TextDecoder = function() {
 	};
-	TextDecoder.prototype.decode = function (utf8) {
+	TextDecoder.prototype.decode = function(utf8) {
 		return decodeURIComponent(escape(String.fromCharCode.apply(null, utf8)));
 	}
 }

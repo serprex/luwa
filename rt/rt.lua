@@ -3,10 +3,8 @@ TRUE = 8
 FALSE = 16
 HEAPBASE = 24
 otmp = global(i32, true)
-otmpstack = global(i32, true, HEAPBASE)
-otmpstacklen = global(i32, true)
 oluastack = global(i32, true) -- default to NIL
-heaptip = global(i32, true, HEAPBASE + 48 + 48) -- 48 + 48 == allocsize(vec.base + 32) + allocsize(str.base + 32)
+heaptip = global(i32, true, HEAPBASE)
 markbit = global(i32, true)
 idcount = global(i32, true)
 
@@ -38,13 +36,19 @@ data(memory, 4, {
 	0, 0, 0, 0, 3, 0, 0 ,0,
 	-- true
 	0, 0, 0, 0, 3, 1, 0, 0,
-	-- otmpstack = vec(32)
-	0, 0, 0, 0, 6, 32, -- 42 zeroes
 })
 
 igcfix = importfunc('', 'gcfix')
 igcmark = importfunc('', 'gcmark')
 echo = importfunc('', 'echo', i32, i32)
+
+setluastack = export('setluastack', func(i32, void, function(f, x)
+	f:load(x)
+	f:storeg(oluastack)
+end))
+getluastack = export('getluastack', func(i32, function(f)
+	f:loadg(oluastack)
+end))
 
 echodrop = func(i32, void, function(f, x)
 	f:load(x)
