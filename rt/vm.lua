@@ -165,7 +165,7 @@ eval = export('eval', func(i32, i32, i32, function(f)
 								f:eq()
 								f:iff(function()
 									f:load(c)
-									f:i32(0) -- TODO "__eq"
+									f:i32(GS.__eq)
 									f:call(tabget)
 									f:tee(d)
 									f:iff(function()

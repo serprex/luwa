@@ -5,12 +5,6 @@ gccollect = func(function(f)
 	f:storeg(markbit)
 
 	-- Phase0 marking phase
-	f:i32(NIL)
-	f:call(gcmark)
-	f:i32(FALSE)
-	f:call(gcmark)
-	f:i32(TRUE)
-	f:call(gcmark)
 	f:loadg(otmp)
 	f:call(gcmark)
 	f:loadg(oluastack)
@@ -20,7 +14,12 @@ gccollect = func(function(f)
 
 	-- Phase1 set reloc pointers
 	f:loadg(markbit)
+	f:i32(HEAPBASE)
+	f:add()
 	f:store(freetip)
+
+	f:i32(HEAPBASE)
+	f:store(livetip)
 
 	f:loop(function(loop)
 		f:load(livetip)
@@ -74,7 +73,7 @@ gccollect = func(function(f)
 		f:i32store(offset)
 	end
 
-	f:i32(0)
+	f:i32(HEAPBASE)
 	f:store(livetip)
 	f:loop(function()
 		f:load(livetip)
@@ -164,7 +163,7 @@ gccollect = func(function(f)
 	f:call(igcfix)
 
 	-- Phase3 move it
-	f:i32(0)
+	f:i32(HEAPBASE)
 	f:store(livetip)
 	f:block(function()
 		f:block(function(foundshift)

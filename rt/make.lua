@@ -97,6 +97,14 @@ local function remove_from(tbl, n)
 	end
 end
 
+function allocsizef(x)
+	if x&7 == 0 then
+		return x
+	else
+		return (x&-8)+8
+	end
+end
+
 -- Type
 function Mod:decltype(types)
 	if types[1] == void then
