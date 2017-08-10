@@ -54,7 +54,7 @@ std_pcall = func(function(f)
 	f:i32store(dataframe.base)
 end)
 
-math_abs = func(function()
+math_abs = func(function(f)
 	local a = f:locals(i32)
 	local a64 = f:locals(i64)
 

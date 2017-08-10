@@ -350,10 +350,8 @@ function funcmeta:iff(ty, brif, brelse)
 	brif(self.scope)
 	if not self.polystack then
 		if tyval ~= 0x40 then
-			print(#self.stack, sclen, table.concat(self.stack, ","))
 			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
 		else
-			print(#self.stack, sclen, table.concat(self.stack, ","))
 			assert(#self.stack == sclen)
 		end
 	elseif tyval ~= 0x40 then
@@ -372,7 +370,6 @@ function funcmeta:iff(ty, brif, brelse)
 		brelse(self.scope)
 		if not self.polystack then
 			if tyval ~= 0x40 then
-				print(#self.stack, sclen, table.concat(self.stack, ","))
 				assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
 			else
 				assert(#self.stack == sclen)
@@ -579,7 +576,6 @@ function funcmeta:call(f)
 	self:emit(0x10)
 	if getmetatable(f) == funcmt then
 		self:emituint(Mod.impfid + f.id)
-		print(f, f.pcount, f.rety)
 		for i = 1, f.pcount do
 			assert(self:pop() == f.localty[f.pcount-i+1])
 		end
