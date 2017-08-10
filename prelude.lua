@@ -177,6 +177,20 @@ function ipairs(t)
 	return inext, t, 0
 end
 
+function loadfile(s, m, e)
+	local f, err
+	if s then
+		f, err = io.open(s)
+		if err then
+			return nil, err
+		end
+	else
+		s = 'stdin'
+		f = io.input()
+	end
+	return load(f:read('a'), s, m, e)
+end
+
 local function xpcallguard(res, ...)
 	if res then
 		return ...
