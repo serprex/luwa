@@ -44,6 +44,17 @@ end
 function math.sqrt(x)
 	return x ^ .5
 end
+function math.ult(m, n)
+	m = math.tointeger(m)
+	assert(m, "bad argument #1 to 'ult'")
+	n = math.tointeger(n)
+	assert(n, "bad argument #2 to 'ult'")
+	if m >= 0 then
+		return n < 0 or m < n
+	else
+		return n < 0 and m < n
+	end
+end
 
 function string.len(s)
 	assert(type(s) == "string", "bad argument #1 to 'len' (string expected)")
@@ -183,15 +194,15 @@ function assert(v, message, ...)
 		message = "assertion failed!"
 	end
 	if v then
-		return error(message, 2)
-	else
 		return v, message, ...
+	else
+		return error(message, 2)
 	end
 end
 
 function print(...)
 	for i = 1, select('#', ...) do
-		if i > 0 then
+		if i > 1 then
 			io.write('\t')
 		end
 		io.write(tostring(select(i, ...)))
