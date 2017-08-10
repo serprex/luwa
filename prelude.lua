@@ -6,6 +6,45 @@ math.maxinteger = -9223372036854775807
 math.pi = 0x1.921fb54442d18p1
 math.huge = 1./0.
 
+local rad_coef, deg_coef = math.pi/180., 180./math.pi
+
+function math.deg(x)
+	return x * deg_coef
+end
+function math.max(x, ...)
+	for i = 1,select('#', ...) do
+		local m = select(i, ...)
+		if m > x then
+			x = m
+		end
+	end
+	return x
+end
+function math.min(x, ...)
+	for i = 1,select('#', ...) do
+		local m = select(i, ...)
+		if m < x then
+			x = m
+		end
+	end
+	return x
+end
+function math.modf(x)
+	if x > 0 then
+		local xi = math.floor(x)
+		return xi, x - xi
+	else
+		local xi = math.ceil(x)
+		return -xi, x + xi
+	end
+end
+function math.rad(x)
+	return x * rad_coef
+end
+function math.sqrt(x)
+	return x ^ .5
+end
+
 function string.len(s)
 	assert(type(s) == "string", "bad argument #1 to 'len' (string expected)")
 	return #s
@@ -16,7 +55,6 @@ utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
 function table.pack(...)
 	return { n = select('#', ...), ... }
 end
-
 function table.insert(list, pos, value)
 	if not value then
 		list[#list+1] = pos
