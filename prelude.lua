@@ -135,6 +135,10 @@ function coroutine.wrap(f)
 		return coro_wrap_handler(coroutine.resume(...))
 	end
 end
+function coroutine.isyieldable()
+	local a, b = coroutine.running()
+	return b
+end
 
 function assert(v, message, ...)
 	if not message then
