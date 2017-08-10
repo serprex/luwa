@@ -184,11 +184,13 @@ function loadfile(s, m, e)
 		if err then
 			return nil, err
 		end
+		err = f:read('a')
+		f:close()
 	else
 		s = 'stdin'
-		f = io.input()
+		err = io.read('a')
 	end
-	return load(f:read('a'), s, m, e)
+	return load(err, s, m, e)
 end
 
 local function xpcallguard(res, ...)
