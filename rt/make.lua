@@ -734,7 +734,8 @@ local function loopSection(id, elems, bcfu)
 		writeSection(id, bc)
 	end
 end
-local success = pcall(function()
+
+xpcall(function()
 	loopSection(1, Mod.type, function(bc, ty)
 		bc[#bc+1] = 0x60
 		if #ty == 0 then
@@ -872,10 +873,10 @@ local success = pcall(function()
 			bc[#bc+1] = data.data[j]
 		end
 	end)
+end, function(x, ...)
+	outf:close()
+	if x then
+		os.remove(files[1])
+		print(debug.traceback(x, ...))
+	end
 end)
-
-outf:close()
-
-if not success then
-	os.remove(files[1])
-end
