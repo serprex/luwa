@@ -69,6 +69,21 @@ math_frexp = func(i32, function(f)
 	f:i32(0)
 end)
 
+coro_running = func(function(f)
+	-- TODO discard parameters
+	f:loadg(oluastack)
+	f:i32load(coro.stack)
+	f:loadg(oluastack)
+	f:call(pushvec)
+	f:i32(TRUE)
+	f:i32(FALSE)
+	f:loadg(oluastack)
+	f:i32load(coro.caller)
+	f:select()
+	f:call(pushvec)
+	f:drop()
+end)
+
 coro_status = func(function(f)
 	local a = f:locals(i32)
 
