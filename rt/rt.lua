@@ -11,7 +11,6 @@ memory = importmemory('', 'm', 1)
 --[[TODO
 corountine.status: running suspended normal dead
 type: nil number string boolean table function thread userdata
-select: #
 load: b t bt
 gc: collect stop restart count step setpause setstepmul isrunning
 os.execute: exit, signal
@@ -59,7 +58,7 @@ data(memory, addStrings(4, {
 	0, 0, 0, 0, 3, 1, 0, 0,
 }, 'float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file', 'closed file',
 	'nil', 'number', 'string', 'boolean', 'table', 'function', 'thread', 'userdata',
-	'#', 'b', 't', 'bt', 'n', 'a', 'l', 'L', 'r', 'w', 'r+', 'w+', 'a+',
+	'b', 't', 'bt', 'n', 'a', 'l', 'L', 'r', 'w', 'r+', 'w+', 'a+',
 	'set', 'cur', 'end', 'no', 'full', 'line', 'exit', 'signal',
 	'collect', 'stop', 'restart', 'count', 'step', 'setpause', 'setstepmul', 'isrunning',
 	'__eq', '__lt', '__le', '__gt', '__ge', '__len', '__tostring', '__metatable',

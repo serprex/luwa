@@ -16,6 +16,7 @@ exports.fromUtf8 = fromUtf8;
 exports.readvarint = readvarint;
 exports.readvaruint = readvaruint;
 exports.readuint32 = readuint32;
+exports.writeuint32 = writeuint32;
 
 function varint(v, value) {
 	while (true) {
@@ -100,4 +101,11 @@ function readvaruint(v, idx) {
 
 function readuint32(v, idx) {
 	return v[idx]|v[idx+1]<<8|v[idx+2]<<16|v[idx+3]<<24;
+}
+
+function writeuint32(v, idx, i) {
+	v[idx] = i;
+	v[idx+1] = i>>8;
+	v[idx+2] = i>>16;
+	v[idx+3] = i>>24;
 }

@@ -17,10 +17,7 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		rt.mod.setluastack(luastack.val);
 		let luastackstack = rt.mkref(rt.mod.newvecbuf(32));
 		let mem = new Uint8Array(rt.mem.buffer);
-		let memaddr = new Uint8Array(new Uint32Array([luastackstack.val]).buffer);
-		for (let i = 0; i<4; i++) {
-			mem[luastack.val + 14 + i] = memaddr[i];
-		}
+		util.writeuint32(mem, luastack.val + 14, luastackstack.val);
 
 		console.log(window.mod = rt);
 		let newt = rt.newtable();
@@ -74,6 +71,16 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		rt.free(lexstr);
 		rt.free(svec);
 		rt.free(nvec);
+		console.log("Next: vm");
+		let main = rt.mkref(rt.mod.newfunc());
+		let mainbc = rt.newstr(new Uint8Array(new Uint32Array([2, 12]).buffer));
+		let mainconsts = rt.mkref(rt.mod.newvec(0));
+		let mainfrees = rt.mkref(rt.mod.newvec(0));
+		mem = new Uint8Array(rt.mem.buffer);
+		util.writeuint32(mem, main.val + 10, mainbc.val);
+		util.writeuint32(mem, main.val + 14, mainconsts.val);
+		util.writeuint32(mem, main.val + 18, mainfrees.val);
+		rt.mod.init();
 	}).catch(err => {
 		console.log("ERR", err);
 	});
