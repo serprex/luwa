@@ -3,7 +3,7 @@ lxaddval = func(i32, i32, i32, function(f, o, tmpid)
 	f:i32(12)
 	f:call(nthtmp)
 	f:load(o)
-	f:call(tabget)
+	f:call(tblget)
 	f:tee(boxlen)
 	assert(NIL == 0)
 	f:eqz()
@@ -37,7 +37,7 @@ lxaddval = func(i32, i32, i32, function(f, o, tmpid)
 		f:call(nthtmp)
 		f:call(tmppop)
 		f:load(boxlen)
-		f:call(tabset)
+		f:call(tblset)
 
 		f:load(o)
 		f:ret()
@@ -75,7 +75,7 @@ lex = export('lex', func(i32, void, function(f, src)
 	f:call(tmppush)
 
 	-- 3 reverse mapping of strs/nums
-	f:call(newtable)
+	f:call(newtbl)
 	f:call(tmppush)
 
 	-- 2 [strs]

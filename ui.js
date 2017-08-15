@@ -20,29 +20,29 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		util.writeuint32(mem, luastack.val + 14, luastackstack.val);
 
 		console.log(window.mod = rt);
-		let newt = rt.newtable();
+		let newt = rt.newtbl();
 		let news = rt.newstr("asdf");
 		let news2 = rt.newstr("asdf");
 		assert.equal(util.fromUtf8(rt.strbytes(news)), "asdf");
 		let newf = rt.newf64(4.2);
-		let nil = rt.mkref(rt.mod.tabget(newt.val, news.val));
-		rt.mod.tabset(newt.val, news.val, newf.val);
+		let nil = rt.mkref(rt.mod.tblget(newt.val, news.val));
+		rt.mod.tblset(newt.val, news.val, newf.val);
 		assert.equal(nil.val, rt.nil.val);
-		assert.equal(rt.mod.tabget(newt.val, news.val), newf.val);
-		assert.equal(rt.mod.tabget(newt.val, news2.val), newf.val);
+		assert.equal(rt.mod.tblget(newt.val, news.val), newf.val);
+		assert.equal(rt.mod.tblget(newt.val, news2.val), newf.val);
 		let newf2 = rt.newf64(5.4);
 		let newf3 = rt.newf64(6.6);
 		let newf4 = rt.newf64(7.8);
-		rt.mod.tabset(newt.val, newf2.val, newf3.val);
-		rt.mod.tabset(newt.val, newf3.val, newf4.val);
-		rt.mod.tabset(newt.val, newf4.val, newf2.val);
+		rt.mod.tblset(newt.val, newf2.val, newf3.val);
+		rt.mod.tblset(newt.val, newf3.val, newf4.val);
+		rt.mod.tblset(newt.val, newf4.val, newf2.val);
 		console.log("newt", newt.val, "news", news.val, news2.val, "newf", newf.val,
 			newf2.val, newf3.val, newf4.val);
-		assert.equal(rt.mod.tabget(newt.val, newf2.val), newf3.val);
-		assert.equal(rt.mod.tabget(newt.val, newf3.val), newf4.val);
-		assert.equal(rt.mod.tabget(newt.val, newf4.val), newf2.val);
-		assert.equal(rt.mod.tabget(newt.val, newf.val), nil.val);
-		console.log("Tested newtab/tabget/tabset. Next: string gc pressure");
+		assert.equal(rt.mod.tblget(newt.val, newf2.val), newf3.val);
+		assert.equal(rt.mod.tblget(newt.val, newf3.val), newf4.val);
+		assert.equal(rt.mod.tblget(newt.val, newf4.val), newf2.val);
+		assert.equal(rt.mod.tblget(newt.val, newf.val), nil.val);
+		console.log("Tested newtbl/tblget/tblset. Next: string gc pressure");
 		let s = "0123456789", ss = [];
 		for (var i=0; i<10; i++) s += s;
 		for (var j=0; j<2; j++) {
@@ -73,14 +73,16 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		rt.free(nvec);
 		console.log("Next: vm");
 		let main = rt.mkref(rt.mod.newfunc());
-		let mainbc = rt.newstr(new Uint8Array(new Uint32Array([2, 12]).buffer));
+		let mainbc = rt.newstr(new Uint8Array([2, 12, 0, 0, 0]));
 		let mainconsts = rt.mkref(rt.mod.newvec(0));
 		let mainfrees = rt.mkref(rt.mod.newvec(0));
 		mem = new Uint8Array(rt.mem.buffer);
 		util.writeuint32(mem, main.val + 10, mainbc.val);
 		util.writeuint32(mem, main.val + 14, mainconsts.val);
 		util.writeuint32(mem, main.val + 18, mainfrees.val);
-		rt.mod.init();
+		rt.mod.init(main.val);
+		console.log(rt.mod.eval());
+		console.log(rt.mod.eval());
 	}).catch(err => {
 		console.log("ERR", err);
 	});

@@ -58,8 +58,8 @@ FFI.prototype.mkref = function(p) {
 		}
 	}
 }
-FFI.prototype.newtable = function() {
-	return this.mkref(this.mod.newtable());
+FFI.prototype.newtbl = function() {
+	return this.mkref(this.mod.newtbl());
 }
 FFI.prototype.newstr = function(s) {
 	if (typeof s === "string") s = util.asUtf8(s);

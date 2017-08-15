@@ -157,7 +157,7 @@ newf64 = export('newf64', func(f64, i32, function(f, x)
 	f:load(p)
 end))
 
-newtable = export('newtable', func(i32, function(f)
+newtbl = export('newtbl', func(i32, function(f)
 	local p = f:locals(i32)
 	f:i32(32)
 	f:i32(types.tbl)

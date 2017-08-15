@@ -1,4 +1,4 @@
-tabset = export('tabset', func(i32, i32, i32, void, function(f, tab, key, val)
+tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
 	local kv, mx = f:locals(i32, 2)
 	f:load(tab)
 	f:storeg(otmp)
@@ -88,7 +88,7 @@ tabset = export('tabset', func(i32, i32, i32, void, function(f, tab, key, val)
 				-- rehash. val is oldhash. mx is oldhash+oldhash.len
 				f:loop(function(loop)
 					-- if val.key != nil && val.val != nil
-					-- then tabset(tab, val.key, val.val)
+					-- then tblset(tab, val.key, val.val)
 					f:load(val)
 					f:i32load(vec.base)
 					assert(NIL == 0)
@@ -105,7 +105,7 @@ tabset = export('tabset', func(i32, i32, i32, void, function(f, tab, key, val)
 						f:i32load(vec.base)
 						f:load(val)
 						f:i32load(vec.base + 4)
-						f:call(tabset)
+						f:call(tblset)
 					end)
 
 					f:load(val)
@@ -147,7 +147,7 @@ tabset = export('tabset', func(i32, i32, i32, void, function(f, tab, key, val)
 	end)
 end))
 
-tabget = export('tabget', func(i32, i32, i32, function(f, tab, key)
+tblget = export('tblget', func(i32, i32, i32, function(f, tab, key)
 	local kv, mx = f:locals(i32, 2)
 	
 	-- H <- (hash(key) % tab.hash.len) & -8
