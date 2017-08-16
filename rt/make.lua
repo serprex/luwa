@@ -412,15 +412,88 @@ function funcmeta:ret()
 	self.polystack = true
 	self:emit(0x0f)
 end
-function funcmeta:current_memory()
+function funcmeta:currentmemory()
 	self:emit(0x3f)
 	self:emit(0)
 	self:push(i32)
 end
-function funcmeta:grow_memory()
+function funcmeta:growmemory()
 	assert(self:peek() == i32)
 	self:emit(0x40)
 	self:emit(0)
+end
+--[[
+f:switch(function()
+		f:load(a)
+	end,
+	0, function(scopes)
+		f:load(a)
+		f:store(b)
+		f:br(scopes[2])
+	end,
+	4, 1, function(scopes)
+		f:load(a)
+		f:load(b)
+		f:add()
+		f:store(a)
+		f:br(scopes.asdf)
+	end,
+	3, function(scopes)
+		f:br(scopes.root)
+	end,
+	'asdf', function(scopes)
+
+	end,
+	2, function(scopes)
+
+	end,
+)
+->
+scopes = {}
+f:block(function(b)
+	scopes[2] = b
+	f:block(function(b)
+		scopes.asdf = b
+		f:block(function(b)
+			scopes[3] = b
+			f:block(function(b)
+				scopes[4] = b
+				scopes[1] = b
+				f:block(function(b)
+					scopes[0] = b
+					f:block(function()
+						f:load(a)
+						f:brtable(scopes[0], scopes[1], scopes[2], scopes[3], scopes[4])
+					end)
+					f:load(a)
+					f:store(b)
+					f:br(scopes[2])
+				end)
+			end)
+		end)
+	end)
+end)
+]]
+local function switchcore(f, jmp, scopes, idx, xs)
+	local x = xs[idx]
+	if x then
+		local xt = type(x)
+		if xt == 'function' then
+			return f:block(function(scope)
+				switchcore(f, jmp, scopes, idx+1, xs)
+				return x(scopes)
+			end)
+		end
+		scopes[x] = self.scope
+		return switchcore(f, jmp, scopes, idx+1, xs)
+	end
+	return f:block(function()
+		jmp(scopes)
+		return f:brtable(scopes[0], table.unpack(scope))
+	end)
+end
+function funcmeta:switch(jmp, ...)
+	return switchcore(self, jmp, scopes, 1, {...})
 end
 
 local function mkopcore(self, name, tymap, a, tyret)

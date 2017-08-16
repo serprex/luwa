@@ -131,7 +131,7 @@ std_select = func(function(f)
 		f:load(base)
 		f:sub()
 		f:tee(p0)
-		f:call(memcpy1rl)
+		f:call(memcpy4)
 
 		f:load(a)
 		f:load(p0)

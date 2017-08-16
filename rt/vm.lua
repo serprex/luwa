@@ -1,3 +1,16 @@
+dataframe = {
+	type = str.base + 0,
+	pc = str.base + 1,
+	localc = str.base + 5, -- # of locals
+	retc = str.base + 9, -- # of values requested from call, -1 for no limit
+	base = str.base + 13, -- index top objframe
+}
+objframe = {
+	bc = vec.base + 0,
+	consts = vec.base + 4,
+	frees = vec.base + 8,
+	locals = vec.base + 16,
+}
 calltypes = {
 	norm = 0, -- Reload locals
 	init = 1, -- Return stack to coro src, src nil for main
@@ -5,19 +18,6 @@ calltypes = {
 	call = 3, -- Continue call chain
 	push = 4, -- Append intermediates to table
 	bool = 5, -- Cast result to bool
-}
-dataframe = {
-	type = str.base + 0,
-	pc = str.base + 1,
-	localc = str.base + 5, -- # of locals
-	retc = str.base + 9, -- # of values requested from call, -1 for no limit
-	base = str.base + 13, -- index of parameter 0 on intermediate stack
-}
-objframe = {
-	bc = vec.base + 0,
-	consts = vec.base + 4,
-	frees = vec.base + 8,
-	locals = vec.base + 16,
 }
 
 init = export('init', func(i32, void, function(f, fn)
@@ -127,7 +127,6 @@ eval = export('eval', func(i32, function(f)
 	local a, b, c, d,
 		datastack, bc, baseptr, valstack, valvec,
 		callty, pc, localc, retc, base = f:locals(i32, 4+5+5)
-	local offBc, offConst, offFree, offLocal = 0, 4, 8, 12
 
 	local function loadframe(tmp)
 		f:loadg(oluastack)
@@ -356,7 +355,7 @@ eval = export('eval', func(i32, function(f)
 										f:loadg(oluastack)
 										f:i32load(obj.stack)
 										f:i32load(buf.len)
-										f:i32store(dataframe.base)
+										f:i32store(dataframe.base) -- TODO wrong
 
 										f:br(resmeta)
 									end)
@@ -626,7 +625,7 @@ eval = export('eval', func(i32, function(f)
 					f:i32(vec.base)
 					f:add()
 					f:load(c)
-					f:call(memcpy1rl)
+					f:call(memcpy4)
 
 					f:load(a)
 					f:storeg(oluastack)
@@ -662,7 +661,7 @@ eval = export('eval', func(i32, function(f)
 	end) -- LOAD_CONST
 		f:load(valstack)
 		f:load(baseptr)
-		f:i32load(vec.base + offConst)
+		f:i32load(objframe.const)
 		readArg()
 		f:add()
 		f:i32load(vec.base)
@@ -673,7 +672,7 @@ eval = export('eval', func(i32, function(f)
 		f:load(valstack)
 		f:load(baseptr)
 		readArg()
-		f:i32load(vec.base + offLocal)
+		f:i32load(objframe.locals)
 		f:call(pushvec)
 		f:drop()
 		f:br(nop)
@@ -683,7 +682,7 @@ eval = export('eval', func(i32, function(f)
 		f:add()
 		f:load(valstack)
 		f:call(popvec)
-		f:i32store(vec.base + offLocal)
+		f:i32store(objframe.locals)
 		f:br(nop)
 	end) -- NOP
 
