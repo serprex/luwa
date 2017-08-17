@@ -475,20 +475,18 @@ f:block(function(b)
 end)
 ]]
 function funcmeta:switch(expr, ...)
-	local scopes, scp = {}, self.scope + 1
+	local scopes = {}
 	local function jmp()
 		expr(scopes)
 		return self:brtable(scopes[0], table.unpack(scopes))
 	end
 	for idx=1,select('#', ...) do
 		local x = select(idx, ...)
-		local xt = type(x)
+		local xt, oldj = type(x), jmp
 		if xt == 'function' then
-			local oldj = jmp
-			jmp = function() self:block(oldj) return x(scopes) end
-			scp = scp + 1
+			jmp = function(scp) self:block(oldj) return x(scopes) end
 		else
-			scopes[x] = scp
+			jmp = function(scp) scopes[x] = scp return oldj(scp) end
 		end
 	end
 	return jmp()
