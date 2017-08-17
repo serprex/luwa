@@ -474,26 +474,24 @@ f:block(function(b)
 	end)
 end)
 ]]
-local function switchcore(f, jmp, scopes, idx, xs)
-	local x = xs[idx]
-	if x then
+function funcmeta:switch(expr, ...)
+	local scopes, scp = {}, self.scope + 1
+	local function jmp()
+		expr(scopes)
+		return self:brtable(scopes[0], table.unpack(scopes))
+	end
+	for idx=1,select('#', ...) do
+		local x = select(idx, ...)
 		local xt = type(x)
 		if xt == 'function' then
-			return f:block(function(scope)
-				switchcore(f, jmp, scopes, idx+1, xs)
-				return x(scopes)
-			end)
+			local oldj = jmp
+			jmp = function() self:block(oldj) return x(scopes) end
+			scp = scp + 1
+		else
+			scopes[x] = scp
 		end
-		scopes[x] = self.scope
-		return switchcore(f, jmp, scopes, idx+1, xs)
 	end
-	return f:block(function()
-		jmp(scopes)
-		return f:brtable(scopes[0], table.unpack(scope))
-	end)
-end
-function funcmeta:switch(jmp, ...)
-	return switchcore(self, jmp, scopes, 1, {...})
+	return jmp()
 end
 
 local function mkopcore(self, name, tymap, a, tyret)
