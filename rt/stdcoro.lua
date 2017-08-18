@@ -47,6 +47,6 @@ coro_status = func(function(f)
 		f:unreachable()
 	end)
 	f:i32(4)
-	f:setnthtmp(4)
+	f:call(setnthtmp)
 end)
 

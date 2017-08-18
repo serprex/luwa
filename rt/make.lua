@@ -478,6 +478,12 @@ function funcmeta:switch(expr, ...)
 	local scopes = {}
 	local function jmp()
 		expr(scopes)
+		if scopes[-1] then
+			scopes[#scopes] = scopes[-1]
+		end
+		while #scopes > 1 and scopes[#scopes] == scopes[#scopes-1] do
+			scopes[#scopes] = nil
+		end
 		return self:brtable(scopes[0], table.unpack(scopes))
 	end
 	for idx=1,select('#', ...) do
@@ -485,6 +491,8 @@ function funcmeta:switch(expr, ...)
 		local xt, oldj = type(x), jmp
 		if xt == 'function' then
 			jmp = function(scp) self:block(oldj) return x(scopes) end
+		elseif xt == 'table' then
+			jmp = function(scp) scopes[x[1]] = x[2] return oldj(scp) end
 		else
 			jmp = function(scp) scopes[x] = scp return oldj(scp) end
 		end

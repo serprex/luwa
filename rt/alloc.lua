@@ -2,6 +2,7 @@ types = {
 	int = 0,
 	float = 1,
 	['nil'] = 2,
+	nul = 2,
 	bool = 3,
 	tbl = 4,
 	str = 5,
