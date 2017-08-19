@@ -98,7 +98,7 @@ FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer)) {
 		case 3:
 			return memta[p+5] === 1;
 		case 4: {
-			const hash = util.readuint32(memta, p+17),
+			const hash = util.readuint32(memta, p+21),
 				hashlen = util.readuint32(memta, hash+5),
 				map = new Map();
 			for (let i=0; i<hashlen; i+=8) {
