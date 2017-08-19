@@ -497,7 +497,7 @@ function funcmeta:switch(expr, ...)
 			jmp = function(scp) scopes[x] = scp return oldj(scp) end
 		end
 	end
-	return jmp()
+	return self:block(jmp)
 end
 
 local function mkopcore(self, name, tymap, a, tyret)
