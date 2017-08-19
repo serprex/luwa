@@ -106,7 +106,7 @@ gccollect = func(function(f)
 					f:load(n)
 					f:load(m)
 					f:eq()
-					f:brif(1)
+					f:brif(terminal)
 
 					f:load(n)
 					f:load(n)

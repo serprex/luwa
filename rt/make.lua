@@ -669,7 +669,7 @@ function func(...)
 		pcount = #params,
 		bcode = {},
 		stack = {},
-		scope = 1,
+		scope = 0,
 		scopety = {},
 		stackmin = {},
 		polystack = {},
