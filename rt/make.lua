@@ -381,7 +381,7 @@ function funcmeta:brtable(...)
 	end
 end
 function funcmeta:ret()
-	assert(not self.rety or self.rety == 0x40 or self.stack[#self.stack] == self.rety)
+	assert(not self.rety or self.rety == 0x40 or self:peek() == self.rety)
 	self.polystack[self.scope] = true
 	self:emit(0x0f)
 end
@@ -674,10 +674,10 @@ function func(...)
 		bcode = {},
 		stack = {},
 		scope = 1,
-		scopety = { rety },
-		stackmin = { 0 },
-		polystack = { false },
-		blockty = { true },
+		scopety = {},
+		stackmin = {},
+		polystack = {},
+		blockty = {},
 		bgen = bgen,
 		id = Mod.fid,
 		tid = Mod:decltype(fty),
@@ -891,7 +891,9 @@ xpcall(function()
 		for i=1, fu.pcount do
 			params[i] = i
 		end
+		fu:pushscope(fu.rety, true)
 		fu:bgen(table.unpack(params))
+		fu:popscope()
 
 		local fc = {}
 		encode_varuint(fc, fu.localbcn)
