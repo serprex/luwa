@@ -98,11 +98,7 @@ local function remove_from(tbl, n)
 end
 
 function allocsizef(x)
-	if x&7 == 0 then
-		return x
-	else
-		return (x&-8)+8
-	end
+	return x+(-x&7)
 end
 
 -- Type

@@ -66,18 +66,13 @@ coro = {
 }
 
 allocsize = func(i32, i32, function(f, sz)
+	f:i32(0)
 	f:load(sz)
+	f:sub()
 	f:i32(7)
 	f:band()
-	f:iff(i32, function()
-		f:load(sz)
-		f:i32(-8)
-		f:band()
-		f:i32(8)
-		f:add()
-	end, function()
-		f:load(sz)
-	end)
+	f:load(sz)
+	f:add()
 end)
 
 nextid = func(i32, function(f)
