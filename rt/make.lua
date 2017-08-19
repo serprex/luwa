@@ -492,7 +492,7 @@ function funcmeta:switch(expr, ...)
 		if xt == 'function' then
 			jmp = function(scp) self:block(oldj) return x(scopes) end
 		elseif xt == 'table' then
-			jmp = function(scp) scopes[x[1]] = x[2] return oldj(scp) end
+			jmp = function(scp) for i=1,#x-1 do scopes[x[i]] = x[#x] end return oldj(scp) end
 		else
 			jmp = function(scp) scopes[x] = scp return oldj(scp) end
 		end
