@@ -172,8 +172,10 @@ function funcmeta:emituint(val)
 end
 function funcmeta:emitscope(scp)
 	if scp == self then
-		scp = 0
+		scp = 1
 	end
+	assert(scp > 0)
+	assert(not self.blockty[scp] or self.scopety[scp] == 0x40 or self.scopety[scp] == self:peek())
 	return encode_varuint(self.bcode, self.scope - scp)
 end
 
@@ -182,12 +184,37 @@ function funcmeta:push(ty)
 	self.stack[#self.stack+1] = ty
 end
 function funcmeta:pop()
-	local r = self.stack[#self.stack]
+	local r = self:peek()
 	self.stack[#self.stack] = nil
 	return r
 end
 function funcmeta:peek()
+	assert(#self.stack > self.stackmin[self.scope])
 	return self.stack[#self.stack]
+end
+function funcmeta:pushscope(scty, blty)
+	self.scope = self.scope + 1
+	self.stackmin[self.scope] = #self.stack
+	self.polystack[self.scope] = false
+	self.scopety[self.scope] = scty
+	self.blockty[self.scope] = blty
+end
+function funcmeta:popscope()
+	local tyval = self.scopety[self.scope]
+	local sclen = self.stackmin[self.scope]
+	if not self.polystack[self.scope] then
+		if tyval ~= 0x40 then
+			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
+		else
+			assert(#self.stack == sclen)
+		end
+	elseif tyval ~= 0x40 then
+		remove_from(self.stack, sclen + 1)
+		self:push(tyval)
+	else
+		remove_from(self.stack, sclen + 1)
+	end
+	self.scope = self.scope - 1
 end
 
 function funcmeta:params(...)
@@ -230,7 +257,7 @@ mkconstop('f32', f32, 0x43, encode_f32)
 mkconstop('f64', f64, 0x44, encode_f64)
 function funcmeta:unreachable()
 	self:emit(0x00)
-	self.polystack = true
+	self.polystack[self.scope] = true
 end
 function funcmeta:nop()
 	self:emit(0x01)
@@ -245,24 +272,10 @@ function funcmeta:block(ty, block)
 	end
 	self:emit(0x02)
 	self:emit(tyval)
-	local sclen = #self.stack
-	self.scope = self.scope + 1
+	self:pushscope(tyval, true)
 	block(self.scope)
-	if not self.polystack then
-		if tyval ~= 0x40 then
-			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
-		else
-			assert(#self.stack == sclen)
-		end
-	elseif tyval ~= 0x40 then
-		remove_from(self.stack, sclen + 1)
-		self:push(tyval)
-	else
-		remove_from(self.stack, sclen + 1)
-	end
-	self.polystack = false
+	self:popscope()
 	self:emit(0x0b)
-	self.scope = self.scope - 1
 end
 function funcmeta:loop(ty, block)
 	local tyty, tyval = type(ty)
@@ -274,24 +287,10 @@ function funcmeta:loop(ty, block)
 	end
 	self:emit(0x03)
 	self:emit(tyval)
-	local sclen = #self.stack
-	self.scope = self.scope + 1
+	self:pushscope(tyval, false)
 	block(self.scope)
-	if not self.polystack then
-		if tyval ~= 0x40 then
-			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
-		else
-			assert(#self.stack == sclen)
-		end
-	elseif tyval ~= 0x40 then
-		remove_from(self.stack, sclen + 1)
-		self:push(tyval)
-	else
-		remove_from(self.stack, sclen + 1)
-	end
-	self.polystack = false
+	self:popscope()
 	self:emit(0x0b)
-	self.scope = self.scope - 1
 end
 function funcmeta:load(x)
 	self:emit(0x20)
@@ -344,50 +343,24 @@ function funcmeta:iff(ty, brif, brelse)
 	end
 	assert(brelse or tyval == 0x40)
 	self:emit(tyval)
-	self.scope = self.scope + 1
-
-	local sclen = #self.stack
+	self:pushscope(tyval, true)
 	brif(self.scope)
-	if not self.polystack then
-		if tyval ~= 0x40 then
-			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
-		else
-			assert(#self.stack == sclen)
-		end
-	elseif tyval ~= 0x40 then
-		remove_from(self.stack, sclen + 1)
-		self:push(tyval)
-	else
-		remove_from(self.stack, sclen + 1)
-	end
-	self.polystack = false
+	self:popscope()
+
 	if brelse then
 		if tyval ~= 0x40 then
 			self:pop()
 		end
 		self:emit(0x05)
-		sclen = #self.stack
+		self:pushscope(tyval, true)
 		brelse(self.scope)
-		if not self.polystack then
-			if tyval ~= 0x40 then
-				assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
-			else
-				assert(#self.stack == sclen)
-			end
-		elseif tyval ~= 0x40 then
-			remove_from(self.stack, sclen + 1)
-			self:push(tyval)
-		else
-			remove_from(self.stack, sclen + 1)
-		end
-		self.polystack = false
+		self:popscope()
 	end
 	self:emit(0x0b)
-	self.scope = self.scope - 1
 end
 
 function funcmeta:br(scope)
-	self.polystack = true
+	self.polystack[self.scope] = true
 	self:emit(0x0c)
 	return self:emitscope(scope)
 end
@@ -397,7 +370,7 @@ function funcmeta:brif(scope)
 	return self:emitscope(scope)
 end
 function funcmeta:brtable(...)
-	self.polystack = true
+	self.polystack[self.scope] = true
 	assert(self:pop() == i32)
 	self:emit(0x0e)
 	local n = select('#', ...)
@@ -409,7 +382,7 @@ function funcmeta:brtable(...)
 end
 function funcmeta:ret()
 	assert(not self.rety or self.rety == 0x40 or self.stack[#self.stack] == self.rety)
-	self.polystack = true
+	self.polystack[self.scope] = true
 	self:emit(0x0f)
 end
 function funcmeta:currentmemory()
@@ -484,6 +457,7 @@ function funcmeta:switch(expr, ...)
 		while #scopes > 1 and scopes[#scopes] == scopes[#scopes-1] do
 			scopes[#scopes] = nil
 		end
+		assert(scopes[0])
 		return self:brtable(scopes[0], table.unpack(scopes))
 	end
 	for idx=1,select('#', ...) do
@@ -691,9 +665,6 @@ function func(...)
 		rety = void
 	end
 	fty[#fty+1] = rety
-	-- TODO create a separate context object
-	-- which will be used for calling block
-	-- takes out scope/stack/polystack
 	local f = setmetatable({
 		rety = rety,
 		localty = params,
@@ -701,9 +672,12 @@ function func(...)
 		localbcn = 0,
 		pcount = #params,
 		bcode = {},
-		scope = 0,
 		stack = {},
-		polystack = false, -- TODO polystack should work with unreachable scopes (eg block i32 ret loop i64 end end)
+		scope = 1,
+		scopety = { rety },
+		stackmin = { 0 },
+		polystack = { false },
+		blockty = { true },
 		bgen = bgen,
 		id = Mod.fid,
 		tid = Mod:decltype(fty),

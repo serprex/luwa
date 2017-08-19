@@ -309,7 +309,7 @@ lex = export('lex', func(i32, void, function(f, src)
 										f:tee(j)
 										f:i32(32)
 										f:eq()
-										f:brif(0)
+										f:brif(loop)
 
 										f:load(j)
 										f:i32(9)
