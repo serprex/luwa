@@ -318,13 +318,10 @@ function funcmeta:drop()
 	self:pop()
 end
 function funcmeta:select()
-	-- TODO typesig
 	assert(self:pop() == i32)
 	local a = self:pop()
-	local b = self:pop()
-	assert(a == b)
+	assert(a == self:peek())
 	self:emit(0x1b)
-	self:push(a)
 end
 function funcmeta:iff(ty, brif, brelse)
 	local tyty, tyval = type(ty)
@@ -373,7 +370,9 @@ function funcmeta:brtable(...)
 	assert(n > 0)
 	self:emituint(n-1)
 	for i = 1, n do
-		self:emitscope(select(i, ...))
+		local scp = select(i, ...)
+		assert(scp, 'nil case: ' .. i)
+		self:emitscope(scp)
 	end
 end
 function funcmeta:ret()
@@ -391,58 +390,7 @@ function funcmeta:growmemory()
 	self:emit(0x40)
 	self:emit(0)
 end
---[[
-f:switch(function()
-		f:load(a)
-	end,
-	0, function(scopes)
-		f:load(a)
-		f:store(b)
-		f:br(scopes[2])
-	end,
-	4, 1, function(scopes)
-		f:load(a)
-		f:load(b)
-		f:add()
-		f:store(a)
-		f:br(scopes.asdf)
-	end,
-	3, function(scopes)
-		f:br(scopes.root)
-	end,
-	'asdf', function(scopes)
 
-	end,
-	2, function(scopes)
-
-	end,
-)
-->
-scopes = {}
-f:block(function(b)
-	scopes[2] = b
-	f:block(function(b)
-		scopes.asdf = b
-		f:block(function(b)
-			scopes[3] = b
-			f:block(function(b)
-				scopes[4] = b
-				scopes[1] = b
-				f:block(function(b)
-					scopes[0] = b
-					f:block(function()
-						f:load(a)
-						f:brtable(scopes[0], scopes[1], scopes[2], scopes[3], scopes[4])
-					end)
-					f:load(a)
-					f:store(b)
-					f:br(scopes[2])
-				end)
-			end)
-		end)
-	end)
-end)
-]]
 function funcmeta:switch(expr, ...)
 	local scopes = {}
 	local function jmp()
