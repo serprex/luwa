@@ -7,6 +7,10 @@ math.pi = 0x1.921fb54442d18p1
 math.huge = 1./0.
 
 local rad_coef, deg_coef = math.pi/180., 180./math.pi
+-- capture globals so that behavior doesn't change if rebound
+local _error, _getmetatable, _next, _tostring, _xpcall = error, getmetatable, next, tostring, xpcall
+local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
+local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
 function math.deg(x)
 	return x * deg_coef
@@ -156,9 +160,10 @@ function table.sort(list, comp)
 	end
 end
 
-function io.read(...)
-	return io.input():read(...)
+local function io_read(...)
+	return io_input():read(...)
 end
+io.read = io_read
 
 function os.difftime(t2, t1)
 	return t2 - t1
@@ -175,17 +180,17 @@ function coro_wrap_handler(t, ...)
 	if t then
 		return ...
 	else
-		return error(...)
+		return _error(...)
 	end
 end
 function coroutine.wrap(f)
-	local c = coroutine.create(f)
+	local c = coroutine_create(f)
 	return function(...)
-		return coro_wrap_handler(coroutine.resume(...))
+		return coro_wrap_handler(coroutine_resume(...))
 	end
 end
 function coroutine.isyieldable()
-	local a, b = coroutine.running()
+	local a, b = coroutine_running()
 	return b
 end
 
@@ -196,22 +201,29 @@ function assert(v, message, ...)
 	if v then
 		return v, message, ...
 	else
-		return error(message, 2)
+		return _error(message, 2)
 	end
 end
 
 function print(...)
 	for i = 1, select('#', ...) do
 		if i > 1 then
-			io.write('\t')
+			io_write('\t')
 		end
-		io.write(tostring(select(i, ...)))
+		io_write(_tostring(select(i, ...)))
 	end
-	io.write('\n')
+	io_write('\n')
 end
 
 function pairs(t)
-	return next, t, nil
+	local mt = _getmetatable(t)
+	if not mt then
+		local __pairs = mt.__pairs
+		if __pairs then
+			return __pairs(t)
+		end
+	end
+	return _next, t, nil
 end
 
 local function inext(a, b)
@@ -223,13 +235,20 @@ local function inext(a, b)
 	end
 end
 function ipairs(t)
+	local mt = _getmetatable(t)
+	if not mt then
+		local __ipairs = mt.__ipairs
+		if __ipairs then
+			return __ipairs(t)
+		end
+	end
 	return inext, t, 0
 end
 
 function loadfile(s, m, e)
 	local f, err
 	if s then
-		f, err = io.open(s)
+		f, err = io_open(s)
 		if err then
 			return nil, err
 		end
@@ -237,7 +256,7 @@ function loadfile(s, m, e)
 		f:close()
 	else
 		s = 'stdin'
-		err = io.read('a')
+		err = io_read('a')
 	end
 	return load(err, s, m, e)
 end
@@ -253,9 +272,9 @@ local function xpcallcore(msgh, res, ...)
 	if res then
 		return true, ...
 	else
-		return false, xpcallguard(pcall(msgh, ...))
+		return false, xpcallguard(_pcall(msgh, ...))
 	end
 end
 function xpcall(f, msgh, ...)
-	return xpcallcore(msgh, pcall(f, ...))
+	return xpcallcore(msgh, _pcall(f, ...))
 end
