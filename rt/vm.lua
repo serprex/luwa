@@ -1,15 +1,18 @@
 dataframe = {
 	type = str.base + 0,
 	pc = str.base + 1,
-	localc = str.base + 5, -- # of locals
+	retb = str.base + 5, -- index of where return values should begin
 	retc = str.base + 9, -- # of values requested from call, -1 for no limit
 	base = str.base + 13, -- index top objframe
+	localc = str.base + 17, -- # of locals
+	sizeof = 21,
 }
 objframe = {
 	bc = vec.base + 0,
 	consts = vec.base + 4,
 	frees = vec.base + 8,
-	locals = vec.base + 16,
+	locals = vec.base + 12,
+	sizeof = 16,
 }
 calltypes = {
 	norm = 0, -- Reload locals
@@ -85,7 +88,7 @@ init = export('init', func(i32, void, function(f, fn)
 	f:i32(8)
 	f:call(nthtmp)
 	f:tee(a)
-	f:i32(17)
+	f:i32(dataframe.sizeof)
 	f:i32store(buf.len)
 
 	f:load(a)
@@ -94,18 +97,19 @@ init = export('init', func(i32, void, function(f, fn)
 	f:i32(calltypes.init)
 	f:i32store8(dataframe.type)
 
+	assert(dataframe.retb == dataframe.pc + 4)
 	f:load(a)
-	f:i32(0)
-	f:i32store(dataframe.pc)
-
-	f:load(a)
-	f:load(localc)
-	f:i32store(dataframe.localc)
+	f:i64(0)
+	f:i64store(dataframe.pc)
 
 	assert(dataframe.base == dataframe.retc + 4)
 	f:load(a)
 	f:i64(0xffffffff) -- -1, 0
 	f:i64store(dataframe.retc)
+
+	f:load(a)
+	f:load(localc)
+	f:i32store(dataframe.localc)
 
 	-- leak old stack until overwritten
 	f:load(newst)
@@ -125,8 +129,9 @@ end))
 -- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
 eval = export('eval', func(i32, function(f)
 	local a, b, c, d,
+		meta_callty, meta_retb, meta_retc, meta_key,
 		datastack, bc, baseptr, valstack, valvec,
-		callty, pc, localc, retc, base = f:locals(i32, 4+5+5)
+		pc, localc, retc, base = f:locals(i32, 4+3+5+4)
 
 	local function loadframe(tmp)
 		f:loadg(oluastack)
@@ -136,7 +141,7 @@ eval = export('eval', func(i32, function(f)
 		f:load(datastack)
 		f:i32load(buf.len)
 		f:add()
-		f:i32(17)
+		f:i32(dataframe.sizeof)
 		f:sub()
 		f:tee(tmp)
 		f:i32load(dataframe.base)
@@ -153,10 +158,6 @@ eval = export('eval', func(i32, function(f)
 		f:load(tmp)
 		f:i32load(dataframe.pc)
 		f:store(pc)
-
-		f:load(tmp)
-		f:i32load8u(dataframe.type)
-		f:store(callty)
 	end
 	local function readArg()
 		f:load(bc)
@@ -255,90 +256,18 @@ eval = export('eval', func(i32, function(f)
 					f:call(tblget)
 					f:tee(d)
 					f:iff(function()
-						-- push objframe
-						f:loadg(oluastack)
-						f:i32load(coro.obj)
-						f:loadg(oluastack)
-						f:i32(16)
-						f:load(d)
-						f:i32load(functy.localc)
-						f:tee(b)
-						f:i32(2)
-						f:shl()
-						f:add()
-						f:call(extendvec)
-						f:drop()
-
-						-- push dataframe
-						f:loadg(oluastack)
-						f:i32load(coro.data)
-						f:i32(17)
-						f:call(extendstr)
-						-- defer until writedataframe
-
-						-- writeobjframe
-						f:loadg(oluastack)
-						f:i32load(coro.obj)
-						f:tee(c)
-						f:i32load(buf.ptr)
-						f:load(c)
-						f:i32load(buf.len)
-						f:add()
-						f:tee(c)
-						assert(functy.consts == functy.bc + 4)
-						assert(objframe.consts == objframe.bc + 4)
-
-						-- reload metafunc
-						f:loadg(oluastack)
-						f:i32load(coro.stack)
-						f:tee(d)
-						f:i32load(buf.ptr)
-						f:load(d)
-						f:i32load(buf.len)
-						f:add()
-						loadvecminus(f, 4)
-						f:i32load(tbl.meta)
-						f:tee(d)
-						f:i64load(functy.bc)
-						f:i64store(objframe.bc)
-
-						f:load(c)
-						f:load(d)
-						f:i32load(functy.frees)
-						f:i32store(objframe.frees)
-
-						-- write dataframe
-						f:tee(datastack)
-						f:i32load(buf.ptr)
-						f:load(datastack)
-						f:i32load(buf.len)
-						f:add()
-						f:i32(17)
-						f:sub()
-						f:tee(d)
-						f:sub()
 						f:i32(calltypes.bool)
-						f:i32store8(dataframe.type)
-
-						f:load(d)
-						f:i32(0)
-						f:i32store(dataframe.pc)
-
-						f:load(d)
-						f:load(b)
-						f:i32store(dataframe.localc)
-
-						f:load(d)
-						f:i32(1)
-						f:i32store(dataframe.retc)
-
-						f:load(d)
-						f:loadg(oluastack)
-						f:i32load(obj.stack)
+						f:store(meta_callty)
+						f:load(valstack)
 						f:i32load(buf.len)
-						f:i32store(dataframe.base) -- TODO wrong
-
-						f:br(scopes.nop)
+						f:i32(8)
+						f:sub()
+						f:store(meta_retb)
+						f:i32(1)
+						f:store(meta_retc)
+						f:i32(GS.__eq)
+						f:store(meta_key)
+						f:br(scopes.meta)
 					end)
 				end)
 			end)
@@ -412,10 +341,21 @@ eval = export('eval', func(i32, function(f)
 					f:load(b)
 					f:i32(GS.__len)
 					f:call(tblget)
-					f:tee(b)
+					f:tee(d)
 					f:iff(function()
-						-- convert to call to f
-						f:br(scopes.nop)
+						-- t -> __len, t
+						f:i32(calltypes.norm)
+						f:store(meta_callty)
+						f:load(valstack)
+						f:i32load(buf.len)
+						f:i32(4)
+						f:sub()
+						f:store(meta_retb)
+						f:i32(1)
+						f:store(meta_retc)
+						f:i32(GS.__len)
+						f:store(meta_key)
+						f:br(scopes.meta)
 					end)
 				end)
 				f:load(a)
@@ -513,7 +453,7 @@ eval = export('eval', func(i32, function(f)
 		f:load(datastack)
 		f:load(datastack)
 		f:i32load(buf.len)
-		f:i32(17)
+		f:i32(dataframe.sizeof)
 		f:sub()
 		f:i32store(buf.len)
 
@@ -569,7 +509,14 @@ eval = export('eval', func(i32, function(f)
 			f:block(function(boolify)
 				f:block(function(endprog)
 					-- read callty from freed memory
-					f:load(callty)
+					f:loadg(oluastack)
+					f:i32load(coro.data)
+					f:tee(a)
+					f:i32load(buf.ptr)
+					f:load(a)
+					f:i32load(buf.len)
+					f:add()
+					f:i32load(dataframe.type)
 					f:brtable(loadframe, endprog, loadframe, loadframe, loadframe, boolify)
 				end) -- endprog
 				f:loadg(oluastack)
@@ -716,6 +663,103 @@ eval = export('eval', func(i32, function(f)
 		f:i32load(str.base)
 		f:store(pc)
 		f:br(scopes.nop)
+	end, 'meta', function()
+		-- d = func; metamethod, callty,
+		-- push objframe
+		f:loadg(oluastack)
+		f:i32load(coro.obj)
+		f:tee(b)
+		f:i32load(buf.len)
+		f:store(a)
+		f:load(b)
+		f:i32(16)
+		f:load(d)
+		f:i32load(functy.localc)
+		f:tee(b)
+		f:i32(2)
+		f:shl()
+		f:add()
+		f:call(extendvec)
+
+		-- writeobjframe
+		f:tee(c)
+		f:i32load(buf.ptr)
+		f:load(c)
+		f:i32load(buf.len)
+		f:add()
+		f:tee(c)
+		assert(functy.consts == functy.bc + 4)
+		assert(objframe.consts == objframe.bc + 4)
+
+		-- reload metafunc
+		f:loadg(oluastack)
+		f:i32load(coro.stack)
+		f:tee(d)
+		f:i32load(buf.ptr)
+		f:load(d)
+		f:i32load(buf.len)
+		f:add()
+		loadvecminus(f, 4)
+		f:store(d)
+
+		f:load(meta_key)
+		f:iff(function()
+			f:load(d)
+			f:i32load(tbl.meta)
+			f:load(meta_key)
+			f:call(tblget)
+			f:store(d)
+		end)
+
+		f:load(d)
+		f:i64load(functy.bc)
+		f:i64store(objframe.bc)
+
+		f:load(c)
+		f:load(d)
+		f:i32load(functy.frees)
+		f:i32store(objframe.frees)
+
+		-- push dataframe
+		f:loadg(oluastack)
+		f:i32load(coro.data)
+		f:i32(dataframe.sizeof)
+		f:call(extendstr)
+
+		-- write dataframe
+		f:tee(datastack)
+		f:i32load(buf.ptr)
+		f:load(datastack)
+		f:i32load(buf.len)
+		f:add()
+		f:i32(dataframe.sizeof)
+		f:sub()
+		f:tee(d)
+		f:sub()
+		f:load(meta_callty)
+		f:i32store8(dataframe.type)
+
+		f:load(d)
+		f:i32(0)
+		f:i32store(dataframe.pc)
+
+		f:load(d)
+		f:load(meta_retb)
+		f:i32store(dataframe.retb)
+
+		f:load(d)
+		f:load(b)
+		f:i32store(dataframe.localc)
+
+		f:load(d)
+		f:load(meta_retc)
+		f:i32store(dataframe.retc)
+
+		f:load(d)
+		f:load(a)
+		f:i32store(dataframe.base)
+
+		f:br(scopes.nop)
 	end, 'pcp4', function()
 		f:load(pc)
 		f:i32(4)
@@ -731,7 +775,7 @@ eval = export('eval', func(i32, function(f)
 	f:load(datastack)
 	f:i32load(buf.len)
 	f:add()
-	f:i32(17)
+	f:i32(dataframe.sizeof)
 	f:sub()
 	f:load(pc)
 	f:i32store(dataframe.pc)
