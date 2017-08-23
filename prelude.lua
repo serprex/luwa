@@ -8,7 +8,7 @@ math.huge = 1./0.
 
 local rad_coef, deg_coef = math.pi/180., 180./math.pi
 -- capture globals so that behavior doesn't change if rebound
-local _error, _getmetatable, _next, _tostring, _xpcall = error, getmetatable, next, tostring, xpcall
+local _error, _getmetatable, _next, _select, _tostring, _xpcall = error, getmetatable, next, select, tostring, xpcall
 local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
@@ -16,8 +16,8 @@ function math.deg(x)
 	return x * deg_coef
 end
 function math.max(x, ...)
-	for i = 1,select('#', ...) do
-		local m = select(i, ...)
+	for i = 1,_select('#', ...) do
+		local m = _select(i, ...)
 		if m > x then
 			x = m
 		end
@@ -25,8 +25,8 @@ function math.max(x, ...)
 	return x
 end
 function math.min(x, ...)
-	for i = 1,select('#', ...) do
-		local m = select(i, ...)
+	for i = 1,_select('#', ...) do
+		local m = _select(i, ...)
 		if m < x then
 			x = m
 		end
@@ -68,7 +68,7 @@ end
 utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
 
 function table.pack(...)
-	return { n = select('#', ...), ... }
+	return { n = _select('#', ...), ... }
 end
 function table.insert(list, pos, value)
 	if not value then
@@ -206,11 +206,11 @@ function assert(v, message, ...)
 end
 
 function print(...)
-	for i = 1, select('#', ...) do
+	for i = 1, _select('#', ...) do
 		if i > 1 then
 			io_write('\t')
 		end
-		io_write(_tostring(select(i, ...)))
+		io_write(_tostring(_select(i, ...)))
 	end
 	io_write('\n')
 end

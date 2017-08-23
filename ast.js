@@ -1,6 +1,5 @@
 "use strict";
-const lex = require("./lex"),
-	util = require("./util");
+const lex = require("./lex");
 
 // Thanks lua-users.org/lists/lua-l/2010-12/msg00699.html
 const Block = exports.Block = 0,
