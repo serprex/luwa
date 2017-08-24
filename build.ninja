@@ -3,4 +3,4 @@ rule mkcjs
 rule mkrt
  command=./rt/make.lua $out $in
 build quire.js:mkcjs ast.js bc.js env.js func.js jit.js lex.js luwa.js obj.js rt.js runbc.js string.js table.js thread.js utf8.js util.js
-build rt.wasm:mkrt rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/stack.lua rt/obj.lua rt/std.lua rt/stdcoro.lua rt/table.lua rt/util.lua rt/vm.lua
+build rt.wasm:mkrt rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/stack.lua rt/obj.lua rt/std.lua rt/stdcoro.lua rt/string.lua rt/table.lua rt/util.lua rt/vm.lua
