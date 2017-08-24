@@ -1,5 +1,5 @@
 strcmp = func(i32, i32, i32, function(f, a, b)
-	local idx, len, c, eqlenv = f:locals(idx, 4)
+	local idx, len, c, eqlenv = f:locals(i32, 4)
 	-- len = min(a.len, b.len); eqlenv = a.len - b.len
 	f:load(a)
 	f:i32load(str.len)

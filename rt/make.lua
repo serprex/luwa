@@ -200,9 +200,9 @@ function funcmeta:popscope()
 	local sclen = self.stackmin[self.scope]
 	if not self.polystack[self.scope] then
 		if tyval ~= 0x40 then
-			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1)
+			assert(self.stack[#self.stack] == tyval and #self.stack == sclen + 1, 'Expected single result on stack')
 		else
-			assert(#self.stack == sclen)
+			assert(#self.stack == sclen, 'Unexpected stack leftovers')
 		end
 	elseif tyval ~= 0x40 then
 		remove_from(self.stack, sclen + 1)
@@ -831,12 +831,12 @@ loopSection(10, Mod.func, function(bc, fu)
 		params[i] = i
 	end
 	fu:pushscope(fu.rety, true)
-	fu:bgen(table.unpack(params))
 	for k,v in pairs(_ENV) do
 		if v == fu then
 			print(k)
 		end
 	end
+	fu:bgen(table.unpack(params))
 	fu:popscope()
 
 	local fc = {}
