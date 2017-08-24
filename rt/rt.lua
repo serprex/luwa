@@ -3,6 +3,7 @@ TRUE = 8
 FALSE = 16
 otmp = global(i32, true)
 oluastack = global(i32, true) -- default to NIL
+ostrmt = global(i32, true)
 markbit = global(i32, true)
 idcount = global(i32, true)
 

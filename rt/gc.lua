@@ -9,6 +9,8 @@ gccollect = func(function(f)
 	f:call(gcmark)
 	f:loadg(oluastack)
 	f:call(gcmark)
+	f:loadg(ostrmt)
+	f:call(gcmark)
 
 	f:call(igcmark)
 
@@ -62,6 +64,12 @@ gccollect = func(function(f)
 	f:i32(-8)
 	f:band()
 	f:storeg(oluastack)
+
+	f:loadg(ostrmt)
+	f:i32load(obj.gc)
+	f:i32(-8)
+	f:band()
+	f:storeg(ostrmt)
 
 	local function updateptr(offset)
 		f:load(livetip)

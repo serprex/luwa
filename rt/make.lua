@@ -832,6 +832,11 @@ loopSection(10, Mod.func, function(bc, fu)
 	end
 	fu:pushscope(fu.rety, true)
 	fu:bgen(table.unpack(params))
+	for k,v in pairs(_ENV) do
+		if v == fu then
+			print(k)
+		end
+	end
 	fu:popscope()
 
 	local fc = {}
