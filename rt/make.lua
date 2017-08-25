@@ -408,11 +408,25 @@ function funcmeta:switch(expr, ...)
 		local x = select(idx, ...)
 		local xt, oldj = type(x), jmp
 		if xt == 'function' then
-			jmp = function(scp) self:block(oldj) return x(scopes) end
+			function jmp(scp)
+				self:block(oldj)
+				return x(scopes)
+			end
 		elseif xt == 'table' then
-			jmp = function(scp) for i=1,#x-1 do scopes[x[i]] = x[#x] end return oldj(scp) end
+			function jmp(scp)
+				local lastx = x[#x]
+				for i=1,#x-1 do
+					assert(not scopes[x[i]])
+					scopes[x[i]] = lastx
+				end
+				return oldj(scp)
+			end
 		else
-			jmp = function(scp) scopes[x] = scp return oldj(scp) end
+			function jmp(scp)
+				assert(not scopes[x])
+				scopes[x] = scp
+				return oldj(scp)
+			end
 		end
 	end
 	return self:block(jmp)

@@ -49,6 +49,7 @@ functy = {
 	consts = 14,
 	frees = 18,
 	localc = 22,
+	paramc = 26,
 }
 corostate = {
 	dead = 0,
@@ -360,6 +361,10 @@ newfunc = export('newfunc', func(i32, function(f)
 	f:load(a)
 	f:i64(0)
 	f:i64store(functy.frees)
+
+	f:load(a)
+	f:i32(0)
+	f:i32store(functy.paramc)
 
 	f:load(a)
 end))

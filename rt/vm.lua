@@ -11,8 +11,7 @@ objframe = {
 	bc = vec.base + 0,
 	consts = vec.base + 4,
 	frees = vec.base + 8,
-	locals = vec.base + 12,
-	sizeof = 16,
+	sizeof = 12,
 }
 calltypes = {
 	norm = 0, -- Reload locals
@@ -25,9 +24,9 @@ calltypes = {
 
 init = export('init', func(i32, function(f, fn)
 	-- Transition oluastack to having a stack frame from fn
-	-- Assumes stack was previous setup
+	-- Assumes stack was previously setup
 
-	local a, b, stsz = f:locals(i32, 3)
+	local a, stsz, oldstsz = f:locals(i32, 3)
 
 	f:load(fn)
 	f:call(tmppush)
@@ -56,12 +55,11 @@ init = export('init', func(i32, function(f, fn)
 	f:i32load(functy.localc)
 	f:i32store(dataframe.localc)
 
-	-- leak old stack until it's overwritten
 	f:loadg(oluastack)
 	f:i32load(coro.stack)
-	f:tee(a)
-	f:i32(0)
-	f:i32store(buf.len)
+	f:i32load(buf.len)
+	f:i32(4)
+	f:store(oldstsz)
 
 	f:load(fn)
 	f:i32load(functy.localc)
@@ -69,42 +67,30 @@ init = export('init', func(i32, function(f, fn)
 	f:shl()
 	f:i32(objframe.sizeof)
 	f:add()
-	f:tee(stsz)
-	f:load(a)
+	f:call(extendtmp)
+	f:call(tmppop)
+
+	f:loadg(oluastack)
+	f:i32load(coro.stack)
 	f:i32load(buf.ptr)
-	f:tee(b)
-	f:i32load(vec.len)
-	f:leu() -- leu over ltu because vec buffer relies on a nil topslot
-	f:iff(function()
-		f:load(fn)
-		f:storeg(otmp)
-
-		f:load(stsz)
-		f:call(newvec)
-		f:store(b)
-		f:loadg(oluastack)
-		f:i32load(coro.stack)
-		f:load(b)
-		f:i32store(buf.ptr)
-
-		f:loadg(otmp)
-		f:store(fn)
-	end)
-
-	f:load(b)
-	f:load(fn)
+	f:load(oldstsz)
+	f:add()
+	f:tee(a)
+	f:load(a)
+	loadvecminus(f, 4)
+	f:tee(fn)
 	f:i32load(functy.bc)
-	f:i32store(objframe.bc)
+	f:i32store(objframe.bc - 4)
 
-	f:load(b)
+	f:load(a)
 	f:load(fn)
 	f:i32load(functy.consts)
-	f:i32store(objframe.consts)
+	f:i32store(objframe.consts - 4)
 
-	f:load(b)
+	f:load(a)
 	f:load(fn)
 	f:i32load(functy.frees)
-	f:i32store(objframe.frees)
+	f:i32store(objframe.frees - 4)
 end))
 
 -- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
