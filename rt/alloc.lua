@@ -62,7 +62,6 @@ coro = {
 	caller = 10,
 	stack = 14,
 	data = 18,
-	obj = 22,
 }
 
 allocsize = func(i32, i32, function(f, sz)
@@ -342,9 +341,11 @@ newvecbuf = export('newvecbuf', func(i32, i32, function(f, sz)
 	f:call(newbuf)
 end))
 
-local newfuncorcoro = func(i32, i32, function(f, a)
+newfunc = export('newfunc', func(i32, function(f)
+	local a = f:locals(i32)
+
 	f:i32(32)
-	f:load(a)
+	f:i32(types.functy)
 	f:call(newobj)
 	f:tee(a)
 	f:call(nextid)
@@ -361,14 +362,30 @@ local newfuncorcoro = func(i32, i32, function(f, a)
 	f:i64store(functy.frees)
 
 	f:load(a)
-end)
-
-newfunc = export('newfunc', func(i32, function(f)
-	f:i32(types.functy)
-	f:call(newfuncorcoro)
 end))
 
 newcoro = export('newcoro', func(i32, function(f)
+	local a = f:locals(i32)
+
+	f:i32(24)
 	f:i32(types.coro)
-	f:call(newfuncorcoro)
+	f:call(newobj)
+	f:tee(a)
+	f:call(nextid)
+	f:i32store(coro.id)
+
+	f:load(a)
+	f:i32(corostate.wait)
+	f:i32store8(coro.state)
+
+	f:load(a)
+	f:i32(NIL)
+	f:i32store(coro.caller)
+
+	assert(coro.data == coro.stack + 4)
+	f:load(a)
+	f:i64(0)
+	f:i64store(coro.stack)
+
+	f:load(a)
 end))

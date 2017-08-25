@@ -23,107 +23,88 @@ calltypes = {
 	bool = 5, -- Cast result to bool
 }
 
-init = export('init', func(i32, void, function(f, fn)
-	-- expects oluastack to've been in stack-only mode
-	local a, newst, localc, localc4 = f:locals(i32, 4)
+init = export('init', func(i32, function(f, fn)
+	-- Transition oluastack to having a stack frame from fn
+	-- Assumes stack was previous setup
 
-	f:load(fn)
-	f:i32load(functy.localc)
-	f:tee(localc)
-	f:i32(2)
-	f:shl()
-	f:tee(localc4)
+	local a, b, stsz = f:locals(i32, 3)
 
-	-- Must alloc enough so pushing fn props won't cause more allocs
 	f:load(fn)
 	f:call(tmppush)
-	f:i32(12)
-	f:call(extendtmp)
-	f:call(newcoro)
-	f:i32(4)
-	f:call(setnthtmp)
-	f:i32(85)
+
+	f:i32(63)
 	f:call(newstrbuf)
-	f:i32(8)
-	f:call(setnthtmp)
-	f:i32(32)
-	f:add() -- adds localc4
-	f:call(newvecbuf)
-	f:i32(12)
-	f:call(setnthtmp)
-
-	f:i32(4)
-	f:call(nthtmp)
-	f:tee(newst)
-	f:i32(8)
-	f:call(nthtmp)
+	f:tee(a)
+	f:loadg(oluastack)
+	f:load(a)
 	f:i32store(coro.data)
-
-	f:load(newst)
-	f:i32(12)
-	f:call(nthtmp)
-	f:tee(a)
-	f:i32store(coro.obj)
-
-	-- obj frame
-	f:load(a)
-	f:i32(16)
-	f:call(nthtmp)
-	f:tee(fn)
-	f:i32load(functy.bc)
-	f:call(pushvec)
-	f:load(fn)
-	f:i32load(functy.consts)
-	f:call(pushvec)
-	f:load(fn)
-	f:i32load(functy.frees)
-	f:call(pushvec)
-	f:load(a)
-	f:i32load(buf.len)
-	f:load(localc4)
-	f:add()
-	f:i32store(buf.len)
-
-	-- data frame
-	f:i32(8)
-	f:call(nthtmp)
-	f:tee(a)
-	f:i32(dataframe.sizeof)
-	f:i32store(buf.len)
-
-	f:load(a)
 	f:i32load(buf.ptr)
 	f:tee(a)
-	f:i32(calltypes.init)
-	f:i32store8(dataframe.type)
-
 	assert(dataframe.retb == dataframe.pc + 4)
-	f:load(a)
 	f:i64(0)
 	f:i64store(dataframe.pc)
 
-	assert(dataframe.base == dataframe.retc + 4)
 	f:load(a)
+	assert(dataframe.base == dataframe.retc + 4)
 	f:i64(0xffffffff) -- -1, 0
 	f:i64store(dataframe.retc)
 
 	f:load(a)
-	f:load(localc)
+	f:i32(4)
+	f:call(nthtmp)
+	f:tee(fn)
+	f:i32load(functy.localc)
 	f:i32store(dataframe.localc)
 
-	-- leak old stack until overwritten
-	f:load(newst)
+	-- leak old stack until it's overwritten
 	f:loadg(oluastack)
 	f:i32load(coro.stack)
 	f:tee(a)
 	f:i32(0)
 	f:i32store(buf.len)
 
+	f:load(fn)
+	f:i32load(functy.localc)
+	f:i32(2)
+	f:shl()
+	f:i32(objframe.sizeof)
+	f:add()
+	f:tee(stsz)
 	f:load(a)
-	f:i32store(coro.stack)
+	f:i32load(buf.ptr)
+	f:tee(b)
+	f:i32load(vec.len)
+	f:leu() -- leu over ltu because vec buffer relies on a nil topslot
+	f:iff(function()
+		f:load(fn)
+		f:storeg(otmp)
 
-	f:load(newst)
-	f:storeg(oluastack)
+		f:load(stsz)
+		f:call(newvec)
+		f:store(b)
+		f:loadg(oluastack)
+		f:i32load(coro.stack)
+		f:load(b)
+		f:i32store(buf.ptr)
+
+		f:loadg(otmp)
+		f:store(fn)
+	end)
+
+	f:load(b)
+	f:load(fn)
+	f:i32load(functy.bc)
+	f:i32store(objframe.bc)
+
+	f:load(b)
+	f:load(fn)
+	f:i32load(functy.consts)
+	f:i32store(objframe.consts)
+
+	f:load(b)
+	f:load(fn)
+	f:i32load(functy.frees)
+	f:i32store(objframe.frees)
 end))
 
 -- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
@@ -175,10 +156,7 @@ eval = export('eval', func(i32, function(f)
 		-- switch bc[pc++]
 		f:loadg(oluastack)
 		f:i32load(coro.stack)
-		f:store(valstack)
-
-		f:loadg(oluastack)
-		f:i32load(coro.obj)
+		f:tee(valstack)
 		f:i32load(buf.ptr)
 		f:load(base)
 		f:add()
@@ -1079,12 +1057,12 @@ eval = export('eval', func(i32, function(f)
 		-- d = func; metamethod, callty,
 		-- push objframe
 		f:loadg(oluastack)
-		f:i32load(coro.obj)
+		f:i32load(coro.stack)
 		f:tee(b)
 		f:i32load(buf.len)
 		f:store(a)
 		f:load(b)
-		f:i32(16)
+		f:i32(objframe.sizeof)
 		f:load(d)
 		f:i32load(functy.localc)
 		f:tee(b)
