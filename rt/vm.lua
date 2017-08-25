@@ -1,16 +1,21 @@
 dataframe = {
 	type = str.base + 0,
 	pc = str.base + 1,
-	retb = str.base + 5, -- index of where return values should begin
-	retc = str.base + 9, -- # of values requested from call, -1 for no limit
-	base = str.base + 13, -- index top objframe
-	localc = str.base + 17, -- # of locals
-	sizeof = 21,
+	base = str.base + 5, -- Base. params here
+	dotdotdot = str.base + 9, -- base+dotdotdot = excess params here. Ends at base+locals
+	retb = str.base + 11, -- base+retb = put return vals here
+	retc = str.base + 13, -- base+retc = stack should be post return. 0xffff for piped return
+	locals = str.base + 15, -- base+locals = locals here
+	frame = str.base + 17, -- base+frame = objframe here
+	sizeof = 19,
 }
 objframe = {
 	bc = vec.base + 0,
 	consts = vec.base + 4,
 	frees = vec.base + 8,
+	tmpbc = 12,
+	tmpconsts = 8,
+	tmpfrees = 4,
 	sizeof = 12,
 }
 calltypes = {
@@ -22,11 +27,16 @@ calltypes = {
 	bool = 5, -- Cast result to bool
 }
 
-init = export('init', func(i32, function(f, fn)
+init = export('init', func(i32, void, function(f, fn)
 	-- Transition oluastack to having a stack frame from fn
 	-- Assumes stack was previously setup
 
-	local a, stsz, oldstsz = f:locals(i32, 3)
+	local a, stsz, newstsz = f:locals(i32, 3)
+
+	f:loadg(oluastack)
+	f:i32load(coro.stack)
+	f:i32load(buf.len)
+	f:store(stsz)
 
 	f:load(fn)
 	f:call(tmppush)
@@ -39,58 +49,64 @@ init = export('init', func(i32, function(f, fn)
 	f:i32store(coro.data)
 	f:i32load(buf.ptr)
 	f:tee(a)
-	assert(dataframe.retb == dataframe.pc + 4)
+	assert(dataframe.base == dataframe.pc + 4)
 	f:i64(0)
 	f:i64store(dataframe.pc)
 
 	f:load(a)
-	assert(dataframe.base == dataframe.retc + 4)
-	f:i64(0xffffffff) -- -1, 0
-	f:i64store(dataframe.retc)
+	assert(dataframe.retb == dataframe.dotdotdot + 2)
+	assert(dataframe.retc == dataframe.retb + 2)
+	f:i32(0x0000ffff) -- retb, retc = 0, -1
+	f:i32store(dataframe.dotdotdot)
 
 	f:load(a)
-	f:i32(4)
-	f:call(nthtmp)
-	f:tee(fn)
-	f:i32load(functy.localc)
-	f:i32store(dataframe.localc)
+	f:load(stsz)
+	f:i32store(dataframe.locals)
 
-	f:loadg(oluastack)
-	f:i32load(coro.stack)
-	f:i32load(buf.len)
-	f:i32(4)
-	f:store(oldstsz)
-
+	f:load(a)
+	f:load(stsz)
 	f:load(fn)
 	f:i32load(functy.localc)
 	f:i32(2)
 	f:shl()
-	f:i32(objframe.sizeof)
 	f:add()
+	f:tee(newstsz)
+	f:i32store(dataframe.frame)
+
+	f:load(newstsz)
 	f:call(extendtmp)
 	f:call(tmppop)
 
 	f:loadg(oluastack)
 	f:i32load(coro.stack)
 	f:i32load(buf.ptr)
-	f:load(oldstsz)
+	f:load(stsz)
 	f:add()
-	f:tee(a)
-	f:load(a)
-	loadvecminus(f, 4)
+	f:tee(newstsz)
+	f:i32load(vec.base)
 	f:tee(fn)
+
+	-- inject niling slot in case setnthtmp overwrites again
+	-- ie when there are no locals
+	f:load(newstsz)
+	f:i32(NIL)
+	f:i32store(vec.base)
+
 	f:i32load(functy.bc)
-	f:i32store(objframe.bc - 4)
+	f:i32(objframe.tmpbc)
+	f:call(setnthtmp)
 
 	f:load(a)
 	f:load(fn)
 	f:i32load(functy.consts)
-	f:i32store(objframe.consts - 4)
+	f:i32(objframe.tmpconsts)
+	f:call(setnthtmp)
 
 	f:load(a)
 	f:load(fn)
-	f:i32load(functy.frees)
-	f:i32store(objframe.frees - 4)
+	f:i32load(functy.consts)
+	f:i32(objframe.tmpfrees)
+	f:call(setnthtmp)
 end))
 
 -- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
