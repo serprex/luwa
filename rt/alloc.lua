@@ -15,12 +15,16 @@ obj = {
 	gc = 0,
 	type = 4,
 }
+bool = {
+	val = 5,
+	sizeof = 16,
+}
 num = {
 	val = 5,
+	sizeof = 16,
 }
 int = num
 float = num
-bool = num
 tbl = {
 	id = 5,
 	len = 9,
@@ -28,6 +32,7 @@ tbl = {
 	arr = 17, -- vec
 	hash = 21, -- vec
 	meta = 25, -- tbl
+	sizeof = 32,
 }
 str = {
 	len = 5,
@@ -40,16 +45,18 @@ vec = {
 }
 buf = {
 	len = 5,
-	ptr = 9,
+	ptr = 9, -- vec|str
+	sizeof = 16,
 }
 functy = {
 	id = 5,
 	isdotdotdot = 9,
-	bc = 10,
-	consts = 14,
-	frees = 18,
+	bc = 10, -- str
+	consts = 14, -- vec
+	frees = 18, -- vec
 	localc = 22,
 	paramc = 26,
+	sizeof = 32,
 }
 corostate = {
 	dead = 0,
@@ -60,9 +67,10 @@ corostate = {
 coro = {
 	id = 5,
 	state = 9,
-	caller = 10,
-	stack = 14,
-	data = 18,
+	caller = 10, -- coro
+	stack = 14, -- buf
+	data = 18, -- buf
+	sizeof = 24
 }
 
 allocsize = func(i32, i32, function(f, sz)

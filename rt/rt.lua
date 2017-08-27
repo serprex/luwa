@@ -25,32 +25,54 @@ metamath: unm add sub mul div idiv mod pow concat band bor bxor bnot bshl bshr
 ]]
 
 GS = {}
-local function addStrings(base, mem, ...)
+GF = {}
+local function addString(mem, s)
+	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4],mem[#mem+5] = 0,0,0,0,types.str
+	for j = 0,24,8 do
+		mem[#mem+1] = #s >> j & 255
+	end
+	for j = 1,4 do
+		mem[#mem+1] = 0
+	end
+	for j = 1,#s do
+		mem[#mem+1] = string.byte(s, j)
+	end
+	for j = #s+1,allocsizef(str.base + #s)-str.base do
+		mem[#mem+1] = 0
+	end
+end
+local function addStatics(base, mem, ...)
+	local fid = 0
 	for i = 1,select('#', ...) do
-		local s = select(i, ...)
-		GS[s] = base + #mem
-		for j = 1,4 do
-			mem[#mem+1] = 0
-		end
-		mem[#mem+1] = types.str
-		for j = 0,24,8 do
-			mem[#mem+1] = #s >> j & 255
-		end
-		for j = 1,4 do
-			mem[#mem+1] = 0
-		end
-		for j = 1,#s do
-			mem[#mem+1] = string.byte(s, j)
-		end
-		for j = #s+1,allocsizef(str.base + #s)-str.base do
-			mem[#mem+1] = 0
+		local s, sbase = select(i, ...), base + #mem
+		if type(s) == 'string' then
+			GS[s] = sbase
+			addString(mem, s)
+		else -- { funcname, paramc, isdotdotdot, bc }
+			fid = fid - 1
+			GF[s[1]] = sbase
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4],mem[#mem+5] = 0,0,0,0,types.functy
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', fid),1,4)
+			if s[3] then
+				mem[#mem+1] = 1
+			else
+				mem[#mem+1] = 0
+			end
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', sbase+functy.sizeof),1,4)
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s[2]),1,4)
+			mem[#mem+1],mem[#mem+2] = 0,0
+			assert(base+#mem == sbase+functy.sizeof)
+			addString(mem, s[4])
 		end
 	end
 	HEAPBASE = base + #mem
 	return base, mem
 end
 
-data(memory, addStrings(4, {
+data(memory, addStatics(4, {
 	-- nil
 	2, 0, 0, 0,
 	-- false
@@ -65,7 +87,7 @@ data(memory, addStrings(4, {
 	'__eq', '__lt', '__le', '__gt', '__ge', '__len', '__tostring', '__metatable',
 	'__index', '__newindex', '__mode', '__call', '__unm', '__concat',
 	'__add', '__sub', '__mul', '__div', '__idiv', '_mod', '__pow',
-	'__bnot', '__band', '__bor', '__bxor', '__bshl', '__bshr'))
+	'__bnot', '__band', '__bor', '__bxor', '__bshl', '__bshr', {'select', 1, true, '\x1f\x01\x0c'}))
 
 heaptip = global(i32, true, HEAPBASE)
 
