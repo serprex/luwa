@@ -110,27 +110,28 @@ init = export('init', func(i32, void, function(f, fn)
 	f:call(setnthtmp)
 end))
 
+loadframebase = func(i32, function(f)
+	local a = f:locals(i32)
+	f:loadg(oluastack)
+	f:i32load(coro.data)
+	f:tee(a)
+	f:i32load(buf.ptr)
+	f:load(a)
+	f:i32load(buf.len)
+	f:add()
+	f:i32(dataframe.sizeof)
+	f:sub()
+end)
+
 -- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
 eval = export('eval', func(i32, function(f)
 	local a, b, c, d, e,
 		meta_callty, meta_retb, meta_retc, meta_key, meta_off,
 		framebase, objbase, base, bc, pc = f:locals(i32, 5+5+5)
 
-	local function loadframebase()
-		f:loadg(oluastack)
-		f:i32load(coro.data)
-		f:tee(framebase)
-		f:i32load(buf.ptr)
-		f:load(framebase)
-		f:i32load(buf.len)
-		f:add()
-		f:i32(dataframe.sizeof)
-		f:sub()
-		f:tee(framebase)
-	end
-
 	local function loadframe()
-		loadframebase()
+		f:call(loadframebase)
+		f:tee(framebase)
 		f:i32load(dataframe.base)
 		f:store(base)
 
@@ -155,7 +156,8 @@ eval = export('eval', func(i32, function(f)
 		-- baseptr = ls.obj.ptr + base
 		-- bc = baseptr.bc
 		-- switch bc[pc++]
-		loadframebase()
+		f:call(loadframebase)
+		f:tee(framebase)
 		f:i32load16u(dataframe.frame)
 		f:load(base)
 		f:add()
