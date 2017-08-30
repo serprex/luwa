@@ -1,7 +1,5 @@
 tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
 	local kv, mx = f:locals(i32, 2)
-	f:load(tab)
-	f:storeg(otmp)
 
 	-- H <- (hash(key) % tab.hash.len) & -8
 	f:load(key)
@@ -59,6 +57,9 @@ tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
 			f:tee(kv)
 			f:gtu()
 			f:iff(function(rehash)
+				f:load(tab)
+				f:storeg(otmp)
+
 				-- tab.hash = newvec, tab.hlen = 0
 				f:load(kv)
 				f:load(kv)
@@ -68,7 +69,8 @@ tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
 
 				-- val <- tab.hash, mx <- tab.hash + tab.hash.len
 				-- have to do between call to newvec and updating tab.hash
-				f:load(tab)
+				f:loadg(otmp)
+				f:tee(tab)
 				f:i32load(tbl.hash)
 				f:tee(val)
 				f:load(val)
@@ -76,8 +78,7 @@ tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
 				f:add()
 				f:store(mx)
 
-				f:loadg(otmp)
-				f:tee(tab)
+				f:load(tab)
 				f:load(key)
 				f:i32store(tbl.hash)
 
@@ -105,6 +106,7 @@ tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
 						f:i32load(vec.base)
 						f:load(val)
 						f:i32load(vec.base + 4)
+						-- this tblset will not alloc
 						f:call(tblset)
 					end)
 

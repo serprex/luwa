@@ -5,12 +5,62 @@ math.mininteger = -9223372036854775808
 math.maxinteger = -9223372036854775807
 math.pi = 0x1.921fb54442d18p1
 math.huge = 1./0.
+package.config = '/\n;\n?\n!\n-\n'
+package.loaded = {
+	_G = _ENV,
+	coroutine = coroutine,
+	debug = debug,
+	io = io,
+	math = math,
+	os = os,
+	package = package,
+	string = string,
+	table = table,
+	utf8 = utf8,
+}
 
 local rad_coef, deg_coef = math.pi/180., 180./math.pi
 -- capture globals so that behavior doesn't change if rebound
+local _rawget, _type = rawget, type
 local _error, _getmetatable, _next, _select, _tostring, _xpcall = error, getmetatable, next, select, tostring, xpcall
+local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
+
+debug_setmetatable('', string)
+
+function assert(v, message, ...)
+	if not message then
+		message = "assertion failed!"
+	end
+	if v then
+		return v, message, ...
+	else
+		return _error(message, 2)
+	end
+end
+local _assert = assert
+
+function getmetatable(object)
+	object = debug_getmetatable(object)
+	if _type(x) == 'table' then
+		local mt =_rawget(object, '__metatable')
+		if mt then
+			return mt
+		end
+	end
+	return x
+end
+
+function setmetatable(table, metatable)
+	_assert(_type(tablety) == 'table')
+	_assert(metatable == nil or _type(metatable) == 'table')
+	local mt = debug_getmetatable(table)
+	if mt then
+		_assert(not _rawget(mt, '__metatable'), 'cannot change a protected metatable')
+	end
+	return debug_setmetatable(table, metatable)
+end
 
 function math.deg(x)
 	return x * deg_coef
@@ -192,17 +242,6 @@ end
 function coroutine.isyieldable()
 	local a, b = coroutine_running()
 	return b
-end
-
-function assert(v, message, ...)
-	if not message then
-		message = "assertion failed!"
-	end
-	if v then
-		return v, message, ...
-	else
-		return _error(message, 2)
-	end
 end
 
 function print(...)

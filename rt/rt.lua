@@ -84,10 +84,26 @@ data(memory, addStatics(4, {
 	'b', 't', 'bt', 'n', 'a', 'l', 'L', 'r', 'w', 'r+', 'w+', 'a+',
 	'set', 'cur', 'end', 'no', 'full', 'line', 'exit', 'signal',
 	'collect', 'stop', 'restart', 'count', 'step', 'setpause', 'setstepmul', 'isrunning',
-	'__eq', '__lt', '__le', '__gt', '__ge', '__len', '__tostring', '__metatable',
+	'__eq', '__lt', '__le', '__gt', '__ge', '__len', '__tostring',
 	'__index', '__newindex', '__mode', '__call', '__unm', '__concat',
-	'__add', '__sub', '__mul', '__div', '__idiv', '_mod', '__pow',
-	'__bnot', '__band', '__bor', '__bxor', '__bshl', '__bshr', {'select', 1, true, '\x1f\x01\x0c'}))
+	'__add', '__sub', '__mul', '__div', '__idiv', '__mod', '__pow',
+	'__bnot', '__band', '__bor', '__bxor', '__bshl', '__bshr',
+	'coroutine', 'debug', 'io', 'math', 'os', 'package', 'utf8',
+	'select', 'pcall', 'error', 'getmetatable', 'setmetatable', 'type',
+	'rawget', 'rawset', 'rawlen', 'rawequal', 'next',
+	'create', 'resume', 'yield', 'running', 'status',
+	{'select', 1, true, '\x1f\x01\x0c'},
+	{'pcall', 1, true, '\x1f\x00\x0c'},
+	{'error', 2, false, ''},
+	{'coro_create', 1, false, ''},
+	{'coro_resume', 1, true, ''},
+	{'coro_yield', 0, true, ''},
+	{'coro_running', 0, false, ''},
+	{'coro_status', 0, false, ''},
+	{'debug_getmetatable', 1, false, ''},
+	{'debug_setmetatable', 1, false, ''},
+	{'math_type', 1, false, ''}
+))
 
 heaptip = global(i32, true, HEAPBASE)
 
