@@ -408,12 +408,90 @@ eval = export('eval', func(i32, function(f)
 		f:call(tmppop)
 		f:br(scopes.nop)
 	end, 12, 'ret', function(scopes)
-		-- init? whole other logic: setup ret for resume call in caller coro
-		-- call? whole other logic: setup new frame
+		f:load(framebase)
+		f:i32load(dataframe.retb)
+		f:tee(meta_retb)
+
+		f:load(framebase)
+		f:i32load(dataframe.type)
+		f:tee(meta_callty)
+		f:i32(calltypes.init)
+		f:eq()
+		f:iff(function()
+			-- if init: setup ret for resume call in caller coro
+			f:loadg(oluastack)
+			f:i32load(coro.caller)
+			f:tee(a)
+			f:iff(function()
+				-- extend caller stack to fit our ret stack
+				f:load(a)
+				f:i32load(coro.stack)
+				f:tee(a)
+				f:load(a)
+				f:i32load(buf.len)
+				f:store(b)
+
+				f:loadg(oluastack)
+				f:i32load(coro.stack)
+				f:i32load(buf.len)
+				f:load(base)
+				f:sub()
+				f:load(framebase)
+				f:i32load(dataframe.frame)
+				f:i32(objframe.sizeof)
+				f:add()
+				f:sub()
+
+				f:call(extendvec)
+				-- memcpy(caller.stack+b,
+				---- d = oluastack.stack+base+frame+sizeof(frame),
+				---- oluastack.stack.len-d)
+				f:tee(a)
+				f:i32load(buf.ptr)
+				f:load(b)
+				f:add()
+
+				f:loadg(oluastack)
+				f:i32load(coro.stack)
+				f:tee(b)
+				f:i32load(buf.ptr)
+				f:load(base)
+				f:add()
+				f:call(loadframebase)
+				f:i32load(dataframe.frame)
+				f:add()
+				f:i32(dataframe.sizeof)
+				f:add()
+				f:tee(d)
+
+				f:load(b)
+				f:i32load(buf.len)
+				f:load(d)
+				f:sub()
+				f:call(memcpy4)
+
+				-- oluastack = oluastack.caller
+				f:loadg(oluastack)
+				f:i32load(coro.caller)
+				f:storeg(oluastack)
+
+				-- reload framebase for what follows's sake
+				f:call(loadframebase)
+				f:store(framebase)
+				-- TODO reload base?
+			end, function()
+				-- Return from main let's caller work things out
+				f:i32(1)
+				f:ret()
+			end)
+		end)
+
+		-- TODO
 		-- handle retc
 		-- bool? boolify
 		-- push? copy to tbl
 		-- else copy to retb
+		-- call? blargh
 
 		-- pop stack frame
 		f:loadg(oluastack)
