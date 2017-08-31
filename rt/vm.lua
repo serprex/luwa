@@ -408,7 +408,37 @@ eval = export('eval', func(i32, function(f)
 		f:call(tmppop)
 		f:br(scopes.nop)
 	end, 12, 'ret', function(scopes)
-	-- pop stack frame
+		-- init? whole other logic: setup ret for resume call in caller coro
+		-- call? whole other logic: setup new frame
+		-- handle retc
+		-- bool? boolify
+		-- push? copy to tbl
+		-- else copy to retb
+
+		-- pop stack frame
+		f:loadg(oluastack)
+		f:i32load(coro.stack)
+		f:tee(a)
+		f:load(a)
+		f:i32load(buf.len)
+		f:i32(datastack.sizeof)
+		f:sub()
+		f:tee(b)
+		f:i32store(buf.len)
+
+		-- set pc, base
+		f:load(a)
+		f:i32load(buf.ptr)
+		f:load(b)
+		f:add()
+		f:tee(framebase)
+		f:i32load(dataframe.pc)
+		f:store(pc)
+
+		f:load(framebase)
+		f:i32load(dataframe.base)
+		f:store(base)
+
 		f:br(scopes.nop)
 	end, 13, 'call', function(scopes)
 	-- push stack frame header
