@@ -409,89 +409,144 @@ eval = export('eval', func(i32, function(f)
 		f:br(scopes.nop)
 	end, 12, 'ret', function(scopes)
 		f:load(framebase)
-		f:i32load(dataframe.retb)
-		f:tee(meta_retb)
+		f:i32load16s(dataframe.retb)
+		f:load(base)
+		f:add()
+		f:store(meta_retb)
 
-		f:load(framebase)
-		f:i32load(dataframe.type)
-		f:tee(meta_callty)
-		f:i32(calltypes.init)
-		f:eq()
-		f:iff(function()
-			-- if init: setup ret for resume call in caller coro
-			f:loadg(oluastack)
-			f:i32load(coro.caller)
-			f:tee(a)
+		f:block(function(skiptopopframe)
+			f:load(framebase)
+			f:i32load8u(dataframe.type)
+			f:tee(meta_callty)
+			f:i32(calltypes.init)
+			f:eq()
 			f:iff(function()
-				-- extend caller stack to fit our ret stack
-				f:load(a)
-				f:i32load(coro.stack)
-				f:tee(a)
-				f:load(a)
-				f:i32load(buf.len)
-				f:store(b)
-
-				f:loadg(oluastack)
-				f:i32load(coro.stack)
-				f:i32load(buf.len)
-				f:load(base)
-				f:sub()
-				f:load(framebase)
-				f:i32load(dataframe.frame)
-				f:i32(objframe.sizeof)
-				f:add()
-				f:sub()
-
-				f:call(extendvec)
-				-- memcpy(caller.stack+b,
-				---- d = oluastack.stack+base+frame+sizeof(frame),
-				---- oluastack.stack.len-d)
-				f:tee(a)
-				f:i32load(buf.ptr)
-				f:load(b)
-				f:add()
-
-				f:loadg(oluastack)
-				f:i32load(coro.stack)
-				f:tee(b)
-				f:i32load(buf.ptr)
-				f:load(base)
-				f:add()
-				f:call(loadframebase)
-				f:i32load(dataframe.frame)
-				f:add()
-				f:i32(dataframe.sizeof)
-				f:add()
-				f:tee(d)
-
-				f:load(b)
-				f:i32load(buf.len)
-				f:load(d)
-				f:sub()
-				f:call(memcpy4)
-
-				-- oluastack = oluastack.caller
+				-- if init: setup ret for resume call in caller coro
 				f:loadg(oluastack)
 				f:i32load(coro.caller)
-				f:storeg(oluastack)
+				f:tee(a)
+				f:iff(function()
+					-- extend caller stack to fit our ret stack
+					f:load(a)
+					f:i32load(coro.stack)
+					f:tee(a)
+					f:load(a)
+					f:i32load(buf.len)
+					f:store(b)
 
-				-- reload framebase for what follows's sake
-				f:call(loadframebase)
-				f:store(framebase)
-				-- TODO reload base?
+					f:loadg(oluastack)
+					f:i32load(coro.stack)
+					f:i32load(buf.len)
+					f:load(base)
+					f:sub()
+					f:load(framebase)
+					f:i32load16u(dataframe.frame)
+					f:i32(objframe.sizeof)
+					f:add()
+					f:sub()
+
+					f:call(extendvec)
+					-- memcpy(caller.stack+b,
+					---- d = oluastack.stack+base+frame+sizeof(frame),
+					---- oluastack.stack.len-d)
+					f:tee(a)
+					f:i32load(buf.ptr)
+					f:load(b)
+					f:add()
+
+					f:loadg(oluastack)
+					f:i32load(coro.stack)
+					f:tee(b)
+					f:i32load(buf.ptr)
+					f:load(base)
+					f:add()
+					f:call(loadframebase)
+					f:i32load16u(dataframe.frame)
+					f:add()
+					f:i32(dataframe.sizeof)
+					f:add()
+					f:tee(d)
+
+					f:load(b)
+					f:i32load(buf.len)
+					f:load(d)
+					f:sub()
+					f:call(memcpy4)
+
+					-- oluastack = oluastack.caller
+					f:loadg(oluastack)
+					f:i32load(coro.caller)
+					f:storeg(oluastack)
+
+					-- reload framebase for what follows's sake
+					f:call(loadframebase)
+					f:tee(framebase)
+					f:i32load(dataframe.base)
+					f:store(base)
+				end, function()
+					-- Return from main let's caller work things out
+					f:i32(1)
+					f:ret()
+				end)
 			end, function()
-				-- Return from main let's caller work things out
-				f:i32(1)
-				f:ret()
-			end)
-		end)
+				f:load(meta_callty)
+				f:i32(calltypes.bool)
+				f:eq()
+				f:iff(function()
+					-- assume retc == 1
+					-- b = stack.ptr
+					f:loadg(oluastack)
+					f:i32load(coro.stack)
+					f:i32load(buf.ptr)
+					f:tee(b)
+					f:load(meta_retb)
+					f:add()
 
-		-- TODO
-		-- handle retc
-		-- bool? boolify
-		-- push? copy to tbl
-		-- else copy to retb
-		-- call? blargh
+					-- return false if stack empty
+					f:load(base)
+					f:load(framebase)
+					f:i32load16u(dataframe.frame)
+					f:add()
+					f:i32(objframe.sizeof)
+					f:add()
+					f:tee(a)
+					f:loadg(oluastack)
+					f:i32load(coro.stack)
+					f:i32load(buf.len)
+					f:eq()
+					f:iff(i32, function()
+						f:i32(FALSE)
+					end, function()
+						-- *retb = pop()?TRUE:FALSE
+						f:i32(TRUE)
+						f:i32(FALSE)
+						f:load(a)
+						f:load(b)
+						f:add()
+						f:i32load(vec.base)
+						f:i32(TRUE)
+						f:geu()
+						f:select()
+					end)
+					f:i32store(vec.base)
+
+					f:loadg(oluastack)
+					f:i32load(coro.stack)
+					f:i32load(meta_retb)
+					f:i32(4)
+					f:add()
+					f:i32store(buf.len)
+
+					f:br(skiptopopframe)
+				end)
+			end)
+
+			-- TODO
+			-- handle retc
+			-- push? copy to tbl
+			-- else copy to retb
+			-- call? blargh
+		end)
 
 		-- pop stack frame
 		f:loadg(oluastack)
@@ -537,7 +592,7 @@ eval = export('eval', func(i32, function(f)
 		f:i32load(coro.stack)
 		f:i32load(buf.ptr)
 		f:load(framebase)
-		f:i32load(dataframe.locals)
+		f:i32load16u(dataframe.locals)
 		f:load(base)
 		f:add()
 		readArg()
@@ -550,7 +605,7 @@ eval = export('eval', func(i32, function(f)
 		f:i32load(coro.stack)
 		f:i32load(buf.ptr)
 		f:load(framebase)
-		f:i32load(dataframe.locals)
+		f:i32load16u(dataframe.locals)
 		f:load(base)
 		f:add()
 		readArg()
