@@ -12,10 +12,14 @@ function rtwathen(ab) {
 			console.log(x);
 			return x;
 		},
-		echo2: (x, y) => {
-			console.log(y, x);
-			return x;
-		},
+		sin: Math.sin,
+		cos: Math.cos,
+		asin: Math.asin,
+		acos: Math.acos,
+		atan: Math.atan,
+		atan2: Math.atan2,
+		exp: Math.exp,
+		log: Math.log,
 		gcmark: x => {
 			for (const h of ffi.handles) {
 				ffi.mod.gcmark(h.val);
