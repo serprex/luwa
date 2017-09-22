@@ -9,7 +9,7 @@ string.set("upper", string_upper);
 
 function*string_len(stack, base) {
 	let s = util.readarg(stack, base+1);
-	if (typeof s != "string") throw "string.lower #1: expected string";
+	if (typeof s != "string") throw "string.len #1: expected string";
 	stack[base] = s.length;
 	stack.length = base + 1;
 }
