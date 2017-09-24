@@ -1,5 +1,8 @@
 "use strict";
-const lex = require("./lex"), ast = require("./ast"), Func = require("./func");
+const lex = require('./lex'),
+	ast = require('./ast'),
+	Func = require('./func'),
+	util = require('./util');
 
 const NOP = exports.NOP = 0,
 	LOAD_NIL = exports.LOAD_NIL = 1,
@@ -142,8 +145,11 @@ Assembler.prototype.identIndex = function(node) {
 		}
 	}
 }
-Assembler.prototype.push = function() {
-	return this.bc.push(...arguments);
+Assembler.prototype.push = function(op, ...args) {
+	this.bc.push(op);
+	for (let i=0; i<args.length; i++) {
+		util.writeuint32(this.bc, this.bc.length, args[i]);
+	}
 }
 
 Assembler.prototype.getLabel = function() {
@@ -151,13 +157,13 @@ Assembler.prototype.getLabel = function() {
 }
 
 Assembler.prototype.setLabel = function(lab) {
-	this.labelpos[lab] = { pos: this.bc.length, fordepth: this.fordepth };
+	this.labelpos[lab] = this.bc.length;
 }
 
-Assembler.prototype.pushGoto = function(op, lab, stackcheck = false) {
-	if (stackcheck && this.fordepth) this.push(POP, 0);
-	this.push(op, 0);
-	return this.gotos.push(this.bc.length - 1, lab, stackcheck ? this.fordepth : 0);
+Assembler.prototype.pushGoto = function(op, lab, ...args) {
+	const labidx = this.bc.length+1;
+	this.push(op, 0, 0, 0, 0, ...args);
+	return this.gotos.push(labidx, lab);
 }
 
 Assembler.prototype.pushLoop = function(lab) {
@@ -252,7 +258,9 @@ Assembler.prototype.genLoadIdent = function(scope) {
 	if (~scope.op) {
 		this.push(scope.op, scope.n);
 	} else {
-		this.push(scope.asm.op, scope.asm.n, LOAD_STR, scope.n, LOAD_INDEX);
+		this.push(scope.asm.op, scope.asm.n);
+		this.push(LOAD_STR, scope.n);
+		this.push(LOAD_INDEX);
 	}
 }
 
@@ -260,7 +268,9 @@ Assembler.prototype.genStoreIdent = function(scope) {
 	if (~scope.op) {
 		this.push(scope.op+1, scope.n);
 	} else {
-		this.push(scope.asm.op, scope.asm.n, LOAD_STR, scope.n, STORE_INDEX);
+		this.push(scope.asm.op, scope.asm.n);
+		this.push(LOAD_STR, scope.n);
+		this.push(STORE_INDEX);
 	}
 }
 
@@ -405,7 +415,8 @@ Assembler.prototype.genFuncname = function(node) {
 	} else {
 		this.genLoadIdent(scope);
 		for (var i=1; i<names.length - 1; i++) {
-			this.push(LOAD_STR, names[i], LOAD_INDEX);
+			this.push(LOAD_STR, names[i]);
+			this.push(LOAD_INDEX);
 		}
 		this.push(LOAD_STR, names[names.length - 1]);
 		this.push(STORE_INDEX);
@@ -590,7 +601,7 @@ Assembler.prototype.genExp = function(node, vals, endvals, ret, calls) {
 						case 15: this.push(BIN_GT); break; // >
 						case 16: this.push(BIN_GE); break; // >=
 						case 17: this.push(BIN_EQ); break; // ==
-						case 18: this.push(BIN_EQ, UNARY_NOT); break; // ~=
+						case 18: this.push(BIN_EQ); this.push(UNARY_NOT); break; // ~=
 					}
 					break;
 				case ast.Value:
@@ -656,12 +667,12 @@ Assembler.prototype.genStat = function(node) {
 		case 4: {
 			let scope = this.getLoop();
 			if (!scope) throw "Break out of scope";
-			else this.pushGoto(GOTO, scope, true);
+			else this.pushGoto(GOTO, scope);
 			break;
 		}
 		case 5: {
 			let name = this.filterMask(node, lex._ident);
-			this.pushGoto(GOTO, this.namedlabels[name], true);
+			this.pushGoto(GOTO, this.namedlabels[name]);
 			break;
 		}
 		case 6:
@@ -714,7 +725,10 @@ Assembler.prototype.genStat = function(node) {
 			let exps = Array.from(selectNodes(node, ast.ExpOr));
 			this.genExpOr(exps[0], 1);
 			this.genExpOr(exps[1], 1);
+			this.nameScope('$1', -3);
+			this.nameScope('$2', -4);
 			if (exps.length > 2) {
+				this.nameScope('$3', -5);
 				this.genExpOr(exps[2], 1);
 				this.setLabel(lab0);
 				this.pushGoto(FOR3, endlab);
@@ -722,12 +736,10 @@ Assembler.prototype.genStat = function(node) {
 				this.setLabel(lab0);
 				this.pushGoto(FOR2, endlab);
 			}
-			this.fordepth += exps.length;
 			let name = this.identIndex(node);
 			this.genStoreIdent(this.scopes[name.li]);
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.pushGoto(GOTO, lab0);
-			this.fordepth -= exps.length;
 			this.popLoop();
 			break;
 		}
@@ -738,17 +750,21 @@ Assembler.prototype.genStat = function(node) {
 			for (let i=0; i<exps.length; i++) {
 				this.genExpOr(exps[i], i > 2 ? 0 : i == exps.length - 1 ? 3 - i : 1);
 			}
+			this.nameScope('$1', -3);
+			this.nameScope('$2', -4);
+			this.nameScope('$3', -5);
 			let names = Array.from(this.identIndices(node));
+			this.genStoreIdent(this.scopes[-3]);
+			this.genStoreIdent(this.scopes[-4]);
+			this.genStoreIdent(this.scopes[-5]);
 			this.setLabel(lab0);
 			this.pushGoto(FOR_NEXT, endlab);
-			this.fordepth += 3;
 			this.push(names.length);
 			for (let i = names.length - 1; i >= 0; i--) {
 				this.genStoreIdent(this.scopes[names[i].li]);
 			}
 			this.genBlock(selectNode(node, ast.Block), true);
 			this.pushGoto(GOTO, lab0);
-			this.fordepth -= 3;
 			this.popLoop();
 			break;
 		}

@@ -1,5 +1,6 @@
 "use strict";
 module.exports = Func;
+const util = require('./util');
 
 function Func(asm) {
 	this.id = asm.id;
@@ -13,12 +14,9 @@ function Func(asm) {
 	this.isdotdotdot = asm.isdotdotdot;
 	this.freelist = [];
 	this.local2free = asm.local2free;
-	for (let i=0; i<asm.gotos.length; i+=3) {
+	for (let i=0; i<asm.gotos.length; i+=2) {
 		let lpos = asm.labelpos[asm.gotos[i+1]];
-		this.bc[asm.gotos[i]] = lpos.pos;
-		if (asm.gotos[i+2]) {
-			this.bc[asm.gotos[i]-2] = asm.gotos[i+2] - lpos.fordepth;
-		}
+		util.writeuint32(this.bc, asm.gotos[i], lpos);
 	}
 	for (let key in asm.frees) {
 		key = +key;
