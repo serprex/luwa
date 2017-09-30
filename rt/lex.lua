@@ -89,9 +89,7 @@ lex = export('lex', func(i32, void, function(f, src)
 	f:call(tmppush)
 
 	f:block(function(loopwrap)
-		f:i32(20)
-		f:call(nthtmp)
-		f:i32load(str.len)
+		f:load(srclen)
 		f:eqz()
 		f:brif(loopwrap)
 
@@ -108,17 +106,20 @@ lex = export('lex', func(i32, void, function(f, src)
 				f:load(i)
 				f:add()
 				f:i32load8u(str.base)
-				f:store(ch)
+				f:tee(ch)
+				f:i32(32)
+				f:leu()
+				f:brif(blloop)
 
 				f:block(i32, function(token1)
 					local function tcase(s)
-						return string.byte(s) - 32
+						return string.byte(s) - 33
 					end
 					f:switch(function()
 						f:load(ch)
-						f:i32(32)
+						f:i32(33)
 						f:sub()
-					end, { tcase(' '), blloop },
+					end,
 					tcase("'"), tcase('"'), function()
 						f:i32(11)
 						f:call(newstr)

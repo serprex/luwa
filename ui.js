@@ -15,9 +15,8 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 	require("./rt")().then(rt => {
 		let luastack = rt.mkref(rt.mod.newcoro());
 		rt.mod.setluastack(luastack.val);
-		let luastackstack = rt.mkref(rt.mod.newvecbuf(32));
 		let mem = new Uint8Array(rt.mem.buffer);
-		util.writeuint32(mem, luastack.val + 14, luastackstack.val);
+		util.writeuint32(mem, luastack.val + 14, rt.mod.newvecbuf(32));
 
 		console.log(window.mod = rt);
 		let newt = rt.newtbl();
@@ -56,9 +55,10 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 			console.log("Freed" + (j?". Next: lex":". Now to do it again"));
 		}
 		let codestr = rt.newstr("local x = 3 * 5 + 21 + 2.1 + 0x2.1 + 0xa + 0xap2 + 1.25e2 + 1.25e-2;" +
-			"local y = 'x' + 'z' + 'z' + [[z]] + [=[x]=];" +
+			"local y = 'x' + 'z' + 'z' + [[z]] + [=[x]=]\n" +
 			"return 'a\\na'");
 		rt.mod.lex(codestr.val);
+		rt.free(codestr);
 		let lexstr = rt.mkref(rt.mod.nthtmp(12));
 		let svec = rt.mkref(rt.mod.nthtmp(8));
 		let nvec = rt.mkref(rt.mod.nthtmp(4));
@@ -88,6 +88,30 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 	});
 });
 document.getElementById("btnGo").addEventListener("click", (s, e) => {
+	require("./rt")().then(rt => {
+		let luastack = rt.mkref(rt.mod.newcoro());
+		rt.mod.setluastack(luastack.val);
+		let mem = new Uint8Array(rt.mem.buffer);
+		util.writeuint32(mem, luastack.val + 14, rt.mod.newvecbuf(32));
+
+		let codestr = rt.newstr(taBoard.value);
+		console.log(rt.strbytes(codestr));
+		rt.mod.lex(codestr.val);
+		rt.free(codestr);
+		let lexstr = rt.mkref(rt.mod.nthtmp(12));
+		let svec = rt.mkref(rt.mod.nthtmp(8));
+		let nvec = rt.mkref(rt.mod.nthtmp(4));
+		rt.mod.tmppop();
+		rt.mod.tmppop();
+		rt.mod.tmppop();
+		console.log(rt.strbytes(lexstr));
+		console.log(rt.obj2js(svec));
+		console.log(rt.obj2js(nvec));
+		rt.free(lexstr);
+		rt.free(svec);
+		rt.free(nvec);
+	});
+	/*
 	const lua = require("./luwa");
 	const imp = {
 		"": {
@@ -100,5 +124,6 @@ document.getElementById("btnGo").addEventListener("click", (s, e) => {
 	};
 	prOut.textContent = "";
 	lua.runSource(taBoard.value, imp);
+	*/
 });
 })();
