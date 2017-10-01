@@ -13,10 +13,7 @@ const assert = {
 const util = require("./util");
 document.getElementById("btnRt").addEventListener("click", (s, e) => {
 	require("./rt")().then(rt => {
-		let luastack = rt.mkref(rt.mod.newcoro());
-		rt.mod.setluastack(luastack.val);
-		let mem = new Uint8Array(rt.mem.buffer);
-		util.writeuint32(mem, luastack.val + 14, rt.mod.newvecbuf(32));
+		rt.initstack();
 
 		console.log(window.mod = rt);
 		let newt = rt.newtbl();
@@ -89,10 +86,7 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 });
 document.getElementById("btnGo").addEventListener("click", (s, e) => {
 	require("./rt")().then(rt => {
-		let luastack = rt.mkref(rt.mod.newcoro());
-		rt.mod.setluastack(luastack.val);
-		let mem = new Uint8Array(rt.mem.buffer);
-		util.writeuint32(mem, luastack.val + 14, rt.mod.newvecbuf(32));
+		rt.initstack();
 
 		let codestr = rt.newstr(taBoard.value);
 		console.log(rt.strbytes(codestr));

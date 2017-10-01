@@ -1,5 +1,8 @@
 language: node_js
 node_js: "node"
+before_install:
+ aptget -qq update
+ apt-get install -y lua-5.3
 script: scripts/test.js
 notifications:
  email: false

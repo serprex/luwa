@@ -1,7 +1,9 @@
 #!/bin/node --expose-wasm
 const lua = require("./luwa"),
 	env = require("./env"),
-	fs = require("fs");
+	fs = require("fs"),
+	rt = require('./rt');
+
 function readline() {
 	var ret = "";
 	var buf = new Buffer(1);
@@ -15,25 +17,28 @@ function readline() {
 }
 
 console.log(process.argv);
-if (process.argv.length < 3) {
-	let e = env();
-	while (true) {
-		process.stdout.write("> ");
-		let line = readline().replace(/^\s*=/, "return ");
-		try {
-			console.log(...lua.eval(line, e));
-		} catch (e) {
-			console.log("Error:", e);
+rt().then(runt => {
+	runt.initstack();
+	if (process.argv.length < 3) {
+		let e = env();
+		while (true) {
+			process.stdout.write("> ");
+			let line = readline().replace(/^\s*=/, "return ");
+			try {
+				console.log(...lua.eval(runt, line, e));
+			} catch (e) {
+				console.log("Error:", e);
+			}
 		}
+	} else {
+		fs.readFile(process.argv[process.argv.length-1], 'utf8', (err, src) => {
+			lua.runSource(src, { "": {
+				p: x => process.stdout.write(x + " "),
+				q: x => process.stdout.write(String.fromCharCode(x)),
+				i: () => readline()|0,
+				c: () => readline().charCodeAt(0)|0,
+				m: new WebAssembly.Memory({ initial: 1 }),
+			}});
+		});
 	}
-} else {
-	fs.readFile(process.argv[process.argv.length-1], 'utf8', (err, src) => {
-		lua.runSource(src, { "": {
-			p: x => process.stdout.write(x + " "),
-			q: x => process.stdout.write(String.fromCharCode(x)),
-			i: () => readline()|0,
-			c: () => readline().charCodeAt(0)|0,
-			m: new WebAssembly.Memory({ initial: 1 }),
-		}});
-	});
-}
+});

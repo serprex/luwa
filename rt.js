@@ -47,6 +47,12 @@ function FFI(mem) {
 	this.mem = mem;
 	this.handles = new Set();
 }
+FFI.prototype.initstack = function() {
+	const luastack = this.mkref(this.mod.newcoro());
+	this.mod.setluastack(luastack.val);
+	const mem = new Uint8Array(this.mem.buffer);
+	util.writeuint32(mem, luastack.val + 14, this.mod.newvecbuf(32));
+}
 FFI.prototype.free = function(h) {
 	this.handles.delete(h);
 }

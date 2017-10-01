@@ -14,16 +14,6 @@ exports.eval = function(rt, line, e = require("./env")()) {
 	return r;
 }
 
-exports.eval2 = function(line, e = require("./env")()) {
-	const l = new lex.Lex(line);
-	console.log(l.lex);
-	const a = ast.parse(l);
-	const b = bc.assemble(l, a);
-	const r = runbc.run(b, e);
-	l.free();
-	return r;
-}
-
 exports.runSource = function(source, imp){
 	var l, a, b;
 	console.time("lua");

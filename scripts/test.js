@@ -6,11 +6,7 @@ const assert = require("assert"),
 
 require("../rt")().then(rt => {
 	const e = require("../env")();
-
-	let luastack = rt.mkref(rt.mod.newcoro());
-	rt.mod.setluastack(luastack.val);
-	let mem = new Uint8Array(rt.mem.buffer);
-	util.writeuint32(mem, luastack.val + 14, rt.mod.newvecbuf(32));
+	rt.initstack();
 
 	let newt = rt.newtbl();
 	let news = rt.newstr("asdf");
