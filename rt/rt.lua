@@ -92,6 +92,7 @@ data(memory, addStatics(4, {
 	'select', 'pcall', 'error', 'getmetatable', 'setmetatable', 'type',
 	'rawget', 'rawset', 'rawlen', 'rawequal', 'next',
 	'create', 'resume', 'yield', 'running', 'status',
+	'_ENV', 'self',
 	{'select', 1, true, '\x1f\x01\x0c'},
 	{'pcall', 1, true, '\x1f\x00\x0c'},
 	{'error', 2, false, ''},

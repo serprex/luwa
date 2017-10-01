@@ -12,10 +12,6 @@ exports.eval = function(rt, line, e = require("./env")()) {
 	const r = runbc.run(b, e);
 	l.free();
 	return r;
-	/*let l = new lex.Lex(line);
-	let a = ast.parse(l);
-	let b = bc.assemble(l, a);
-	return runbc.run(b, e);*/
 }
 
 exports.eval2 = function(line, e = require("./env")()) {
@@ -26,10 +22,6 @@ exports.eval2 = function(line, e = require("./env")()) {
 	const r = runbc.run(b, e);
 	l.free();
 	return r;
-	/*let l = new lex.Lex(line);
-	let a = ast.parse(l);
-	let b = bc.assemble(l, a);
-	return runbc.run(b, e);*/
 }
 
 exports.runSource = function(source, imp){

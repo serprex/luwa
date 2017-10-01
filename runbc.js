@@ -8,6 +8,7 @@ exports.run = run;
 const opc = require("./bc"),
 	env = require("./env"),
 	obj = require("./obj"),
+	util = require('./util'),
 	Table = require("./table");
 
 function Vm(func) {
@@ -48,8 +49,15 @@ function callObj(subvm, stack, base) {
 function*_run(vm, stack) {
 	let bc = vm.func.bc, pc = 0;
 	while (true) {
-		let op = bc[pc], arg = bc[pc+1], arg2 = bc[pc+2];
-		pc += (op >> 6) + 1;
+		let op = bc[pc], arg, arg2;
+		let args = op >> 6;
+		if (args > 0) {
+			arg = util.readuint32(bc, pc+1);
+			if (args > 1) {
+				arg2 = util.readuint32(bc, pc+5);
+			}
+		}
+		pc += args*4 + 1;
 		switch (op) {
 			case opc.LOAD_NIL: {
 				stack.push(null);

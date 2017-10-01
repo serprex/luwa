@@ -336,7 +336,7 @@ function Lex2(rt, src) {
 		}
 	}
 	this.ssr = rt.rawobj2js(rt.mod.nthtmp(8));
-	for (let i = 0; i<this.snr.length; i++) {
+	for (let i = 0; i<this.ssr.length; i++) {
 		if (this.ssr[i]) {
 			this.ssr[i] = util.fromUtf8(this.ssr[i]);
 		}

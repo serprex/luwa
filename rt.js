@@ -88,7 +88,6 @@ FFI.prototype.gettype = function(h) {
 }
 FFI.prototype.strbytes = function(h) {
 	const memta = new Uint8Array(this.mem.buffer);
-	const len = util.readuint32(memta, h.val+5);
 	return new Uint8Array(memta.buffer, h.val+13, util.readuint32(memta, h.val+5));
 }
 FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer)) {
