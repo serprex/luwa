@@ -396,7 +396,7 @@ function funcmeta:switch(expr, ...)
 	local function jmp()
 		expr(scopes)
 		if scopes[-1] then
-			scopes[#scopes] = scopes[-1]
+			scopes[#scopes+1] = scopes[-1]
 		end
 		while #scopes > 1 and scopes[#scopes] == scopes[#scopes-1] do
 			scopes[#scopes] = nil
