@@ -171,7 +171,7 @@ function Lex(src) {
 					if (sm.has(s)) {
 						util.varuint(lex, sm.get(s));
 					} else {
-						util.varuint(ssr.length);
+						util.varuint(lex, ssr.length);
 						sm.set(s, ssr.length);
 						ssr.push(s);
 					}

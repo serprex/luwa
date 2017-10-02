@@ -31,7 +31,15 @@ rt().then(runt => {
 			}
 		}
 	} else {
+		const lex = require('./lex');
 		fs.readFile(process.argv[process.argv.length-1], 'utf8', (err, src) => {
+			console.time('lex');
+			const l = new lex.Lex2(runt, src);
+			console.log(l.lex);
+			l.free();
+			console.timeEnd('lex');
+
+			/*
 			lua.runSource(src, { "": {
 				p: x => process.stdout.write(x + " "),
 				q: x => process.stdout.write(String.fromCharCode(x)),
@@ -39,6 +47,7 @@ rt().then(runt => {
 				c: () => readline().charCodeAt(0)|0,
 				m: new WebAssembly.Memory({ initial: 1 }),
 			}});
+			*/
 		});
 	}
 });

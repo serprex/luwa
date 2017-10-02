@@ -73,7 +73,7 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		let mainbc = rt.newstr(new Uint8Array([2, 12, 0, 0, 0]));
 		let mainconsts = rt.mkref(rt.mod.newvec(0));
 		let mainfrees = rt.mkref(rt.mod.newvec(0));
-		mem = new Uint8Array(rt.mem.buffer);
+		let mem = new Uint8Array(rt.mem.buffer);
 		util.writeuint32(mem, main.val + 10, mainbc.val);
 		util.writeuint32(mem, main.val + 14, mainconsts.val);
 		util.writeuint32(mem, main.val + 18, mainfrees.val);

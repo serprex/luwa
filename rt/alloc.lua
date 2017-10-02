@@ -17,7 +17,7 @@ obj = {
 }
 bool = {
 	val = 5,
-	sizeof = 16,
+	sizeof = 8,
 }
 num = {
 	val = 5,
@@ -31,7 +31,7 @@ tbl = {
 	hlen = 13,
 	arr = 17, -- vec
 	hash = 21, -- vec
-	meta = 25, -- tbl
+	meta = 25, -- tbl?
 	sizeof = 32,
 }
 str = {
@@ -67,10 +67,10 @@ corostate = {
 coro = {
 	id = 5,
 	state = 9,
-	caller = 10, -- coro
+	caller = 10, -- coro?
 	stack = 14, -- buf
 	data = 18, -- buf
-	sizeof = 24
+	sizeof = 24,
 }
 
 allocsize = func(i32, i32, function(f, sz)
