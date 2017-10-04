@@ -331,15 +331,13 @@ function Lex2(rt, src) {
 	this.rt = rt;
 	this.snr = rt.rawobj2js(rt.mod.nthtmp(4));
 	for (let i = 0; i<this.snr.length; i++) {
-		if (this.snr[i]) {
+		if (typeof this.snr[i] !== 'number') {
 			this.snr[i] = this.snr[i][0];
 		}
 	}
 	this.ssr = rt.rawobj2js(rt.mod.nthtmp(8));
 	for (let i = 0; i<this.ssr.length; i++) {
-		if (this.ssr[i]) {
-			this.ssr[i] = util.fromUtf8(this.ssr[i]);
-		}
+		this.ssr[i] = util.fromUtf8(this.ssr[i]);
 	}
 	this.lex = rt.mkref(rt.mod.nthtmp(12));
 	rt.mod.tmppop();
