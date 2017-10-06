@@ -1,4 +1,13 @@
 local lex = require 'lex'
+local function iternone()
+end
+local function iterone(x)
+	return function()
+		local y = x
+		x = nil
+		return y
+	end
+end
 local function parse(self, lx)
 	local rules = {}
 
@@ -8,44 +17,42 @@ local function parse(self, lx)
 		end
 	end
 	local function name(x, p)
-		return coroutine.wrap(function()
-			local t = x:next(p)
-			if t:val() == lex._ident then
-				coroutine.yield(t:skipint())
-			end
-		end)
+		local t = x:next(p)
+		if t:val() == lex._ident then
+			return iterone(t:skipint())
+		else
+			return iternone
+		end
 	end
 	local function number(x, p)
-		return coroutine.wrap(function()
-			local t = x:next(p)
-			if t:val() == lex._number then
-				coroutine.yield(t:skipint())
-			end
-		end)
+		local t = x:next(p)
+		if t:val() == lex._number then
+			return iterone(t:skipint())
+		else
+			return iternone
+		end
 	end
 	local function slit(x, p)
-		return coroutine.wrap(function()
-			local t = x:next(p)
-			if t:val() == lex._string then
-				coroutine.yield(t:skipint())
-			end
-		end)
+		local t = x:next(p)
+		if t:val() == lex._string then
+			return iterone(t:skipint())
+		else
+			return iternone
+		end
 	end
 	local function s(r)
 		return function(x, p)
-			return coroutine.wrap(function()
-				local t = x:next(p)
-				if t:val() == r then
-					coroutine.yield(t)
-				end
-			end)
+			local t = x:next(p)
+			if t:val() == r then
+				return iterone(t)
+			else
+				return iternone
+			end
 		end
 	end
 	local function o(n)
 		return function(x, p)
-			return coroutine.wrap(function()
-				yieldall(rules[n](x, p))
-			end)
+			return rules[n](x, p)
 		end
 	end
 	local function seqcore(x, p, xs, i)
@@ -73,14 +80,16 @@ local function parse(self, lx)
 	end
 	function many(f)
 		local function manyf(x, p)
+			for fx in f(x, p) do
+				manyf(fx, p)
+			end
+			coroutine.yield(x)
+		end
+		return function(x, p)
 			return coroutine.wrap(function()
-				for fx in f(x, p) do
-					yieldall(manyf(fx, p))
-				end
-				coroutine.yield(x)
+				return manyf(x, p)
 			end)
 		end
-		return manyf
 	end
 	function maybe(f)
 		return function(x, p)
@@ -211,7 +220,7 @@ local function parse(self, lx)
 		return self
 	end
 	function BuilderMeta:int()
-		return string.unpack('<i4', lx.lex, self.li)
+		return string.unpack('<i4', lx.lex, self.nx)
 	end
 	function BuilderMeta:next(p)
 		local newmo = self
