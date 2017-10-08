@@ -68,7 +68,7 @@ local function parse(self, lx)
 		local xs = {...}
 		return function(x, p)
 			return coroutine.wrap(function()
-				seqcore(x, p, xs, 1)
+				return seqcore(x, p, xs, 1)
 			end)
 		end
 	end
@@ -238,7 +238,14 @@ local function parse(self, lx)
 	end
 
 	local root = Builder(0, 1, nil, nil, -2)
+	for i=1,#lx.lex,50 do
+		print(i, table.concat({string.byte(lx.lex, i, i+49)}, ','))
+	end
+	for k,v in ipairs(lx.ssr) do
+		print(k,v)
+	end
 	for child in rules[Block](root, root) do
+		print(child, child.nx)
 		if string.byte(lx.lex, child.nx) == 0 then
 			repeat
 				local prev_father = child

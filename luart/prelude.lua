@@ -19,7 +19,7 @@ package.loaded = {
 	utf8 = utf8,
 }
 
-local rad_coef, deg_coef = math.pi/180., 180./math.pi
+local rad_coef, deg_coef = 0x1.921fb54442d18p1/180., 180./0x1.921fb54442d18p1
 -- capture globals so that behavior doesn't change if rebound
 local _rawget, _type = rawget, type
 local _error, _getmetatable, _next, _select, _tostring, _xpcall = error, getmetatable, next, select, tostring, xpcall

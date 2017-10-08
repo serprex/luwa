@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 const fs = require('fs'),
 	rt = require('../rt'),
-	lex = require('../lex'),
 	util = require('../util');
 
 function int2buf(x) {
