@@ -26,14 +26,14 @@ metamath: unm add sub mul div idiv mod pow concat band bor bxor bnot bshl bshr
 
 GS = {}
 GF = {}
-local function addString(mem, s)
-	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4],mem[#mem+5] = 0,0,0,0,types.str
-	for j = 0,24,8 do
-		mem[#mem+1] = #s >> j & 255
-	end
-	for j = 1,4 do
-		mem[#mem+1] = 0
-	end
+local function addHeader(base, mem, ty)
+	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', base+#mem), 1, 4)
+	mem[#mem+1] = ty
+end
+local function addString(base, mem, s)
+	addHeader(base, mem, types.str)
+	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', #s), 1, 4)
+	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
 	for j = 1,#s do
 		mem[#mem+1] = string.byte(s, j)
 	end
@@ -47,11 +47,11 @@ local function addStatics(base, mem, ...)
 		local s, sbase = select(i, ...), base + #mem
 		if type(s) == 'string' then
 			GS[s] = sbase
-			addString(mem, s)
+			addString(base, mem, s)
 		else -- { funcname, paramc, isdotdotdot, bc }
 			fid = fid - 1
 			GF[s[1]] = sbase
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4],mem[#mem+5] = 0,0,0,0,types.functy
+			addHeader(base, mem, types.functy)
 			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', fid),1,4)
 			if s[3] then
 				mem[#mem+1] = 1
@@ -65,7 +65,7 @@ local function addStatics(base, mem, ...)
 			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s[2]),1,4)
 			mem[#mem+1],mem[#mem+2] = 0,0
 			assert(base+#mem == sbase+functy.sizeof)
-			addString(mem, s[4])
+			addString(base, mem, s[4])
 		end
 	end
 	HEAPBASE = base + #mem
@@ -76,9 +76,9 @@ data(memory, addStatics(4, {
 	-- nil
 	2, 0, 0, 0,
 	-- false
-	0, 0, 0, 0, 3, 0, 0 ,0,
+	8, 0, 0, 0, 3, 0, 0 ,0,
 	-- true
-	0, 0, 0, 0, 3, 1, 0, 0,
+	16, 0, 0, 0, 3, 1, 0, 0,
 }, 'float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file', 'closed file',
 	'nil', 'number', 'string', 'boolean', 'table', 'function', 'thread', 'userdata',
 	'b', 't', 'bt', 'n', 'a', 'l', 'L', 'r', 'w', 'r+', 'w+', 'a+',

@@ -112,9 +112,9 @@ FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer)) {
 				map = new Map();
 			for (let i=0; i<hashlen; i+=8) {
 				const k = util.readuint32(memta, hash+9+i);
-				if (k !== this.nil.val) {
+				if (k) {
 					const v = util.readuint32(memta, hash+13+i);
-					if (v !== this.nil.val) {
+					if (v) {
 						map.set(this.rawobj2js(k, memta), this.rawobj2js(v, memta));
 					}
 				}
