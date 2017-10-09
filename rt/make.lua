@@ -34,9 +34,13 @@ Mod = {
 }
 
 function encode_varint(dst, val)
+	local negmask = 0
+	if val < 0 then
+		negmask = ~0 << 57
+	end
 	while true do
 		local b = val & 0x7f
-		val = math.floor(val / 128) -- Lua's >> is unsigned
+		val = val >> 7 | negmask
 		if (val == 0 and (b & 0x40) == 0) or (val == -1 and ((b & 0x40) == 0x40)) then
 			dst[#dst+1] = b
 			return

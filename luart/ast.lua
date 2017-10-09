@@ -252,7 +252,7 @@ local function parse(self, lx)
 				local father = child.father
 				while father do
 					table.insert(father.fathered, prev_father)
-					if father.fathered.length > 1 then
+					if #father.fathered > 1 then
 						break
 					end
 					prev_father = father
