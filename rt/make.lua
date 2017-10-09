@@ -95,6 +95,14 @@ function assert_isvty(ty)
 	assert(ty == i32 or ty == i64 or ty == f32 or ty == f64, ty)
 end
 
+function globalid(x)
+	if x.init then
+		return x.id + Mod.impgid
+	else
+		return x.id
+	end
+end
+
 local function remove_from(tbl, n)
 	for i = n, #tbl do
 		tbl[i] = nil
@@ -255,6 +263,7 @@ mkconstop('i32', i32, 0x41, encode_varint)
 mkconstop('i64', i64, 0x42, encode_varint)
 mkconstop('f32', f32, 0x43, encode_f32)
 mkconstop('f64', f64, 0x44, encode_f64)
+
 function funcmeta:unreachable()
 	self:emit(0x00)
 	self.polystack[self.scope] = true
@@ -309,12 +318,13 @@ function funcmeta:tee(x)
 end
 function funcmeta:loadg(x)
 	self:emit(0x23)
-	self:emituint(x.id+Mod.impgid)
+	self:emituint(globalid(x))
 	self:push(x.type)
 end
 function funcmeta:storeg(x)
+	assert(x.mut)
 	self:emit(0x24)
-	self:emituint(x.id+Mod.impgid)
+	self:emituint(globalid(x))
 	assert(self:pop() == x.type)
 end
 function funcmeta:drop()
@@ -804,23 +814,23 @@ loopSection(6, Mod.global, function(bc, globe)
 		if ty == i32 then
 			bc[#bc+1] = 0x41
 			encode_varint(bc, init)
-			bc[#bc+1] = 0x0b
 		elseif ty == i64 then
 			bc[#bc+1] = 0x42
 			encode_varint(bc, init)
-			bc[#bc+1] = 0x0b
 		elseif ty == f32 then
 			bc[#bc+1] = 0x43
 			encode_f32(bc, init)
-			bc[#bc+1] = 0x0b
 		else
 			bc[#bc+1] = 0x44
 			encode_f64(bc, init)
-			bc[#bc+1] = 0x0b
 		end
 	else
-		error('NYI get_global init_expr')
+		assert(not init.mut)
+		assert(init.type == ty)
+		bc[#bc+1] = 0x23
+		encode_varuint(bc, globalid(x))
 	end
+	bc[#bc+1] = 0x0b
 end)
 
 loopSection(7, Mod.export, function(bc, expo)
@@ -879,10 +889,14 @@ loopSection(11, Mod.data, function(bc, data)
 	if type(data.offexpr) == 'number' then
 		bc[#bc+1] = 0x41
 		encode_varint(bc, data.offexpr)
-		bc[#bc+1] = 0x0b
 	else
-		error('NYI data offexpr init_expr')
+		local gdata = data.offexpr
+		assert(not gdata.mut)
+		assert(gdata.type == i32)
+		bc[#bc+1] = 0x23
+		encode_varuint(bc, globalid(gdata))
 	end
+	bc[#bc+1] = 0x0b
 	encode_varuint(bc, #data.data)
 	for j = 1, #data.data do
 		bc[#bc+1] = data.data[j]
