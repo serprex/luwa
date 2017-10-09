@@ -15,6 +15,10 @@ for i=1,ssrlen do
    ssr[#ssr+1], offs = string.unpack('<s4', data, offs)
 end
 package.path = 'luart/?.lua;' .. package.path
-local ast = require 'ast'
-print(ast { lex = lx, snr = snr, ssr = ssr })
+local astgen = require 'astgen'
+local bcgen = require 'bcgen'
+local lx = { lex = lx, snr = snr, ssr = ssr }
+local root = astgen(lx)
+print(root)
+print(bcgen(lx, root))
 

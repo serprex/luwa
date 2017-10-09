@@ -196,12 +196,10 @@ Assembler.prototype.getLocal = function(name) {
 	return -1;
 }
 
-Assembler.prototype.pushScope = function() {
-	return this.locals.push([]);
-}
-
-Assembler.prototype.popScope = function() {
-	return this.locals.pop();
+Assembler.prototype.scope = function(fn) {
+	this.locals.push([]);
+	fn()
+	this.locals.pop();
 }
 
 Assembler.prototype.nameScope = function(name, li) {
@@ -932,15 +930,15 @@ Assembler.prototype.scopeFuncbody = function(node, ismeth = false) {
 	let names = Array.from(this.identIndices(node));
 	let dotdotdot = this.hasLiteral(node, lex._dotdotdot);
 	var subasm = new Assembler(this.lx, ismeth + names.length, !!dotdotdot, this);
-	subasm.pushScope();
-	if (ismeth) {
-		subasm.nameScope(1, -2); // self
-	}
-	for (let name of names) {
-		subasm.nameScope(name.name, name.li);
-	}
-	subasm.scopeBlock(selectNode(node, ast.Block), true);
-	subasm.popScope();
+	subasm.scope(() => {
+		if (ismeth) {
+			subasm.nameScope(1, -2); // self
+		}
+		for (let name of names) {
+			subasm.nameScope(name.name, name.li);
+		}
+		subasm.scopeBlock(selectNode(node, ast.Block), true);
+	});
 	subasm.genBlock(selectNode(node, ast.Block));
 	subasm.push(RETURN, 0, 0);
 	this.fuli[node.li] = this.fus.length;
@@ -1003,16 +1001,16 @@ Assembler.prototype.scopeStat = function(node) {
 			this.scopeBlock(selectNode(node, ast.Block));
 			break;
 		case 7:
-			this.pushScope();
-			this.scopeBlock(selectNode(node, ast.Block), true);
-			this.scopeExpOr(selectNode(node, ast.ExpOr));
-			this.popScope();
+			this.scope(() => {
+				this.scopeBlock(selectNode(node, ast.Block), true);
+				this.scopeExpOr(selectNode(node, ast.ExpOr));
+			});
 			break;
 		case 8: {
-			this.pushScope();
-			this.scopeBlock(selectNode(node, ast.Block), true);
-			this.scopeExpOr(selectNode(node, ast.ExpOr));
-			this.popScope();
+			this.scope(() => {
+				this.scopeBlock(selectNode(node, ast.Block), true);
+				this.scopeExpOr(selectNode(node, ast.ExpOr));
+			});
 			break;
 		}
 		case 9: {
@@ -1028,23 +1026,23 @@ Assembler.prototype.scopeStat = function(node) {
 			for (let exp of selectNodes(node, ast.ExpOr)) {
 				this.scopeExpOr(exp);
 			}
-			this.pushScope();
-			let name = this.identIndex(node);
-			this.nameScope(name.name, name.li);
-			this.scopeBlock(selectNode(node, ast.Block), true);
-			this.popScope();
+			this.scope(() => {
+				let name = this.identIndex(node);
+				this.nameScope(name.name, name.li);
+				this.scopeBlock(selectNode(node, ast.Block), true);
+			});
 			break;
 		}
 		case 11: {
 			for (let exp of selectNodes(node, ast.ExpOr)) {
 				this.scopeExpOr(exp);
 			}
-			this.pushScope();
-			for (let name of this.identIndices(node)) {
-				this.nameScope(name.name, name.li);
-			}
-			this.scopeBlock(selectNode(node, ast.Block), true);
-			this.popScope();
+			this.scope(() => {
+				for (let name of this.identIndices(node)) {
+					this.nameScope(name.name, name.li);
+				}
+				this.scopeBlock(selectNode(node, ast.Block), true);
+			});
 			break;
 		}
 		case 12: {
@@ -1090,12 +1088,11 @@ Assembler.prototype.scopeBlock = function(node, nolocal = false) {
 }
 
 function assemble(lx, root) {
-	console.log(root);
-	var asm = new Assembler(lx, 0, false, null);
-	asm.pushScope();
-	asm.nameScope(0, -1); // _ENV
-	asm.scopeBlock(root);
-	asm.popScope();
+	var asm = new Assembler(lx, 0, true, null);
+	asm.scope(() => {
+		asm.nameScope(0, -1); // _ENV
+		asm.scopeBlock(root);
+	});
 	asm.genBlock(root);
 	asm.push(RETURN, 0, 0);
 	return new Func(asm);
