@@ -131,6 +131,7 @@ end
 
 -- Import
 function importfunc(m, f, ...)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 function import")
 	local sig = {...}
 	local impf = { m = m, f = f, ty = 0, type = sig, tid = Mod:decltype(sig), id = Mod.impfid }
 	Mod.impfid = Mod.impfid + 1
@@ -138,18 +139,21 @@ function importfunc(m, f, ...)
 	return impf
 end
 function importtable(m, f, elety, sz, mxsz)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 table import")
 	local impt = { m = m, f = f, ty = 1, id = Mod.imptid, elety = elety, sz = sz, mxsz = mxsz }
 	Mod.imptid = Mod.imptid + 1
 	push(Mod.import, impt)
 	return impt
 end
 function importmemory(m, f, sz, mxsz)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 memory import")
 	local impm = { m = m, f = f, ty = 2, sz = sz, mxsz = mxsz, id = Mod.impmid }
 	Mod.impmid = Mod.impmid + 1
 	push(Mod.import, impm)
 	return impm
 end
 function importglobal(m, f, ty, mut)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 global import")
 	if not mut then
 		mut = 0
 	elseif mut ~= 0 then
@@ -694,6 +698,7 @@ end
 
 function export(name, obj)
 	assert(type(name) == 'string')
+	assert(utf8.len(name), "Non utf8 export")
 	local kind
 	if obj.bcode then
 		kind = 0
@@ -701,7 +706,7 @@ function export(name, obj)
 		kind = 1
 	elseif obj.ismem then
 		kind = 2
-	elseif obj.mut then
+	else
 		kind = 3
 	end
 	push(Mod.export, { f = name, obj = obj, kind = kind })
