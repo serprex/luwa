@@ -10,7 +10,7 @@ local function Assembler(lx, pcount, isdotdotdot, uplink)
 		pcount = pcount,
 		isdotdotdot = isdotdotdot,
 		uplink = uplink,
-		scopedata = {},
+		scopes = {},
 		names = {},
 		bc = {},
 	}, asmmt)
@@ -23,19 +23,19 @@ function asmmeta:push(op, ...)
 	end
 end
 function asmmeta:scope(f)
-	local nsdata = #self.scopedata
+	self.scopes = { prev = self.scopes }
 	f(self)
-	for i=#self.scopedata, nsdata, -1 do
-		local sdata = self.scopedata
-		local sname = sdata.name
-		self.names[sname] = self.names[sname].prev
+	for i=1, #self.scopes do
+		local name = self.scopes[i]
+		self.names[name] = self.names[name].prev
 	end
+	self.scopes = self.scopes.prev
 end
 
 function asmmeta:name(n, isparam)
 	local prevscope = self.names[n]
 	local newscope = { prev = prevscope, isparam = isparam }
-	self.scopedata[#self.scopedata+1] = newscope
+	self.scopes[#self.scopes+1] = n
 	self.names[n] = newscope
 end
 
