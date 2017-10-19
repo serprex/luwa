@@ -3,11 +3,9 @@ local ast = require 'ast'
 
 local function iternone()
 end
-local function iterone(x)
-	return function()
-		local y = x
-		x = nil
-		return y
+local function iterone(x, y)
+	if not y then
+		return x
 	end
 end
 local function yieldall(it)
@@ -21,7 +19,7 @@ return function(lx)
 	local function name(x, p)
 		local t = x:next(p)
 		if t:val() == lex._ident then
-			return iterone(t:skipint())
+			return iterone, t:skipint()
 		else
 			return iternone
 		end
@@ -29,7 +27,7 @@ return function(lx)
 	local function number(x, p)
 		local t = x:next(p)
 		if t:val() == lex._number then
-			return iterone(t:skipint())
+			return iterone, t:skipint()
 		else
 			return iternone
 		end
@@ -37,7 +35,7 @@ return function(lx)
 	local function slit(x, p)
 		local t = x:next(p)
 		if t:val() == lex._string then
-			return iterone(t:skipint())
+			return iterone, t:skipint()
 		else
 			return iternone
 		end
@@ -46,7 +44,7 @@ return function(lx)
 		return function(x, p)
 			local t = x:next(p)
 			if t:val() == r then
-				return iterone(t)
+				return iterone, t
 			else
 				return iternone
 			end
