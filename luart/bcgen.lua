@@ -2,6 +2,9 @@ local lex = require 'lex'
 local ast = require 'ast'
 local bc = require 'bc'
 
+local function nop()
+end
+
 local asmmeta = {}
 local asmmt = { __index = asmeta }
 local function Assembler(lx, pcount, isdotdotdot, uplink)
@@ -48,8 +51,194 @@ function asmmeta:usename(n)
 	end
 end
 
-function asmmeta:scopeBlock(node)
+local function nextNodeFactory(ty)
+	return function(node, i)
+		while i > 0 do
+			local child = node.fathered[i]
+			i = i - 1
+			if (child.type & 31) == ty then
+				return i, child
+			end
+		end
+	end
 end
+local nextNode = {}
+for k,v in pairs(ast) do
+	nextNode[v] = nextNode(v)
+end
+
+local function selectNodes(node, ty)
+	return nextNode[ty], node, #node.fathered
+end
+local function selectNode(node, ty)
+	return nextNode[ty](node, #node.fathered)
+end
+
+local function scope(self, node)
+	return visitScope[node.type](node)
+end
+local function scopeNode(self, node, ty)
+	return visitScope[ty](self, selectNode(node, ty))
+end
+local function scopeNodes(self, node, ty)
+	local fn = visitScope[ty]
+	for i, node in selectNodes(node, ty) do
+		fn(self, node)
+	end
+end
+
+local function scopeStatLoop(self, node)
+end
+local scopeStatSwitch = {
+	nop, -- 1 ;
+	function(self, node) -- 2 vars=exps
+		scopeNodes(self, node, ast.ExpOr)
+		scopeNodes(self, node, ast.Var)
+	end,
+	function(self, node) -- 3 call
+		scopeNode(self, node, ast.Functioncall)
+	end,
+	nop, -- 4 label
+	nop, -- 5 break
+	nop, -- 6 goto
+	function(self, node) -- 7 do-end
+		self:scope(function()
+			scopeNode(self, node, ast.Block)
+		end)
+	end,
+	function(self, node) -- 8 while
+		self:scope(function()
+			scopeNode(self, node, ast.ExpOr)
+			scopeNode(self, node, ast.Block)
+		end)
+	end,
+	function(self, node) -- 9 repeat
+		self:scope(function()
+			scopeNode(self, node, ast.Block)
+			scopeNode(self, node, ast.ExpOr)
+		end)
+	end,
+	function(self, node) -- 10 if
+		scopeNodes(self, node, ast.ExpOr)
+		for i, block in selectNodes(node, ast.Block) do
+			self:scope(function()
+				visitScope[ty](self, block)
+			end)
+		end
+	end,
+	function(self, node) -- 11 for
+		scopeNodes(self, node, ast.ExpOr)
+		-- TODO usename
+		scopeNode(self, node, ast.Block)
+	end,
+	function(self, node) -- 12 generic for
+		scopeNodes(self, node, ast.ExpOr)
+		-- TODO usename
+		scopeNode(self, node, ast.Block)
+	end,
+	function(self, node) -- 13 func
+		-- TODO
+	end,
+	function(self, node) -- 14 local func
+		-- TODO
+	end,
+	function(self, node) -- 15 local vars=exps
+		-- TODO usename
+	end,
+}
+
+local visitScope = {
+	[ast.Block] = function(self, node)
+		scopeNodes(self, node, ast.Stat)
+		scopeNode(self, node, ast.Retstat)
+	end,
+	[ast.Stat] = function(self, node)
+		return scopeStatSwitch[node.type >> 5](self, node)
+	end,
+	[ast.Retstat] = function()
+		scopeNodes(self, node, ast.ExpOr)
+	end,
+	[ast.Label] = function()
+	end,
+	[ast.Funcname] = function()
+	end,
+	[ast.Var] = function()
+	end,
+	[ast.Exp] = function()
+	end,
+	[ast.Prefix] = function()
+	end,
+	[ast.Functioncall] = function()
+	end,
+	[ast.Args] = function()
+	end,
+	[ast.Funcbody] = function()
+	end,
+	[ast.Tableconstructor] = function()
+	end,
+	[ast.Field] = function()
+	end,
+	[ast.Binop] = function()
+	end,
+	[ast.Unop] = function()
+	end,
+	[ast.Value] = function()
+	end,
+	[ast.Index] = function()
+	end,
+	[ast.Call] = function()
+	end,
+	[ast.Suffix] = function()
+	end,
+	[ast.ExpOr] = function()
+	end,
+	[ast.ExpAnd] = function()
+	end,
+}
+local visitEmit = {
+	[ast.Block] = function()
+	end,
+	[ast.Stat] = function()
+	end,
+	[ast.Retstat] = function()
+	end,
+	[ast.Label] = function()
+	end,
+	[ast.Funcname] = function()
+	end,
+	[ast.Var] = function()
+	end,
+	[ast.Exp] = function()
+	end,
+	[ast.Prefix] = function()
+	end,
+	[ast.Functioncall] = function()
+	end,
+	[ast.Args] = function()
+	end,
+	[ast.Funcbody] = function()
+	end,
+	[ast.Tableconstructor] = function()
+	end,
+	[ast.Field] = function()
+	end,
+	[ast.Binop] = function()
+	end,
+	[ast.Unop] = function()
+	end,
+	[ast.Value] = function()
+	end,
+	[ast.Index] = function()
+	end,
+	[ast.Call] = function()
+	end,
+	[ast.Suffix] = function()
+	end,
+	[ast.ExpOr] = function()
+	end,
+	[ast.ExpAnd] = function()
+	end,
+}
 
 function asmmeta:genBlock(node)
 end

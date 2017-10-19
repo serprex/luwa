@@ -998,7 +998,7 @@ Assembler.prototype.scopeStat = function(node) {
 			this.scopeFuncCall(selectNode(node, ast.Functioncall));
 			break;
 		case 6:
-			this.scopeBlock(selectNode(node, ast.Block));
+			this.scopeBlock(selectNode(node, ast.Block), true);
 			break;
 		case 7:
 			this.scope(() => {
@@ -1008,8 +1008,10 @@ Assembler.prototype.scopeStat = function(node) {
 			break;
 		case 8: {
 			this.scope(() => {
-				this.scopeBlock(selectNode(node, ast.Block), true);
+				this.pushLocal();
+				this.scopeBlock(selectNode(node, ast.Block));
 				this.scopeExpOr(selectNode(node, ast.ExpOr));
+				this.popLocal();
 			});
 			break;
 		}
