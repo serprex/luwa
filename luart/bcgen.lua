@@ -7,14 +7,15 @@ end
 
 local asmmeta = {}
 local asmmt = { __index = asmeta }
-local function Assembler(lx, pcount, isdotdotdot, uplink)
+local function Assembler(lx, uplink)
 	return setmetatable({
 		lx = lx,
-		pcount = pcount,
-		isdotdotdot = isdotdotdot,
+		pcount = 0,
+		isdotdotdot = false,
 		uplink = uplink,
-		scopes = {},
+		scopes = nil,
 		names = {},
+		idxfree = {},
 		bc = {},
 	}, asmmt)
 end
@@ -35,9 +36,9 @@ function asmmeta:scope(f)
 	self.scopes = self.scopes.prev
 end
 
-function asmmeta:name(n, isparam)
+function asmmeta:name(n, idx)
 	local prevscope = self.names[n]
-	local newscope = { prev = prevscope, isparam = isparam }
+	local newscope = { prev = prevscope, idx = idx, func = self }
 	self.scopes[#self.scopes+1] = n
 	self.names[n] = newscope
 end
@@ -45,9 +46,11 @@ end
 function asmmeta:usename(n)
 	local name = self.names[n]
 	if name then
-		name.isfree = true
+		if name.func ~= self then
+			self.idxfree[name.idx] = true
+		end
 	else
-		self.names[1].isfree = true -- _ENV
+		return asmmeta:usename(1) -- _ENV
 	end
 end
 
@@ -87,8 +90,6 @@ local function scopeNodes(self, node, ty)
 	end
 end
 
-local function scopeStatLoop(self, node)
-end
 local scopeStatSwitch = {
 	nop, -- 1 ;
 	function(self, node) -- 2 vars=exps
@@ -138,12 +139,21 @@ local scopeStatSwitch = {
 	end,
 	function(self, node) -- 13 func
 		-- TODO
+		local clasm = Assembler(self.lx, self)
+		local fruit = selectNode(node, ast.Funcbody)
+		-- TODO self:usename
+		visitScope[ast.Funcbody](clasm, fruit)
+		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 14 local func
-		-- TODO
+		local clasm = Assembler(self.lx, self)
+		local fruit = selectNode(node, ast.Funcbody)
+		-- TODO self:name
+		visitScope[ast.Funcbody](clasm, fruit)
+		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 15 local vars=exps
-		-- TODO usename
+		-- TODO name
 	end,
 }
 
@@ -155,88 +165,114 @@ local visitScope = {
 	[ast.Stat] = function(self, node)
 		return scopeStatSwitch[node.type >> 5](self, node)
 	end,
-	[ast.Retstat] = function()
+	[ast.Retstat] = function(self, node)
 		scopeNodes(self, node, ast.ExpOr)
 	end,
-	[ast.Label] = function()
+	[ast.Label] = function(self, node)
+		-- TODO how do we even
 	end,
-	[ast.Funcname] = function()
+	[ast.Funcname] = function(self, node)
 	end,
-	[ast.Var] = function()
+	[ast.Var] = function(self, node)
 	end,
-	[ast.Exp] = function()
+	[ast.Exp] = function(self, node)
+		if #node.fathered == 1 then
+			assert(self.fathered[1].type == ast.Value)
+			return visitScope[ast.Value](self.fathered[1], node)
+		elseif node.type >> 5 == 0 then
+			return scopeNodes(self, node, ast.Exp)
+		else
+			for i = #node.fathered, 1, -1 do
+				local n = node.fathered[i]
+				local nt = n.type & 31
+				if nt == ast.Exp then
+					visitScope[ast.Exp](self, node)
+				elseif nt == ast.Value then
+					visitScope[ast.Value](self, node)
+				end
+			end
+		end
 	end,
-	[ast.Prefix] = function()
+	[ast.Prefix] = function(self, node)
+		if node.type >> 5 == 0 then
+			scopeNodes(self, node, ast.ExpOr)
+		else
+			-- TODO usename
+		end
 	end,
-	[ast.Functioncall] = function()
+	[ast.Functioncall] = function(self, node)
 	end,
-	[ast.Args] = function()
+	[ast.Args] = function(self, node)
 	end,
-	[ast.Funcbody] = function()
+	[ast.Funcbody] = function(self, node)
 	end,
-	[ast.Tableconstructor] = function()
+	[ast.Tableconstructor] = function(self, node)
 	end,
-	[ast.Field] = function()
+	[ast.Field] = function(self, node)
 	end,
-	[ast.Binop] = function()
+	[ast.Binop] = function(self, node)
 	end,
-	[ast.Unop] = function()
+	[ast.Unop] = function(self, node)
 	end,
-	[ast.Value] = function()
+	[ast.Value] = function(self, node)
 	end,
-	[ast.Index] = function()
+	[ast.Index] = function(self, node)
 	end,
-	[ast.Call] = function()
+	[ast.Call] = function(self, node)
 	end,
-	[ast.Suffix] = function()
+	[ast.Suffix] = function(self, node)
 	end,
-	[ast.ExpOr] = function()
+	[ast.ExpOr] = function(self, node)
+		return scopeNodes(self, node, ast.ExpAnd)
 	end,
-	[ast.ExpAnd] = function()
+	[ast.ExpAnd] = function(self, node)
+		return scopeNodes(self, node, ast.Exp)
 	end,
 }
 local visitEmit = {
-	[ast.Block] = function()
+	[ast.Block] = function(self, node)
+		emitNodes(self, node, ast.Stat)
+		emitNode(self, node, ast.Retstat)
 	end,
-	[ast.Stat] = function()
+	[ast.Stat] = function(self, node)
 	end,
-	[ast.Retstat] = function()
+	[ast.Retstat] = function(self, node)
 	end,
-	[ast.Label] = function()
+	[ast.Label] = function(self, node)
 	end,
-	[ast.Funcname] = function()
+	[ast.Funcname] = function(self, node)
 	end,
-	[ast.Var] = function()
+	[ast.Var] = function(self, node)
 	end,
-	[ast.Exp] = function()
+	[ast.Exp] = function(self, node)
 	end,
-	[ast.Prefix] = function()
+	[ast.Prefix] = function(self, node)
 	end,
-	[ast.Functioncall] = function()
+	[ast.Functioncall] = function(self, node)
 	end,
-	[ast.Args] = function()
+	[ast.Args] = function(self, node)
 	end,
-	[ast.Funcbody] = function()
+	[ast.Funcbody] = function(self, node)
 	end,
-	[ast.Tableconstructor] = function()
+	[ast.Tableconstructor] = function(self, node)
 	end,
-	[ast.Field] = function()
+	[ast.Field] = function(self, node)
 	end,
-	[ast.Binop] = function()
+	[ast.Binop] = function(self, node)
 	end,
-	[ast.Unop] = function()
+	[ast.Unop] = function(self, node)
 	end,
-	[ast.Value] = function()
+	[ast.Value] = function(self, node)
 	end,
-	[ast.Index] = function()
+	[ast.Index] = function(self, node)
 	end,
-	[ast.Call] = function()
+	[ast.Call] = function(self, node)
 	end,
-	[ast.Suffix] = function()
+	[ast.Suffix] = function(self, node)
 	end,
-	[ast.ExpOr] = function()
+	[ast.ExpOr] = function(self, node)
 	end,
-	[ast.ExpAnd] = function()
+	[ast.ExpAnd] = function(self, node)
 	end,
 }
 
@@ -247,12 +283,14 @@ function asmmeta:synth()
 end
 
 return function(lx, root)
-	local asm = Assembler(lx, tree, true, nil)
-	asm.scope(function()
-		asm.name(1, true) -- _ENV
-		asm.scopeBlock(root)
+	local asm = Assembler(lx, nil)
+	asm.pcount = 1
+	asm.isdotdotdot = true
+	asm:scope(function()
+		asm:name(1, -1) -- _ENV
+		visitScope[ast.Block](asm, root)
 	end)
-	asm.genBlock(root)
-	asm.push(bc.Return, 0, 0)
+	visitEmit[ast.Block](asm, root)
+	asm:push(bc.Return, 0, 0)
 	return asm.synth()
 end
