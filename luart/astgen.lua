@@ -34,6 +34,7 @@ return function(lx)
 	end
 	local function slit(x, p)
 		local t = x:next(p)
+		t.mother = x.mother
 		if t:val() == lex._string then
 			return iterone, t:skipint()
 		else
@@ -78,7 +79,7 @@ return function(lx)
 			return seqf(x, x:spawn(o, p))
 		end
 	end
-	function many(f)
+	local function many(f)
 		local function manyf(x, p)
 			for fx in f(x, p) do
 				manyf(fx, p)
@@ -91,7 +92,7 @@ return function(lx)
 			end)
 		end
 	end
-	function maybe(f)
+	local function maybe(f)
 		return function(x, p)
 			return coroutine.wrap(function()
 				yieldall(f(x, p))
@@ -99,7 +100,7 @@ return function(lx)
 			end)
 		end
 	end
-	function of(o, ...)
+	local function of(o, ...)
 		local xs = {...}
 		rules[o] = function(x, p)
 			return coroutine.wrap(function()
@@ -111,7 +112,7 @@ return function(lx)
 			end)
 		end
 	end
-	function oof(...)
+	local function oof(...)
 		local xs = {...}
 		return function(x, p)
 			return coroutine.wrap(function()
@@ -121,15 +122,17 @@ return function(lx)
 			end)
 		end
 	end
-	local Explist = seq(o(ExpOr), many(seq(s(lex._comma), o(ExpOr))))
+	local Explist = seq(o(ast.ExpOr), many(seq(s(lex._comma), o(ast.ExpOr))))
 	local Namelist = seq(name, many(seq(s(lex._comma), name)))
-	local Varlist = seq(o(Var), many(seq(s(lex._comma), o(Var))))
+	local Varlist = seq(o(ast.Var), many(seq(s(lex._comma), o(ast.Var))))
 	local Fieldsep = oof(s(lex._comma), s(lex._semi))
+	local Call = seq(maybe(seq(s(lex._colon), name)), o(ast.Args))
+	local Funccall = seq(o(ast.Prefix), many(o(ast.Suffix)), Call)
 	sf(ast.Block, many(o(Stat)), maybe(o(Retstat)))
 	of(ast.Stat,
 		s(lex._semi),
-		seq(ast.Varlist, s(lex._set), ast.Explist),
-		o(ast.Functioncall),
+		seq(Varlist, s(lex._set), Explist),
+		Funccall,
 		o(ast.Label),
 		s(lex._break),
 		seq(s(lex._goto), name),
@@ -139,24 +142,26 @@ return function(lx)
 		seq(s(lex._if), o(ast.ExpOr), s(lex._then), o(ast.Block), many(seq(s(lex._elseif), o(ast.ExpOr), s(lex._then), o(ast.Block))), maybe(seq(s(lex._else), o(ast.Block))), s(lex._end)),
 		seq(s(lex._for), name, s(lex._set), o(ast.ExpOr), s(lex._comma), o(ast.ExpOr), maybe(seq(s(lex._comma), o(ast.ExpOr))), s(lex._do), o(ast.Block), s(lex._end)),
 		seq(s(lex._for), Namelist, s(lex._in), Explist, s(lex._do), o(ast.Block), s(lex._end)),
-		seq(s(lex._function), o(ast.Funcname), o(ast.Funcbody)),
+		seq(s(lex._function), seq(name, many(seq(s(lex._dot), name))), o(ast.Funcbody)),
+		seq(s(lex._function), seq(name, many(seq(s(lex._dot), name)), seq(s(lex._colon), name)), o(ast.Funcbody)),
 		seq(s(lex._local), s(lex._function), name, o(ast.Funcbody)),
 		seq(s(lex._local), Namelist, maybe(seq(s(lex._set), Explist)))
 	)
 	sf(ast.Retstat, s(lex._return), maybe(Explist), maybe(s(lex._semi)))
 	sf(ast.Label, s(lex._label), name, s(lex._label))
-	sf(ast.Funcname, name, many(seq(s(lex._dot), name)), maybe(seq(s(lex._colon), name)))
 	of(ast.Var, name, seq(o(ast.Prefix), many(o(ast.Suffix)), o(ast.Index)))
 	of(ast.ExpOr, seq(o(ast.ExpAnd), many(seq(s(lex._or), o(ast.ExpAnd)))))
 	of(ast.ExpAnd, seq(o(ast.Exp), many(seq(s(lex._and), o(ast.Exp)))))
 	of(ast.Exp, seq(o(ast.Unop), o(ast.Exp)), seq(o(ast.Value), maybe(seq(o(ast.Binop), o(ast.Exp)))))
 	of(ast.Prefix, name, seq(s(lex._pl), o(ast.ExpOr), s(lex._pr)))
-	sf(ast.Functioncall, o(ast.Prefix), many(o(ast.Suffix)), o(ast.Call))
 	of(ast.Args,
 		seq(s(lex._pl), maybe(Explist), s(lex._pr)),
 		o(ast.Tableconstructor),
 		slit)
-	sf(ast.Funcbody, s(lex._pl), maybe(oof(seq(ast.Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(ast.Block), s(lex._end))
+	of(ast.Funcbody,
+		seq(s(lex._pl), maybe(Namelist), s(lex._pr), o(ast.Block), s(lex._end)),
+		seq(s(lex._pl), oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot)), s(lex._pr), o(ast.Block), s(lex._end)))
+	sf(ast.Funcbody, s(lex._pl), maybe(oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(ast.Block), s(lex._end))
 	sf(ast.Tableconstructor, s(lex._cl), maybe(seq(o(ast.Field), many(seq(ast.Fieldsep, o(ast.Field))), maybe(ast.Fieldsep))), s(lex._cr))
 	of(ast.Field,
 		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr), s(lex._set), o(ast.ExpOr)),
@@ -169,15 +174,12 @@ return function(lx)
 	of(ast.Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot))
 	of(ast.Value,
 		s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
-		seq(s(lex._function), o(ast.Funcbody)), o(ast.Tableconstructor), o(ast.Functioncall), o(ast.Var),
+		seq(s(lex._function), o(ast.Funcbody)), o(ast.Tableconstructor), Funccall, o(ast.Var),
 		seq(s(lex._pl), o(ast.ExpOr), s(lex._pr)))
 	of(ast.Index,
 		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr)),
 		seq(s(lex._dot), name))
-	of(ast.Call,
-		o(ast.Args),
-		seq(s(lex._colon), name, o(ast.Args)))
-	of(ast.Suffix, o(ast.Call), o(ast.Index))
+	of(ast.Suffix, Call, o(ast.Index))
 
 	local BuilderMeta = {}
 	local BuilderMT = { __index = BuilderMeta }
@@ -199,21 +201,13 @@ return function(lx)
 		return self
 	end
 	function BuilderMeta:int()
-		return string.unpack('<i4', lx.lex, self.nx)
+		return string.unpack('<i4', lx.lex, self.li+1)
 	end
 	function BuilderMeta:next(p)
-		local newmo = self
-		if self.type == -1 then
-			newmo = self.mother
-		end
-		return Builder(self.nx, self.nx+1, newmo, p, -1)
+		return Builder(self.nx, self.nx+1, self, p, -1)
 	end
 	function BuilderMeta:spawn(ty, p)
-		local newmo = self
-		if self.type == -1 then
-			newmo = self.mother
-		end
-		return Builder(self.li, self.nx, newmo, p, ty)
+		return Builder(self.li, self.nx, self, p, ty)
 	end
 
 	local root = Builder(0, 1, nil, nil, -2)

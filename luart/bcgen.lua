@@ -70,11 +70,28 @@ for k,v in pairs(ast) do
 	nextNode[v] = nextNode(v)
 end
 
+local function nextIdentIndex(node, i)
+	while i > 0 do
+		local child = node.fathered[i]
+		i = i - 1
+		if child.type == -1 and child:val() == lex._ident then
+			return i, child
+		end
+	end
+end
+
 local function selectNodes(node, ty)
 	return nextNode[ty], node, #node.fathered
 end
 local function selectNode(node, ty)
 	return nextNode[ty](node, #node.fathered)
+end
+
+local function identIndices(node, ty)
+	return nextIdentIndex, node, #node.fathered
+end
+local function identIndex(node, ty)
+	return nextIdentIndex(node, #node.fathered)
 end
 
 local function scope(self, node)
@@ -145,14 +162,21 @@ local scopeStatSwitch = {
 		visitScope[ast.Funcbody](clasm, fruit)
 		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
-	function(self, node) -- 14 local func
+	function(self, node) -- 14 self:func
+		local clasm = Assembler(self.lx, self)
+		local fruit = selectNode(node, ast.Funcbody)
+		-- TODO self:usename
+		visitScope[ast.Funcbody](clasm, fruit)
+		visitEmit[ast.Funcbody](clasm, fruit)
+	end,
+	function(self, node) -- 15 local func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
 		-- TODO self:name
 		visitScope[ast.Funcbody](clasm, fruit)
 		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
-	function(self, node) -- 15 local vars=exps
+	function(self, node) -- 16 local vars=exps
 		-- TODO name
 	end,
 }
@@ -170,8 +194,6 @@ local visitScope = {
 	end,
 	[ast.Label] = function(self, node)
 		-- TODO how do we even
-	end,
-	[ast.Funcname] = function(self, node)
 	end,
 	[ast.Var] = function(self, node)
 	end,
@@ -200,8 +222,6 @@ local visitScope = {
 			-- TODO usename
 		end
 	end,
-	[ast.Functioncall] = function(self, node)
-	end,
 	[ast.Args] = function(self, node)
 	end,
 	[ast.Funcbody] = function(self, node)
@@ -217,8 +237,6 @@ local visitScope = {
 	[ast.Value] = function(self, node)
 	end,
 	[ast.Index] = function(self, node)
-	end,
-	[ast.Call] = function(self, node)
 	end,
 	[ast.Suffix] = function(self, node)
 	end,
@@ -240,15 +258,11 @@ local visitEmit = {
 	end,
 	[ast.Label] = function(self, node)
 	end,
-	[ast.Funcname] = function(self, node)
-	end,
 	[ast.Var] = function(self, node)
 	end,
 	[ast.Exp] = function(self, node)
 	end,
 	[ast.Prefix] = function(self, node)
-	end,
-	[ast.Functioncall] = function(self, node)
 	end,
 	[ast.Args] = function(self, node)
 	end,
@@ -266,8 +280,6 @@ local visitEmit = {
 	end,
 	[ast.Index] = function(self, node)
 	end,
-	[ast.Call] = function(self, node)
-	end,
 	[ast.Suffix] = function(self, node)
 	end,
 	[ast.ExpOr] = function(self, node)
@@ -275,9 +287,6 @@ local visitEmit = {
 	[ast.ExpAnd] = function(self, node)
 	end,
 }
-
-function asmmeta:genBlock(node)
-end
 
 function asmmeta:synth()
 end
