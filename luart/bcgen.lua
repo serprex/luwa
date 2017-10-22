@@ -70,15 +70,20 @@ for k,v in pairs(ast) do
 	nextNode[v] = nextNode(v)
 end
 
-local function nextIdentIndex(node, i)
-	while i > 0 do
-		local child = node.fathered[i]
-		i = i - 1
-		if child.type == -1 and child:val() == lex._ident then
-			return i, child
+local function nextMask(ty)
+	return function(node, i)
+		while i > 0 do
+			local child = node.fathered[i]
+			i = i - 1
+			if child.type == -1 and child:val() == ty then
+				return i, child
+			end
 		end
 	end
 end
+local nextString = nextMask(lex._string)
+local nextNumber = nextMask(lex._number)
+local nextIdent = nextMask(lex._ident)
 
 local function selectNodes(node, ty)
 	return nextNode[ty], node, #node.fathered
@@ -87,11 +92,11 @@ local function selectNode(node, ty)
 	return nextNode[ty](node, #node.fathered)
 end
 
-local function identIndices(node, ty)
-	return nextIdentIndex, node, #node.fathered
+local function selectIdents(node)
+	return nextIdent, node, #node.fathered
 end
-local function identIndex(node, ty)
-	return nextIdentIndex(node, #node.fathered)
+local function selectIdent(node)
+	return nextIdent(node, #node.fathered)
 end
 
 local function scope(self, node)
@@ -217,9 +222,9 @@ local visitScope = {
 	end,
 	[ast.Prefix] = function(self, node)
 		if node.type >> 5 == 0 then
-			scopeNodes(self, node, ast.ExpOr)
+			self:usename(selectIdent(node):int())
 		else
-			-- TODO usename
+			scopeNode(self, node, ast.ExpOr)
 		end
 	end,
 	[ast.Args] = function(self, node)
