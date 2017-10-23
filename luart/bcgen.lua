@@ -201,6 +201,12 @@ local visitScope = {
 		-- TODO how do we even
 	end,
 	[ast.Var] = function(self, node)
+		if node.types >> 5 == 0 then
+			self:usename(selectIdent(node):int())
+		else
+			scopeNode(self, node, ast.Prefix)
+			scopeNode(self, node, ast.Index)
+		end
 	end,
 	[ast.Exp] = function(self, node)
 		if #node.fathered == 1 then
@@ -228,22 +234,51 @@ local visitScope = {
 		end
 	end,
 	[ast.Args] = function(self, node)
+		local t = node.type >> 5
+		if t == 0 then
+			scopeNodes(self, node, ast.ExpOr)
+		elseif t == 1 then
+			scopeNode(self, node, ast.Tableconstructor)
+		end
 	end,
 	[ast.Funcbody] = function(self, node)
+		-- TODO ahhh
 	end,
 	[ast.Tableconstructor] = function(self, node)
+		scopeNodes(self, node, ast.Field)
 	end,
 	[ast.Field] = function(self, node)
+		scopeNodes(self, node, ast.ExpOr)
 	end,
-	[ast.Binop] = function(self, node)
-	end,
-	[ast.Unop] = function(self, node)
-	end,
+	[ast.Binop] = nop,
+	[ast.Unop] = nop,
 	[ast.Value] = function(self, node)
+		local t = node.type >> 5
+		-- TODO if t == 5 then assert(self.isdotdotdot)
+		if t == 7 then
+			scopeNode(self, node, ast.Funcbody)
+		elseif t == 8 then
+			scopeNode(self, node, ast.Tableconstructor)
+		elseif t == 9 then
+			scopeNode(self, node, ast.Prefix)
+			scopeNode(self, node, ast.Args)
+		elseif t == 10 then
+			scopeNode(self, node, ast.Var)
+		elseif t == 11 then
+			scopeNode(self, node, ast.ExpOr)
+		end
 	end,
 	[ast.Index] = function(self, node)
+		if node.type >> 5 == 0 then
+			scopeNode(self, node, ast.ExpOr)
+		end
 	end,
 	[ast.Suffix] = function(self, node)
+		if node.type >> 5 == 0 then
+			scopeNode(self, node, ast.Args)
+		else
+			scopeNode(self, node, ast.Index)
+		end
 	end,
 	[ast.ExpOr] = function(self, node)
 		return scopeNodes(self, node, ast.ExpAnd)
