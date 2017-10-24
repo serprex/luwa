@@ -99,20 +99,34 @@ local function selectIdent(node)
 	return nextIdent(node, #node.fathered)
 end
 
-local function scope(self, node)
-	return visitScope[node.type](node)
+local scopeStatSwitch, visitScope, emitScope
+
+local function singleNode(self, node, ty, visit)
+	local sn = selectNode(node, ty)
+	if sn then
+		return visit[ty](self, sn)
+	end
 end
-local function scopeNode(self, node, ty)
-	return visitScope[ty](self, selectNode(node, ty))
-end
-local function scopeNodes(self, node, ty)
-	local fn = visitScope[ty]
+local function multiNodes(self, node, ty, visit)
+	local fn = visit[ty]
 	for i, node in selectNodes(node, ty) do
 		fn(self, node)
 	end
 end
+local function scopeNode(self, node, ty)
+	return singleNode(self, node, ty, visitScope)
+end
+local function emitNode(self, node, ty)
+	return singleNode(self, node, ty, visitEmit)
+end
+local function scopeNode(self, node, ty)
+	return multiNodes(self, node, ty, visitScope)
+end
+local function emitNode(self, node, ty)
+	return multiNodes(self, node, ty, visitEmit)
+end
 
-local scopeStatSwitch = {
+scopeStatSwitch = {
 	nop, -- 1 ;
 	function(self, node) -- 2 vars=exps
 		scopeNodes(self, node, ast.ExpOr)
@@ -151,42 +165,48 @@ local scopeStatSwitch = {
 	end,
 	function(self, node) -- 11 for
 		scopeNodes(self, node, ast.ExpOr)
-		-- TODO usename
+		local name = selectIdent(node)
+		self:name(name:int(), name.li)
 		scopeNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 12 generic for
 		scopeNodes(self, node, ast.ExpOr)
-		-- TODO usename
+		for i, name in selectIdents(node) do
+			self:name(name:int(), name.li)
+		end
 		scopeNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 13 func
-		-- TODO
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
-		-- TODO self:usename
+		self:usename(selectIdent(node):int())
 		visitScope[ast.Funcbody](clasm, fruit)
 		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 14 self:func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
-		-- TODO self:usename
+		self:usename(selectIdent(node):int())
+		clasm:name(2, -2)
 		visitScope[ast.Funcbody](clasm, fruit)
 		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 15 local func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
-		-- TODO self:name
+		local name = selectIdent(node)
+		self:name(name:int(), name.li)
 		visitScope[ast.Funcbody](clasm, fruit)
 		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
-	function(self, node) -- 16 local vars=exps
-		-- TODO name
+	function(self, node) -- 16 locals=exps
+		scopeNodes(self, node, ast.ExpOr)
+		for i, name in selectIdents(node) do
+			self:name(name:int(), name.li)
+		end
 	end,
 }
-
-local visitScope = {
+visitScope = {
 	[ast.Block] = function(self, node)
 		scopeNodes(self, node, ast.Stat)
 		scopeNode(self, node, ast.Retstat)
@@ -287,7 +307,7 @@ local visitScope = {
 		return scopeNodes(self, node, ast.Exp)
 	end,
 }
-local visitEmit = {
+visitEmit = {
 	[ast.Block] = function(self, node)
 		emitNodes(self, node, ast.Stat)
 		emitNode(self, node, ast.Retstat)
