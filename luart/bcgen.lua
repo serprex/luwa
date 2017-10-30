@@ -99,7 +99,7 @@ local function selectIdent(node)
 	return nextIdent(node, #node.fathered)
 end
 
-local scopeStatSwitch, visitScope, emitScope
+local scopeStatSwitch, emitStatSwitch, emitValueSwitch, visitScope, emitScope
 
 local function singleNode(self, node, ty, visit)
 	local sn = selectNode(node, ty)
@@ -204,6 +204,66 @@ scopeStatSwitch = {
 		for i, name in selectIdents(node) do
 			self:name(name:int(), name.li)
 		end
+	end,
+}
+emitStatSwitch = {
+	nop, -- 1 ;
+	function(self, node) -- 2 vars=exps
+	end,
+	function(self, node) -- 3 call
+	end,
+	function(self, node) -- 4 label
+	end,
+	function(self, node) -- 5 break
+	end,
+	function(self, node) -- 6 goto
+	end,
+	function(self, node) -- 7 do-end
+	end,
+	function(self, node) -- 8 while
+	end,
+	function(self, node) -- 9 repeat
+	end,
+	function(self, node) -- 10 if
+	end,
+	function(self, node) -- 11 for
+	end,
+	function(self, node) -- 12 generic for
+	end,
+	function(self, node) -- 13 func
+	end,
+	function(self, node) -- 14 self:func
+	end,
+	function(self, node) -- 15 local func
+	end,
+	function(self, node) -- 16 locals=exps
+	end,
+}
+emitValueSwitch = {
+	function(self, node) -- 1 nil
+		self:push(bc.Loadnil)
+	end,
+	function(self, node) -- 2 false
+		self:push(bc.Loadfalse)
+	end,
+	function(self, node) -- 3 true
+		self:push(bc.Loadtrue)
+	end,
+	function(self, node) -- 3 num
+	end,
+	function(self, node) -- 4 str
+	end,
+	function(self, node) -- 5 ...
+	end,
+	function(self, node) -- 6 Funcbody
+	end,
+	function(self, node) -- 7 Table
+	end,
+	function(self, node) -- 8 Call
+	end,
+	function(self, node) -- 9 Var load
+	end,
+	function(self, node) -- 10 Exp
 	end,
 }
 visitScope = {
@@ -313,6 +373,7 @@ visitEmit = {
 		emitNode(self, node, ast.Retstat)
 	end,
 	[ast.Stat] = function(self, node)
+		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Retstat] = function(self, node)
 	end,
@@ -337,6 +398,7 @@ visitEmit = {
 	[ast.Unop] = function(self, node)
 	end,
 	[ast.Value] = function(self, node)
+		return emitValueSwitch[self.type >> 5](self, node)
 	end,
 	[ast.Index] = function(self, node)
 	end,
