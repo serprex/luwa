@@ -99,6 +99,10 @@ local function selectIdent(node)
 	return nextIdent(node, #node.fathered)
 end
 
+local unOps = { bc.Neg, bc.Not, bc.Len, bc.BNot }
+local binOps = { bc.Add, bc.Sub, bc.Mul, bc.Div, bc.IDiv, bc.Pow, bc.Mod,
+	bc.BAnd, bc.BXor, bc.BOr, bc.Shr, bc.Shl, bc.Concat,
+	bc.CmpLt, bc.CmpLe, bc.CmpGt, bc.CmpGe, bc.CmpEq }
 local scopeStatSwitch, emitStatSwitch, emitValueSwitch, visitScope, emitScope
 
 local function singleNode(self, node, ty, visit)
@@ -376,6 +380,7 @@ visitEmit = {
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Retstat] = function(self, node)
+
 	end,
 	[ast.Label] = function(self, node)
 	end,
@@ -394,8 +399,16 @@ visitEmit = {
 	[ast.Field] = function(self, node)
 	end,
 	[ast.Binop] = function(self, node)
+		local op = binOps[node.type >> 5]
+		if op then
+			self:push(op)
+		else
+			self:push(bc.CmpEq)
+			self:push(bc.Not)
+		end
 	end,
 	[ast.Unop] = function(self, node)
+		self:push(unaryOps[node.type >> 5])
 	end,
 	[ast.Value] = function(self, node)
 		return emitValueSwitch[self.type >> 5](self, node)
