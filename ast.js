@@ -13,7 +13,7 @@ const Block = exports.Block = 0,
 	Functioncall = exports.Functioncall = 8,
 	Args = exports.Args = 9,
 	Funcbody = exports.Funcbody = 10,
-	Tableconstructor = exports.Tableconstructor = 11,
+	Table = exports.Table = 11,
 	Field = exports.Field = 12,
 	Binop = exports.Binop = 13,
 	Unop = exports.Unop = 14,
@@ -123,10 +123,10 @@ of(Prefix, name, seq(s(lex._pl), o(ExpOr), s(lex._pr)));
 sf(Functioncall, o(Prefix), many(o(Suffix)), o(Call));
 of(Args,
 	seq(s(lex._pl), maybe(Explist), s(lex._pr)),
-	o(Tableconstructor),
+	o(Table),
 	slit);
 sf(Funcbody, s(lex._pl), maybe(oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(Block), s(lex._end));
-sf(Tableconstructor, s(lex._cl), maybe(seq(o(Field), many(seq(Fieldsep, o(Field))), maybe(Fieldsep))), s(lex._cr));
+sf(Table, s(lex._cl), maybe(seq(o(Field), many(seq(Fieldsep, o(Field))), maybe(Fieldsep))), s(lex._cr));
 of(Field,
 	seq(s(lex._sl), o(ExpOr), s(lex._sr), s(lex._set), o(ExpOr)),
 	seq(name, s(lex._set), o(ExpOr)),
@@ -138,7 +138,7 @@ of(Binop,
 of(Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot));
 of(Value,
 	s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
-	seq(s(lex._function), o(Funcbody)), o(Tableconstructor), o(Functioncall), o(Var),
+	seq(s(lex._function), o(Funcbody)), o(Table), o(Functioncall), o(Var),
 	seq(s(lex._pl), o(ExpOr), s(lex._pr)));
 of(Index,
 	seq(s(lex._sl), o(ExpOr), s(lex._sr)),

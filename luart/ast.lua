@@ -8,7 +8,7 @@ return {
 	Prefix = 7,
 	Args = 8,
 	Funcbody = 9,
-	Tableconstructor = 10,
+	Table = 10,
 	Field = 11,
 	Binop = 12,
 	Unop = 13,

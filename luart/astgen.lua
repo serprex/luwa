@@ -156,13 +156,13 @@ return function(lx)
 	of(ast.Prefix, name, seq(s(lex._pl), o(ast.ExpOr), s(lex._pr)))
 	of(ast.Args,
 		seq(s(lex._pl), maybe(Explist), s(lex._pr)),
-		o(ast.Tableconstructor),
+		o(ast.Table),
 		slit)
 	of(ast.Funcbody,
 		seq(s(lex._pl), maybe(Namelist), s(lex._pr), o(ast.Block), s(lex._end)),
 		seq(s(lex._pl), oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot)), s(lex._pr), o(ast.Block), s(lex._end)))
 	sf(ast.Funcbody, s(lex._pl), maybe(oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(ast.Block), s(lex._end))
-	sf(ast.Tableconstructor, s(lex._cl), maybe(seq(o(ast.Field), many(seq(ast.Fieldsep, o(ast.Field))), maybe(ast.Fieldsep))), s(lex._cr))
+	sf(ast.Table, s(lex._cl), maybe(seq(o(ast.Field), many(seq(ast.Fieldsep, o(ast.Field))), maybe(ast.Fieldsep))), s(lex._cr))
 	of(ast.Field,
 		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr), s(lex._set), o(ast.ExpOr)),
 		seq(name, s(lex._set), o(ast.ExpOr)),
@@ -174,7 +174,7 @@ return function(lx)
 	of(ast.Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot))
 	of(ast.Value,
 		s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
-		seq(s(lex._function), o(ast.Funcbody)), o(ast.Tableconstructor), Funccall, o(ast.Var),
+		seq(s(lex._function), o(ast.Funcbody)), o(ast.Table), Funccall, o(ast.Var),
 		seq(s(lex._pl), o(ast.ExpOr), s(lex._pr)))
 	of(ast.Index,
 		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr)),

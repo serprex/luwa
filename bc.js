@@ -303,7 +303,7 @@ Assembler.prototype.genIndex = function(node, store) {
 }
 
 Assembler.prototype.genTable = function(node) {
-	this.gensert(node, ast.Tableconstructor);
+	this.gensert(node, ast.Table);
 	this.push(MAKE_TABLE);
 	let fields = Array.from(selectNodes(node, ast.Field));
 	if (fields.length) {
@@ -372,7 +372,7 @@ Assembler.prototype.genArgs = function(node, ismeth, vals, endvals, ret, calls) 
 			break;
 		}
 		case 1:
-			this.genTable(selectNode(node, ast.Tableconstructor));
+			this.genTable(selectNode(node, ast.Table));
 			calls.push(ismeth + 1);
 			break;
 		case 2: {
@@ -470,7 +470,7 @@ Assembler.prototype.genValue = function(node, vals, endvals, ret, calls) {
 			this.genFuncbody(selectNode(node, ast.Funcbody));
 			break;
 		case 7:
-			this.genTable(selectNode(node, ast.Tableconstructor));
+			this.genTable(selectNode(node, ast.Table));
 			break;
 		case 8:
 			this.genFuncCall(selectNode(node, ast.Functioncall), vals, endvals, ret, calls);
@@ -862,7 +862,7 @@ Assembler.prototype.scopeValue = function(node) {
 			this.scopeFuncbody(selectNode(node, ast.Funcbody));
 			break;
 		case 7:
-			this.scopeTable(selectNode(node, ast.Tableconstructor));
+			this.scopeTable(selectNode(node, ast.Table));
 			break;
 		case 8:
 			this.scopeFuncCall(selectNode(node, ast.Functioncall));
@@ -877,7 +877,7 @@ Assembler.prototype.scopeValue = function(node) {
 }
 
 Assembler.prototype.scopeTable = function(node) {
-	this.gensert(node, ast.Tableconstructor);
+	this.gensert(node, ast.Table);
 	for (let field of selectNodes(node, ast.Field)) {
 		for (let exp of selectNodes(field, ast.ExpOr)) {
 			this.scopeExpOr(exp);
@@ -976,7 +976,7 @@ Assembler.prototype.scopeArgs = function(node) {
 			break;
 		}
 		case 1:
-			this.scopeTable(selectNode(node, ast.Tableconstructor));
+			this.scopeTable(selectNode(node, ast.Table));
 			break;
 	}
 }
