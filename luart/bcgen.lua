@@ -281,9 +281,6 @@ visitScope = {
 	[ast.Retstat] = function(self, node)
 		scopeNodes(self, node, ast.ExpOr)
 	end,
-	[ast.Label] = function(self, node)
-		-- TODO how do we even
-	end,
 	[ast.Var] = function(self, node)
 		if node.types >> 5 == 0 then
 			self:usename(selectIdent(node):int())
@@ -381,8 +378,6 @@ visitEmit = {
 	end,
 	[ast.Retstat] = function(self, node)
 
-	end,
-	[ast.Label] = function(self, node)
 	end,
 	[ast.Var] = function(self, node)
 	end,

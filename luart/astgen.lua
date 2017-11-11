@@ -133,7 +133,7 @@ return function(lx)
 		s(lex._semi),
 		seq(Varlist, s(lex._set), Explist),
 		Funccall,
-		o(ast.Label),
+		seq(s(lex._label), name, s(lex._label)),
 		s(lex._break),
 		seq(s(lex._goto), name),
 		seq(s(lex._do), o(ast.Block), s(lex._end)),
@@ -148,7 +148,6 @@ return function(lx)
 		seq(s(lex._local), Namelist, maybe(seq(s(lex._set), Explist)))
 	)
 	sf(ast.Retstat, s(lex._return), maybe(Explist), maybe(s(lex._semi)))
-	sf(ast.Label, s(lex._label), name, s(lex._label))
 	of(ast.Var, name, seq(o(ast.Prefix), many(o(ast.Suffix)), o(ast.Index)))
 	of(ast.ExpOr, seq(o(ast.ExpAnd), many(seq(s(lex._or), o(ast.ExpAnd)))))
 	of(ast.ExpAnd, seq(o(ast.Exp), many(seq(s(lex._and), o(ast.Exp)))))
