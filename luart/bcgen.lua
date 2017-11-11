@@ -70,6 +70,16 @@ for k,v in pairs(ast) do
 	nextNode[v] = nextNode(v)
 end
 
+local function hasToken(node, tok)
+	for i=#node.fathered, 1, -1 do
+		local child = node.fathered[i]
+		if child.type == -1 and child:val() == ty then
+			return true
+		end
+	end
+	return false
+end
+
 local function nextMask(ty)
 	return function(node, i)
 		while i > 0 do
@@ -273,13 +283,10 @@ emitValueSwitch = {
 visitScope = {
 	[ast.Block] = function(self, node)
 		scopeNodes(self, node, ast.Stat)
-		scopeNode(self, node, ast.Retstat)
+		scopeNodes(self, node, ast.ExpOr)
 	end,
 	[ast.Stat] = function(self, node)
 		return scopeStatSwitch[node.type >> 5](self, node)
-	end,
-	[ast.Retstat] = function(self, node)
-		scopeNodes(self, node, ast.ExpOr)
 	end,
 	[ast.Var] = function(self, node)
 		if node.types >> 5 == 0 then
@@ -371,13 +378,13 @@ visitScope = {
 visitEmit = {
 	[ast.Block] = function(self, node)
 		emitNodes(self, node, ast.Stat)
-		emitNode(self, node, ast.Retstat)
+		if hasToken(node, lex._return) then
+			emitNodes(self, node, ast.ExpOr)
+			-- TODO RETURN
+		end
 	end,
 	[ast.Stat] = function(self, node)
 		return emitStatSwitch[node.type >> 5](self, node)
-	end,
-	[ast.Retstat] = function(self, node)
-
 	end,
 	[ast.Var] = function(self, node)
 	end,

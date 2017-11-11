@@ -34,7 +34,6 @@ return function(lx)
 	end
 	local function slit(x, p)
 		local t = x:next(p)
-		t.mother = x.mother
 		if t:val() == lex._string then
 			return iterone, t:skipint()
 		else
@@ -128,7 +127,7 @@ return function(lx)
 	local Fieldsep = oof(s(lex._comma), s(lex._semi))
 	local Call = seq(maybe(seq(s(lex._colon), name)), o(ast.Args))
 	local Funccall = seq(o(ast.Prefix), many(o(ast.Suffix)), Call)
-	sf(ast.Block, many(o(Stat)), maybe(o(Retstat)))
+	sf(ast.Block, many(o(Stat)), maybe(s(lex._return), maybe(Explist), maybe(s(lex._semi))))
 	of(ast.Stat,
 		s(lex._semi),
 		seq(Varlist, s(lex._set), Explist),
@@ -147,7 +146,6 @@ return function(lx)
 		seq(s(lex._local), s(lex._function), name, o(ast.Funcbody)),
 		seq(s(lex._local), Namelist, maybe(seq(s(lex._set), Explist)))
 	)
-	sf(ast.Retstat, s(lex._return), maybe(Explist), maybe(s(lex._semi)))
 	of(ast.Var, name, seq(o(ast.Prefix), many(o(ast.Suffix)), o(ast.Index)))
 	of(ast.ExpOr, seq(o(ast.ExpAnd), many(seq(s(lex._or), o(ast.ExpAnd)))))
 	of(ast.ExpAnd, seq(o(ast.Exp), many(seq(s(lex._and), o(ast.Exp)))))
