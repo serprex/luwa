@@ -14,6 +14,12 @@ local function Assembler(lx, uplink)
 		isdotdotdot = false,
 		uplink = uplink,
 		scopes = nil,
+		consts = {},
+		rconsts = {
+			integer = {},
+			float = {},
+			string = {},
+		},
 		names = {},
 		idxfree = {},
 		bc = {},
@@ -34,6 +40,16 @@ function asmmeta:scope(f)
 		self.names[name] = self.names[name].prev
 	end
 	self.scopes = self.scopes.prev
+end
+function asmmeta:const(c)
+	local ty = math.type(c) or type(c)
+	local n = self.rconsts[ty][c]
+	if not n then
+		n = #self.consts+1
+		self.consts[n] = c
+		self.rconsts[ty][c] = n
+	end
+	return n
 end
 
 function asmmeta:name(n, idx)
@@ -255,19 +271,25 @@ emitStatSwitch = {
 }
 emitValueSwitch = {
 	function(self, node) -- 1 nil
-		self:push(bc.Loadnil)
+		self:push(bc.LoadNil)
 	end,
 	function(self, node) -- 2 false
-		self:push(bc.Loadfalse)
+		self:push(bc.LoadFalse)
 	end,
 	function(self, node) -- 3 true
-		self:push(bc.Loadtrue)
+		self:push(bc.LoadTrue)
 	end,
 	function(self, node) -- 3 num
+		local val = nextNumber(node, #node.fathered)
+		self:push(bc.LoadConst, self:const(self.lx.snr[val:val()]))
 	end,
 	function(self, node) -- 4 str
+		local val = nextString(node, #node.fathered)
+		self:push(bc.LoadConst, self:const(self.lx.ssr[val:val()]))
 	end,
 	function(self, node) -- 5 ...
+		-- TODO how many?
+		self:push(bc.LoadVarg, 0)
 	end,
 	function(self, node) -- 6 Funcbody
 	end,
