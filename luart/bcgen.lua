@@ -129,7 +129,7 @@ local unOps = { bc.Neg, bc.Not, bc.Len, bc.BNot }
 local binOps = { bc.Add, bc.Sub, bc.Mul, bc.Div, bc.IDiv, bc.Pow, bc.Mod,
 	bc.BAnd, bc.BXor, bc.BOr, bc.Shr, bc.Shl, bc.Concat,
 	bc.CmpLt, bc.CmpLe, bc.CmpGt, bc.CmpGe, bc.CmpEq }
-local scopeStatSwitch, emitStatSwitch, emitValueSwitch, visitScope, emitScope
+local scopeStatSwitch, emitStatSwitch, emitValueSwitch, emitFieldSwitch, visitScope, emitScope
 
 local function singleNode(self, node, ty, visit)
 	local sn = selectNode(node, ty)
@@ -149,10 +149,10 @@ end
 local function emitNode(self, node, ty)
 	return singleNode(self, node, ty, visitEmit)
 end
-local function scopeNode(self, node, ty)
+local function scopeNodes(self, node, ty)
 	return multiNodes(self, node, ty, visitScope)
 end
-local function emitNode(self, node, ty)
+local function emitNodes(self, node, ty)
 	return multiNodes(self, node, ty, visitEmit)
 end
 
@@ -294,6 +294,7 @@ emitValueSwitch = {
 	function(self, node) -- 6 Funcbody
 	end,
 	function(self, node) -- 7 Table
+		return emitNode(self, node, ast.Table)
 	end,
 	function(self, node) -- 8 Call
 	end,
@@ -301,6 +302,29 @@ emitValueSwitch = {
 	end,
 	function(self, node) -- 10 Exp
 	end,
+}
+emitFieldSwitch = {
+	function(self, node) -- 1 [exp] = exp
+		local f, obj, idx = selectNodes(node, ast.ExpOr)
+		local i, key = f(obj, idx)
+		visitEmit[ast.ExpOr](self, key)
+		local _i, val = f(obj, i)
+		visitEmit[ast.ExpOr](self, val)
+		self:push(bc.TblAdd)
+	end,
+	function(self, node) -- 2 name = exp
+		local val = nextString(node, #node.fathered)
+		self:push(bc.LoadConst, self:const(self.lx.ssr[val:val()]))
+		emitNode(self, node, ast.ExpOr)
+		self:push(bc.TblAdd)
+	end,
+	function(self, node) -- 3 exp
+		-- TODO need to defer these to end, also group num
+		local n = 0 -- TODO incr n
+		self:push(bc.LoadConst, self:const(n))
+		emitNode(self, node, ast.ExpOr)
+		self:push(bc.TblAdd)
+	end
 }
 visitScope = {
 	[ast.Block] = function(self, node)
@@ -348,13 +372,13 @@ visitScope = {
 		if t == 0 then
 			scopeNodes(self, node, ast.ExpOr)
 		elseif t == 1 then
-			scopeNode(self, node, ast.Tableconstructor)
+			scopeNode(self, node, ast.Table)
 		end
 	end,
 	[ast.Funcbody] = function(self, node)
 		-- TODO ahhh
 	end,
-	[ast.Tableconstructor] = function(self, node)
+	[ast.Table] = function(self, node)
 		scopeNodes(self, node, ast.Field)
 	end,
 	[ast.Field] = function(self, node)
@@ -368,7 +392,7 @@ visitScope = {
 		if t == 7 then
 			scopeNode(self, node, ast.Funcbody)
 		elseif t == 8 then
-			scopeNode(self, node, ast.Tableconstructor)
+			scopeNode(self, node, ast.Table)
 		elseif t == 9 then
 			scopeNode(self, node, ast.Prefix)
 			scopeNode(self, node, ast.Args)
@@ -418,9 +442,12 @@ visitEmit = {
 	end,
 	[ast.Funcbody] = function(self, node)
 	end,
-	[ast.Tableconstructor] = function(self, node)
+	[ast.Table] = function(self, node)
+		self:push(bc.TblNew)
+		emitNodes(self, node, ast.Field)
 	end,
 	[ast.Field] = function(self, node)
+		return emitFieldSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Binop] = function(self, node)
 		local op = binOps[node.type >> 5]

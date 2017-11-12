@@ -405,6 +405,7 @@ eval = export('eval', func(i32, function(f)
 		f:call(tmppop)
 		f:br(scopes.nop)
 	end, bc.TblAdd, function(scopes)
+		-- TODO this should just be like TblSet but leave tbl on stack
 		readArg()
 		f:i64extendu()
 		f:call(newi64)
