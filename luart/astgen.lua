@@ -51,13 +51,13 @@ return function(lx)
 		end
 	end
 	local function o(n)
-		return function(x, p)
+		return rules[n] or function(x, p)
 			return rules[n](x, p)
 		end
 	end
 	local function seqcore(x, p, xs, i)
 		if i == #xs then
-			yieldall(xs[i](x, p))
+			return yieldall(xs[i](x, p))
 		else
 			for ax in xs[i](x, p) do
 				seqcore(ax, p, xs, i+1)
@@ -155,9 +155,6 @@ return function(lx)
 		seq(s(lex._pl), maybe(Explist), s(lex._pr)),
 		o(ast.Table),
 		slit)
-	of(ast.Funcbody,
-		seq(s(lex._pl), maybe(Namelist), s(lex._pr), o(ast.Block), s(lex._end)),
-		seq(s(lex._pl), oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot)), s(lex._pr), o(ast.Block), s(lex._end)))
 	sf(ast.Funcbody, s(lex._pl), maybe(oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(ast.Block), s(lex._end))
 	sf(ast.Table, s(lex._cl), maybe(seq(o(ast.Field), many(seq(ast.Fieldsep, o(ast.Field))), maybe(ast.Fieldsep))), s(lex._cr))
 	of(ast.Field,

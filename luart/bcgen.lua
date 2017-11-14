@@ -70,8 +70,9 @@ function asmmeta:usename(n)
 	end
 end
 
-local function nextNodeFactory(ty)
-	return function(node, i)
+local nextNode = {}
+for k,v in pairs(ast) do
+	nextNode[v] = function(node, i)
 		while i > 0 do
 			local child = node.fathered[i]
 			i = i - 1
@@ -80,10 +81,6 @@ local function nextNodeFactory(ty)
 			end
 		end
 	end
-end
-local nextNode = {}
-for k,v in pairs(ast) do
-	nextNode[v] = nextNode(v)
 end
 
 local function hasToken(node, tok)
@@ -131,29 +128,29 @@ local binOps = { bc.Add, bc.Sub, bc.Mul, bc.Div, bc.IDiv, bc.Pow, bc.Mod,
 	bc.CmpLt, bc.CmpLe, bc.CmpGt, bc.CmpGe, bc.CmpEq }
 local scopeStatSwitch, emitStatSwitch, emitValueSwitch, emitFieldSwitch, visitScope, emitScope
 
-local function singleNode(self, node, ty, visit)
+local function singleNode(self, node, ty, visit, ...)
 	local sn = selectNode(node, ty)
 	if sn then
-		return visit[ty](self, sn)
+		return visit[ty](self, sn, ...)
 	end
 end
-local function multiNodes(self, node, ty, visit)
+local function multiNodes(self, node, ty, visit, ...)
 	local fn = visit[ty]
 	for i, node in selectNodes(node, ty) do
-		fn(self, node)
+		fn(self, node, ...)
 	end
 end
 local function scopeNode(self, node, ty)
 	return singleNode(self, node, ty, visitScope)
 end
-local function emitNode(self, node, ty)
-	return singleNode(self, node, ty, visitEmit)
+local function emitNode(self, node, ty, ...)
+	return singleNode(self, node, ty, visitEmit, ...)
 end
 local function scopeNodes(self, node, ty)
 	return multiNodes(self, node, ty, visitScope)
 end
-local function emitNodes(self, node, ty)
-	return multiNodes(self, node, ty, visitEmit)
+local function emitNodes(self, node, ty, ...)
+	return multiNodes(self, node, ty, visitEmit, ...)
 end
 
 scopeStatSwitch = {
@@ -236,11 +233,25 @@ scopeStatSwitch = {
 		end
 	end,
 }
+local function emitCall(self, node, outputs)
+	local methname = selectIdent(node)
+	if methname then
+		self:push(bc.LoadConst, self:const(self.lx.ssr[methname:int()]))
+		self:push(bc.LoadMeth)
+	end
+	return emitNode(self, node, ast.Args, outputs)
+end
+local function emitFunccall(self, node, outputs)
+	emitNode(self, node, ast.Prefix)
+	emitNodes(self, node, ast.Suffix)
+	return emitCall(self, node, outputs)
+end
 emitStatSwitch = {
 	nop, -- 1 ;
 	function(self, node) -- 2 vars=exps
 	end,
 	function(self, node) -- 3 call
+		return emitFunccall(self, node, 0)
 	end,
 	function(self, node) -- 4 label
 	end,
@@ -269,38 +280,72 @@ emitStatSwitch = {
 	function(self, node) -- 16 locals=exps
 	end,
 }
+local function emit0(self, node, outputs, fn)
+	if outputs == 0 then
+		return 0
+	else
+		return fn(self, node, outputs)
+	end
+end
 emitValueSwitch = {
-	function(self, node) -- 1 nil
-		self:push(bc.LoadNil)
+	function(self, node, outputs) -- 1 nil
+		return emit0(self, node, outputs, function(self, node)
+			self:push(bc.LoadNil)
+			return 1
+		end)
 	end,
-	function(self, node) -- 2 false
-		self:push(bc.LoadFalse)
+	function(self, node, outputs) -- 2 false
+		return emit0(self, node, outputs, function(self, node)
+			self:push(bc.LoadFalse)
+			return 1
+		end)
 	end,
-	function(self, node) -- 3 true
-		self:push(bc.LoadTrue)
+	function(self, node, outputs) -- 3 true
+		return emit0(function(self, node, outputs, function(self, node)
+			self:push(bc.LoadTrue)
+			return 1
+		end)
 	end,
-	function(self, node) -- 3 num
-		local val = nextNumber(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(self.lx.snr[val:val()]))
+	function(self, node, outputs) -- 3 num
+		return emit0(function(self, node, outputs, function(self, node)
+			local val = nextNumber(node, #node.fathered)
+			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()]))
+			return 1
+		end)
 	end,
-	function(self, node) -- 4 str
-		local val = nextString(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(self.lx.ssr[val:val()]))
+	function(self, node, outputs) -- 4 str
+		return emit0(function(self, node, outputs, function(self, node)
+			local val = nextString(node, #node.fathered)
+			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()]))
+			return 1
+		end)
 	end,
-	function(self, node) -- 5 ...
-		-- TODO how many?
-		self:push(bc.LoadVarg, 0)
+	function(self, node, outputs) -- 5 ...
+		return emit0(function(self, node, outputs, function(self, node)
+			self:push(bc.LoadVarg, outputs)
+			return outputs
+		end)
 	end,
-	function(self, node) -- 6 Funcbody
+	function(self, node, outputs) -- 6 Funcbody
+		return emit0(function(self, node, outputs, function(self, node)
+			emitNode(self, node, Funcbody)
+			return 1
+		end)
 	end,
-	function(self, node) -- 7 Table
-		return emitNode(self, node, ast.Table)
+	function(self, node, outputs) -- 7 Table
+		emitNode(self, node, ast.Table)
+		return 1
 	end,
-	function(self, node) -- 8 Call
+	function(self, node, outputs) -- 8 Call
+		return emitFunccall(self, node, outputs)
 	end,
-	function(self, node) -- 9 Var load
+	function(self, node, outputs) -- 9 Var load
+		emitNode(self, node, ast.Var, true)
+		return 1
 	end,
-	function(self, node) -- 10 Exp
+	function(self, node, outputs) -- 10 Exp
+		emitNode(self, node, ast.ExpOr, 1)
+		return 1
 	end,
 }
 emitFieldSwitch = {
@@ -314,7 +359,7 @@ emitFieldSwitch = {
 	end,
 	function(self, node) -- 2 name = exp
 		local val = nextString(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(self.lx.ssr[val:val()]))
+		self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()]))
 		emitNode(self, node, ast.ExpOr)
 		self:push(bc.TblAdd)
 	end,
@@ -432,7 +477,7 @@ visitEmit = {
 	[ast.Stat] = function(self, node)
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
-	[ast.Var] = function(self, node)
+	[ast.Var] = function(self, node, isload)
 	end,
 	[ast.Exp] = function(self, node)
 	end,
