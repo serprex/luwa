@@ -304,6 +304,29 @@ emitStatSwitch = {
 		end)
 	end,
 	function(self, node) -- 10 if
+		local eob, condbr = {}
+		for i=#node.fathered, 1, -1 do
+			local child = node.fathered[i]
+			local ty = child.type&31
+			if ty == ast.ExpOr then
+				emitNode(self, node, ast.ExpOr, 1)
+				condbr = #self.bc+1
+				self:push(bc.JifNot, 0)
+			elseif ty == ast.Block then
+				emitNode(self, node, ast.Block)
+				if i ~= 1 then
+					eob[#eob+1] = #self.bc+1
+					emitNode(bc.Jmp, 0)
+				end
+				if condbr then
+					self:patch(condbr, #self.bc)
+					condbr = nil
+				end
+			end
+		end
+		for i=1,#eob do
+			self:patch(eob[i], #self.bc)
+		end
 	end,
 	function(self, node) -- 11 for
 	end,
