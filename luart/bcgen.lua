@@ -14,7 +14,10 @@ local function Assembler(lx, uplink)
 		isdotdotdot = false,
 		uplink = uplink,
 		scopes = nil,
+		breaks = nil,
 		consts = {},
+		labels = {},
+		gotos = {},
 		rconsts = {
 			integer = {},
 			float = {},
@@ -29,8 +32,19 @@ end
 function asmmeta:push(op, ...)
 	self.bc[#self.bc+1] = op
 	for i=1,select('#', ...) do
-		self.bc[#self.bc+1],self.bc[#self.bc+2],self.bc[#self.bc+3],self.bc[#self.bc+4] = string.pack('<i4', select(i, ...))
+		self:patch(#self.bc+1, select(i, ...))
 	end
+end
+function asmmeta:patch(idx, x)
+	self.bc[idx],self.bc[idx+1],self.bc[idx+2],self.bc[idx+3] = string.byte(string.pack('<i4', x), 1, 4)
+end
+function asmmeta:breakscope(f)
+	self.breaks = { prev = self.breaks }
+	f(self)
+	for i=1,#self.breaks do
+		self:patch(self.breaks[i], #self.bc)
+	end
+	self.breaks = self.breaks.prev
 end
 function asmmeta:scope(f)
 	self.scopes = { prev = self.scopes }
@@ -254,16 +268,40 @@ emitStatSwitch = {
 		return emitFunccall(self, node, 0)
 	end,
 	function(self, node) -- 4 label
+		local name = selectIdent(node)
+		self.labels[name:int()] = #self.bc
 	end,
 	function(self, node) -- 5 break
+		assert(self.breaks, "break outside of loop")
+		self.breaks[#self.breaks+1] = #self.bc+1
+		self.push(bc.Goto, 0)
 	end,
 	function(self, node) -- 6 goto
+		local name = selectIdent(node)
+		self.gotos[#self.bc+1] = name:int()
+		self.push(bc.Goto, 0)
 	end,
 	function(self, node) -- 7 do-end
+		return emitNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 8 while
+		self:breakscope(function()
+			local soc = #self.bc
+			emitNode(self, node, ast.ExpOr, 1)
+			local jmp = #self.bc+1
+			self:push(bc.JifNot, 0)
+			emitNode(self, node, ast.Block)
+			self:push(bc.Jmp, soc)
+			self:patch(jmp, #self.bc)
+		end)
 	end,
 	function(self, node) -- 9 repeat
+		self:breakscope(function()
+			local soc = #self.bc
+			emitNode(self, node, ast.Block)
+			emitNode(self, node, ast.ExpOr, 1)
+			self:push(bc.JifNot, soc)
+		end)
 	end,
 	function(self, node) -- 10 if
 	end,
@@ -301,33 +339,33 @@ emitValueSwitch = {
 		end)
 	end,
 	function(self, node, outputs) -- 3 true
-		return emit0(function(self, node, outputs, function(self, node)
+		return emit0(self, node, outputs, function(self, node)
 			self:push(bc.LoadTrue)
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 3 num
-		return emit0(function(self, node, outputs, function(self, node)
+		return emit0(self, node, outputs, function(self, node)
 			local val = nextNumber(node, #node.fathered)
 			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()]))
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 4 str
-		return emit0(function(self, node, outputs, function(self, node)
+		return emit0(self, node, outputs, function(self, node)
 			local val = nextString(node, #node.fathered)
 			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()]))
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 5 ...
-		return emit0(function(self, node, outputs, function(self, node)
+		return emit0(self, node, outputs, function(self, node)
 			self:push(bc.LoadVarg, outputs)
 			return outputs
 		end)
 	end,
 	function(self, node, outputs) -- 6 Funcbody
-		return emit0(function(self, node, outputs, function(self, node)
+		return emit0(self, node, outputs, function(self, node)
 			emitNode(self, node, Funcbody)
 			return 1
 		end)
@@ -520,6 +558,9 @@ visitEmit = {
 }
 
 function asmmeta:synth()
+	for k,v in pairs(self.gotos) do
+		self:patch(k, self.labels[v])
+	end
 end
 
 return function(lx, root)
