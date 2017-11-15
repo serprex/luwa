@@ -314,7 +314,7 @@ emitStatSwitch = {
 				self:push(bc.JifNot, 0)
 			elseif ty == ast.Block then
 				emitNode(self, node, ast.Block)
-				if i ~= 1 then
+				if i > 2 then
 					eob[#eob+1] = #self.bc+1
 					emitNode(bc.Jmp, 0)
 				end
@@ -527,6 +527,24 @@ visitScope = {
 		return scopeNodes(self, node, ast.Exp)
 	end,
 }
+local function emitShortCircuitFactory(ty, opcode)
+	return function(self, node, ...)
+		if #node.fathered == 1 then
+			visitEmit[ty](self, node.fathered[1], ...)
+		else
+			for i, n in selectNode(node, ty) do
+				visitEmit[ty](self, n, 1)
+				if lab then
+					self:patch(lab, #self.bc)
+				end
+				if i > 1 then
+					lab = #self.bc+1
+					self:push(opcode, 0)
+				end
+			end
+		end
+	end
+end
 visitEmit = {
 	[ast.Block] = function(self, node)
 		emitNodes(self, node, ast.Stat)
@@ -574,10 +592,8 @@ visitEmit = {
 	end,
 	[ast.Suffix] = function(self, node)
 	end,
-	[ast.ExpOr] = function(self, node)
-	end,
-	[ast.ExpAnd] = function(self, node)
-	end,
+	[ast.ExpOr] = emitShortCircuitFactory(ast.ExpAnd, bc.JifOrPop),
+	[ast.ExpAnd] = emitShortCircuitFactory(ast.Exp, bc.JifNotOrPop),
 }
 
 function asmmeta:synth()
