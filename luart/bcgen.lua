@@ -263,6 +263,30 @@ end
 emitStatSwitch = {
 	nop, -- 1 ;
 	function(self, node) -- 2 vars=exps
+		local vars, exps = {}, {}
+		for i, v in selectNodes(node, ast.Var)
+			vars[#vars+1] = v
+		end
+		for i, v in selectNodes(node, ast.ExpOr)
+			exps[#exps+1] = v
+		end
+		local vc, out = #vars, 1
+		for i=1,#exps-1 do
+			visitEmit[ast.ExpOr](self, exps[i], out)
+			if vc > 0 then
+				vc = vc-1
+				if vc == 0 then
+					out = 0
+				end
+			end
+		end
+		if vc > 1 then
+			out = vc
+		end
+		visitEmit[ast.ExpOr](self, node, exps[#exps], out)
+		for i=1,#vars do
+			visitEmit[ast.Var](self, vars[i], false)
+		end
 	end,
 	function(self, node) -- 3 call
 		return emitFunccall(self, node, 0)
@@ -413,9 +437,9 @@ emitFieldSwitch = {
 	function(self, node) -- 1 [exp] = exp
 		local f, obj, idx = selectNodes(node, ast.ExpOr)
 		local i, key = f(obj, idx)
-		visitEmit[ast.ExpOr](self, key)
+		visitEmit[ast.ExpOr](self, key, 1)
 		local _i, val = f(obj, i)
-		visitEmit[ast.ExpOr](self, val)
+		visitEmit[ast.ExpOr](self, val, 1)
 		self:push(bc.TblAdd)
 	end,
 	function(self, node) -- 2 name = exp
@@ -528,9 +552,10 @@ visitScope = {
 	end,
 }
 local function emitShortCircuitFactory(ty, opcode)
-	return function(self, node, ...)
+	return function(self, node, out)
+		local prod
 		if #node.fathered == 1 then
-			visitEmit[ty](self, node.fathered[1], ...)
+			prod = visitEmit[ty](self, node.fathered[1], out)
 		else
 			for i, n in selectNode(node, ty) do
 				visitEmit[ty](self, n, 1)
@@ -542,14 +567,22 @@ local function emitShortCircuitFactory(ty, opcode)
 					self:push(opcode, 0)
 				end
 			end
+			prod = 1
 		end
+		for i=prod+1, out do
+			self:push(bc.Pop)
+		end
+		for i=prod-1, out, -1 do
+			self:push(bc.LoadNil)
+		end
+		return out
 	end
 end
 visitEmit = {
 	[ast.Block] = function(self, node)
 		emitNodes(self, node, ast.Stat)
 		if hasToken(node, lex._return) then
-			emitNodes(self, node, ast.ExpOr)
+			emitNodes(self, node, ast.ExpOr, -1)
 			-- TODO RETURN
 		end
 	end,
@@ -557,18 +590,48 @@ visitEmit = {
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node, isload)
+		if self.type >> 5 == 0 then
+			local name = selectIdent(node):int()
+			if isload then
+				self:loadname(name)
+			else
+				self:storename(name)
+			end
+		else
+			emitNode(self, node, ast.Prefix)
+			emitNodes(self, node, ast.Suffix)
+			return emitNode(self, node, ast.Index, isload)
+		end
 	end,
-	[ast.Exp] = function(self, node)
+	[ast.Exp] = function(self, node, out)
+		if node.type >> 5 == 0 then
+			emitNode(self, node, ast.Exp, 1)
+			emitNode(self, node, ast.Unop)
+			return 1
+		else
+			if #node.fathered == 1 then
+				return visitEmit[ast.Value](self, node.fathered[1], out)
+			else
+				-- TODO shunting yard
+			end
+		end
 	end,
 	[ast.Prefix] = function(self, node)
+		if self.type >> 5 == 0 then
+			self:loadname(selectIdent(node):int())
+		else
+			emitNode(self, node, ast.ExpOr, 1)
+		end
 	end,
-	[ast.Args] = function(self, node)
+	[ast.Args] = function(self, node, outputs)
+		-- TODO RetCall, params, return rescount
+		self:push(bc.Call)
 	end,
 	[ast.Funcbody] = function(self, node)
 	end,
 	[ast.Table] = function(self, node)
 		self:push(bc.TblNew)
-		emitNodes(self, node, ast.Field)
+		return emitNodes(self, node, ast.Field)
 	end,
 	[ast.Field] = function(self, node)
 		return emitFieldSwitch[node.type >> 5](self, node)
@@ -585,12 +648,30 @@ visitEmit = {
 	[ast.Unop] = function(self, node)
 		self:push(unaryOps[node.type >> 5])
 	end,
-	[ast.Value] = function(self, node)
-		return emitValueSwitch[self.type >> 5](self, node)
+	[ast.Value] = function(self, node, outputs)
+		local results = emitValueSwitch[self.type >> 5](self, node, outputs)
+		for i=results+1, outputs do
+			self:push(bc.Pop)
+		end
 	end,
-	[ast.Index] = function(self, node)
+	[ast.Index] = function(self, node, isload)
+		if node.type >> 5 == 0 then
+			emitNode(self, node, ast.ExpOr, 1)
+		else
+			self:push(bc.LoadConst, self:const(self.lx.ssr[selectIdent(node):int()]))
+		end
+		if isload then
+			self:push(bc.Idx)
+		else
+			self:push(bc.TblSet)
+		end
 	end,
 	[ast.Suffix] = function(self, node)
+		if node.type >> 5 == 0 then
+			return emitCall(self, node, 1)
+		else
+			return emitNode(self, node, ast.Index, true)
+		end
 	end,
 	[ast.ExpOr] = emitShortCircuitFactory(ast.ExpAnd, bc.JifOrPop),
 	[ast.ExpAnd] = emitShortCircuitFactory(ast.Exp, bc.JifNotOrPop),
