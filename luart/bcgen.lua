@@ -260,31 +260,33 @@ local function emitFunccall(self, node, outputs)
 	emitNodes(self, node, ast.Suffix)
 	return emitCall(self, node, outputs)
 end
+local function emitExplist(self, node, outputs)
+	local lastv
+	for i, v in selectNodes(node, ast.ExpOr) do
+		if lastv then
+			if outputs == 0 then
+				visitEmit[ast.ExpOr](self, lastv, 0)
+			else
+				if outputs ~= -1 then
+					outputs = outputs - 1
+				end
+				visitEmit[ast.ExpOr](self, lastv, 1)
+			end
+		end
+		lastv = v
+	end
+	return visitEmit[ast.ExpOr](self, lastv, outputs)
+end
 emitStatSwitch = {
 	nop, -- 1 ;
 	function(self, node) -- 2 vars=exps
-		local vars, exps = {}, {}
-		for i, v in selectNodes(node, ast.Var)
+		local vars = {}
+		for i, v in selectNodes(node, ast.Var) do
 			vars[#vars+1] = v
 		end
-		for i, v in selectNodes(node, ast.ExpOr)
-			exps[#exps+1] = v
-		end
-		local vc, out = #vars, 1
-		for i=1,#exps-1 do
-			visitEmit[ast.ExpOr](self, exps[i], out)
-			if vc > 0 then
-				vc = vc-1
-				if vc == 0 then
-					out = 0
-				end
-			end
-		end
-		if vc > 1 then
-			out = vc
-		end
-		visitEmit[ast.ExpOr](self, node, exps[#exps], out)
-		for i=1,#vars do
+		emitExplist(self, node, #vars)
+		-- TODO evaluate in order
+		for i=#vars,1,-1 do
 			visitEmit[ast.Var](self, vars[i], false)
 		end
 	end,
@@ -353,16 +355,63 @@ emitStatSwitch = {
 		end
 	end,
 	function(self, node) -- 11 for
+		local exps=0
+		for i, n in selectNodes(node, ast.ExpOr) do
+			visitEmit[ast.ExpOr](self, n, 1)
+			exps = exps+1
+		end
+		if exps == 2 then
+			self:push(bc.LoadConst, 1)
+		end
+		-- TODO bind variables, loop
+		visitEmit[ast.Block](self, node, ast.Block)
 	end,
 	function(self, node) -- 12 generic for
+		visitExplist(self, node, 3)
+		-- TODO bind variables, loop
+		visitEmit[ast.Block](self, node, ast.Block)
 	end,
 	function(self, node) -- 13 func
+		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
+		local first, nlast = true
+		for i, name in selectIdents(node) do
+			if nlast then
+				if first then
+					self:loadname(nlast)
+					first = false
+				else
+					self:push(bc.LoadConst, self:const(self.ssr[nlast]))
+					self:push(bc.TblGet)
+				end
+			end
+			nlast = name:int()
+		end
+		if first then
+			self:storename(nlast)
+		else
+			self:push(bc.LoadConst, self:const(self.ssr[nlast]))
+			self:push(bc.TblSet)
+		end
 	end,
 	function(self, node) -- 14 self:func
+		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
+		-- TODO inject self, codegen
 	end,
 	function(self, node) -- 15 local func
+		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
+		local name = selectIdent(node)
+		self:storename(name:int())
 	end,
 	function(self, node) -- 16 locals=exps
+		-- TODO scope resolving
+		local vars = {}
+		for i, v in selectIdents(node) do
+			vars[#vars+1] = v:int()
+		end
+		emitExplist(self, node, #vars)
+		for i=#vars,1,-1 do
+			self:storename(vars[i])
+		end
 	end,
 }
 local function emit0(self, node, outputs, fn)
@@ -582,7 +631,7 @@ visitEmit = {
 	[ast.Block] = function(self, node)
 		emitNodes(self, node, ast.Stat)
 		if hasToken(node, lex._return) then
-			emitNodes(self, node, ast.ExpOr, -1)
+			emitExplist(self, node, -1)
 			-- TODO RETURN
 		end
 	end,
@@ -624,7 +673,20 @@ visitEmit = {
 		end
 	end,
 	[ast.Args] = function(self, node, outputs)
-		-- TODO RetCall, params, return rescount
+		-- TODO we need to either mark exp-depth for varcall or implement call chaining
+		local ty, n = node.type >> 5
+		if ty == 0 then
+			emitExplist(self, node, -1)
+			n = -1
+		elseif ty == 1 then
+			self:push(bc.TblNew)
+			emitNodes(self, node, ast.Field)
+			n = 1
+		else
+			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()]))
+			n = 1
+		end
+		-- TODO RetCall
 		self:push(bc.Call)
 	end,
 	[ast.Funcbody] = function(self, node)
