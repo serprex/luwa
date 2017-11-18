@@ -18,6 +18,7 @@ local function Assembler(lx, uplink)
 		consts = {},
 		labels = {},
 		gotos = {},
+		funcs = {},
 		rconsts = {
 			integer = {},
 			float = {},
@@ -222,15 +223,13 @@ scopeStatSwitch = {
 		local fruit = selectNode(node, ast.Funcbody)
 		self:usename(selectIdent(node):int())
 		visitScope[ast.Funcbody](clasm, fruit)
-		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 14 self:func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
 		self:usename(selectIdent(node):int())
 		clasm:name(2, -2)
-		visitScope[ast.Funcbody](clasm, fruit)
-		visitEmit[ast.Funcbody](clasm, fruit)
+		visitScope[ast.Funcbody](clasm, fruit, true)
 	end,
 	function(self, node) -- 15 local func
 		local clasm = Assembler(self.lx, self)
@@ -238,7 +237,6 @@ scopeStatSwitch = {
 		local name = selectIdent(node)
 		self:name(name:int(), name.li)
 		visitScope[ast.Funcbody](clasm, fruit)
-		visitEmit[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 16 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
@@ -554,8 +552,28 @@ visitScope = {
 			scopeNode(self, node, ast.Table)
 		end
 	end,
-	[ast.Funcbody] = function(self, node)
-		-- TODO ahhh
+	[ast.Funcbody] = function(self, node, isMeth)
+		local isdotdotdot = hasToken(node, lex._dotdotdot)
+		local names = {selectIdents(node)}
+		local pcount = #names
+		if isMeth then
+			pcount = pcount + 1
+		end
+		local asm = Assembler(lx, self)
+		asm.isdotdotdot = isdotdotdot
+		asm.pcount = pcount
+		asm:scope(function()
+			if isMeth then
+				asm:name(2, -2)
+			end
+			for i=1,#names do
+				asm:name(names[i]:int(), names[i].li)
+			end
+			scopeNode(asm, ast.Block)
+		end)
+		emitNode(asm, ast.Block)
+		asm:push(bc.Return)
+		self.funcs[node] = {} -- TODO args for LoadFunc
 	end,
 	[ast.Table] = function(self, node)
 		scopeNodes(self, node, ast.Field)
@@ -690,6 +708,7 @@ visitEmit = {
 		self:push(bc.Call)
 	end,
 	[ast.Funcbody] = function(self, node)
+		self:push(bc.LoadFunc, table.unpack(self.funcs[node]))
 	end,
 	[ast.Table] = function(self, node)
 		self:push(bc.TblNew)
@@ -754,6 +773,6 @@ return function(lx, root)
 		visitScope[ast.Block](asm, root)
 	end)
 	visitEmit[ast.Block](asm, root)
-	asm:push(bc.Return, 0, 0)
+	asm:push(bc.Return)
 	return asm.synth()
 end
