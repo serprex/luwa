@@ -168,6 +168,47 @@ local function emitNodes(self, node, ty, ...)
 	return multiNodes(self, node, ty, visitEmit, ...)
 end
 
+local Exp32 = ast.Exp|32
+local precedenceTable = {7, 7, 8, 8, 8, 9, 8, 5, 4, 3, 6, 6, 2, 1, 1, 1, 1, 1, 1}
+local function precedence(node)
+	if (node.type&31) == ast.Binop then
+		return precedenceTable[x.type >> 5]
+	else
+		return 0
+	end
+end
+local function shunt(node)
+	return coroutine.wrap(function()
+		local ops = {}
+		while node.type == Exp32 and node.fathered.length == 3 do
+			local rson, op, lson = table.unpack(node.fathered)
+			coroutine.yield(lson)
+			while true do
+				if #ops == 0 then
+					break
+				end
+				local oprec = precedence(op)
+				if precedence(ops[#ops]) < precedence(op) and precedence(op) == 9 then
+					break
+				end
+				coroutine.yield(ops[#ops])
+				ops[#ops] = nil
+			end
+			ops[#ops+1] = op
+			node = rson
+		end
+		if node.type == Exp32 then
+			coroutine.yield(selectNode(node, ast.Value))
+		else
+			coroutine.yield(node)
+		end
+		coroutine.yield()
+		for i=#ops, 1, -1 do
+			coroutine.yield(ops[i])
+		end
+	end)
+end
+
 scopeStatSwitch = {
 	nop, -- 1 ;
 	function(self, node) -- 2 vars=exps
@@ -679,7 +720,17 @@ visitEmit = {
 			if #node.fathered == 1 then
 				return visitEmit[ast.Value](self, node.fathered[1], out)
 			else
-				-- TODO shunting yard
+				for op in shunt(node) do
+					local ty = op.type & 31
+					if ty == ast.Binop then
+						visitEmit[ast.Binop](self, op)
+					elseif ty == ast.Value then
+						visitEmit[ast.Value](self, op, 1)
+					else
+						assert(op.type >> 5 == 0)
+						visitEmit[ast.Exp](self, op, 1)
+					end
+				end
 			end
 		end
 	end,
