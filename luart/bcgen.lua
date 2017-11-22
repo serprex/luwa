@@ -230,7 +230,7 @@ scopeStatSwitch = {
 		if self.labelscope[name] then
 			print('Duplicate label', self.lx.ssr[name])
 		end
-		if node.father.fathered[0] == node then
+		if node.father.fathered[1] == node then
 			self.labelscope[name] = self.scopes.prev
 		else
 			self.labelscope[name] = self.scopes
@@ -365,10 +365,10 @@ emitStatSwitch = {
 		local namei = name:int()
 		local gotosc = self.gotoscope[node]
 		local labelsc = self.labelscope[namei]
-		while labelsc and labelsc ~= gotosc do
-			labelsc = labelsc.prev
+		while gotosc and gotosc ~= labelsc do
+			gotosc = gotosc.prev
 		end
-		if not labelsc then
+		if not gotosc then
 			print('Goto out of scope', self.lx.ssr[nami])
 		end
 		self.gotos[#self.bc+1] = namei
