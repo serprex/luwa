@@ -18,6 +18,8 @@ local function Assembler(lx, uplink)
 		consts = {},
 		labels = {},
 		gotos = {},
+		labelscope = {},
+		gotoscope = {},
 		funcs = {},
 		namety = {},
 		rconsts = {
@@ -223,9 +225,21 @@ scopeStatSwitch = {
 	function(self, node) -- 3 call
 		scopeNode(self, node, ast.Functioncall)
 	end,
-	nop, -- 4 label
+	function(self, node) -- 4 label
+		local name = selectIdent(node):int()
+		if self.labelscope[name] then
+			print('Duplicate label', self.lx.ssr[name])
+		end
+		if node.father.fathered[0] == node then
+			self.labelscope[name] = self.scopes.prev
+		else
+			self.labelscope[name] = self.scopes
+		end
+	end,
 	nop, -- 5 break
-	nop, -- 6 goto
+	function(self, node) -- 6 goto
+		self.gotoscope[node] = self.scopes
+	end,
 	function(self, node) -- 7 do-end
 		self:scope(function()
 			scopeNode(self, node, ast.Block)
@@ -348,7 +362,16 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 6 goto
 		local name = selectIdent(node)
-		self.gotos[#self.bc+1] = name:int()
+		local namei = name:int()
+		local gotosc = self.gotoscope[node]
+		local labelsc = self.labelscope[namei]
+		while labelsc and labelsc ~= gotosc do
+			labelsc = labelsc.prev
+		end
+		if not labelsc then
+			print('Goto out of scope', self.lx.ssr[nami])
+		end
+		self.gotos[#self.bc+1] = namei
 		self.push(bc.Goto, 0)
 	end,
 	function(self, node) -- 7 do-end
