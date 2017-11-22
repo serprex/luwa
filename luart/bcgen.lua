@@ -606,6 +606,8 @@ visitScope = {
 			pcount = pcount + 1
 		end
 		local asm = Assembler(lx, self)
+		asm.scopes = { prev = self.scopes }
+		asm.names = self.names
 		asm.isdotdotdot = isdotdotdot
 		asm.pcount = pcount
 		asm:scope(function()
