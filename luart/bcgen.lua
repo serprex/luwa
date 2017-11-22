@@ -19,13 +19,13 @@ local function Assembler(lx, uplink)
 		labels = {},
 		gotos = {},
 		funcs = {},
+		namety = {},
 		rconsts = {
 			integer = {},
 			float = {},
 			string = {},
 		},
 		names = {},
-		idxfree = {},
 		bc = {},
 	}, asmmt)
 end
@@ -67,21 +67,26 @@ function asmmeta:const(c)
 	return n
 end
 
-function asmmeta:name(n, idx)
+function asmmeta:name(n)
 	local prevscope = self.names[n]
-	local newscope = { prev = prevscope, idx = idx, func = self }
+	local newscope = { prev = prevscope, func = self }
 	self.scopes[#self.scopes+1] = n
 	self.names[n] = newscope
 end
 
-function asmmeta:usename(n)
-	local name = self.names[n]
+function asmmeta:usename(node)
+	local name = self.names[node:int()]
 	if name then
-		if name.func ~= self then
-			self.idxfree[name.idx] = true
-		end
+		self.namety[node] = name
 	else
-		return asmmeta:usename(1) -- _ENV
+		name = self.names[1]
+	end
+	if name.func ~= self then
+		if name.free then
+			name.free[self] = true
+		else
+			name.free = { [self] = true }
+		end
 	end
 end
 
@@ -249,40 +254,40 @@ scopeStatSwitch = {
 	function(self, node) -- 11 for
 		scopeNodes(self, node, ast.ExpOr)
 		local name = selectIdent(node)
-		self:name(name:int(), name.li)
+		self:name(name:int())
 		scopeNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 12 generic for
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
-			self:name(name:int(), name.li)
+			self:name(name:int())
 		end
 		scopeNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 13 func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
-		self:usename(selectIdent(node):int())
+		self:usename(selectIdent(node))
 		visitScope[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 14 self:func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
-		self:usename(selectIdent(node):int())
-		clasm:name(2, -2)
+		self:usename(selectIdent(node))
+		clasm:name(2)
 		visitScope[ast.Funcbody](clasm, fruit, true)
 	end,
 	function(self, node) -- 15 local func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
 		local name = selectIdent(node)
-		self:name(name:int(), name.li)
+		self:name(name:int())
 		visitScope[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 16 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
-			self:name(name:int(), name.li)
+			self:name(name:int())
 		end
 	end,
 }
@@ -554,7 +559,7 @@ visitScope = {
 	end,
 	[ast.Var] = function(self, node)
 		if node.types >> 5 == 0 then
-			self:usename(selectIdent(node):int())
+			self:usename(selectIdent(node))
 		else
 			scopeNode(self, node, ast.Prefix)
 			scopeNode(self, node, ast.Index)
@@ -580,7 +585,7 @@ visitScope = {
 	end,
 	[ast.Prefix] = function(self, node)
 		if node.type >> 5 == 0 then
-			self:usename(selectIdent(node):int())
+			self:usename(selectIdent(node))
 		else
 			scopeNode(self, node, ast.ExpOr)
 		end
@@ -605,10 +610,10 @@ visitScope = {
 		asm.pcount = pcount
 		asm:scope(function()
 			if isMeth then
-				asm:name(2, -2)
+				asm:name(2)
 			end
 			for i=1,#names do
-				asm:name(names[i]:int(), names[i].li)
+				asm:name(names[i]:int())
 			end
 			scopeNode(asm, ast.Block)
 		end)
@@ -820,7 +825,7 @@ return function(lx, root)
 	asm.pcount = 1
 	asm.isdotdotdot = true
 	asm:scope(function()
-		asm:name(1, -1) -- _ENV
+		asm:name(1) -- _ENV
 		visitScope[ast.Block](asm, root)
 	end)
 	visitEmit[ast.Block](asm, root)
