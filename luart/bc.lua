@@ -33,4 +33,6 @@ return {
 	Syscall = 31,
 	LoadParam = 32,
 	StoreParam = 33,
+	LoadFree = 34,
+	StoreFree = 35,
 }

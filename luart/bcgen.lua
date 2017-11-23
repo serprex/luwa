@@ -69,11 +69,12 @@ function asmmeta:const(c)
 	return n
 end
 
-function asmmeta:name(n)
+function asmmeta:name(n, isparam)
 	local prevscope = self.names[n]
-	local newscope = { prev = prevscope, func = self }
+	local newscope = { prev = prevscope, func = self, isparam = isparam }
 	self.scopes[#self.scopes+1] = n
 	self.names[n] = newscope
+	return newscope
 end
 
 function asmmeta:usename(node)
@@ -89,6 +90,46 @@ function asmmeta:usename(node)
 		else
 			name.free = { [self] = true }
 		end
+	end
+end
+
+function asmmeta:loadnamety(namety)
+	if namety.free then
+		self:push(bc.LoadFree, namety.idx)
+	elseif namety.isparam then
+		self:push(bc.LoadParam, namety.idx)
+	else
+		self:push(bc.LoadLocal, namety.idx)
+	end
+end
+function asmmeta:storenamety(namety)
+	if namety.free then
+		self:push(bc.StoreFree, namety.idx)
+	elseif namety.isparam then
+		self:push(bc.StoreParam, namety.idx)
+	else
+		self:push(bc.StoreLocal, namety.idx)
+	end
+end
+function asmmeta:loadname(name)
+	local namety = self.namety[name]
+	if namety then
+		self:loadnamety(namety)
+	else
+		self:loadnamety(envty)
+		self:push(bc.LoadConst, self.lx.ssr[name:int()])
+		self:push(bc.Idx)
+	end
+end
+function asmmeta:storename(name)
+	local namety = self.namety[name]
+	if namety then
+		self:storenamety(namety)
+	else
+		local envty = self.names[1]
+		self:loadnamety(envty)
+		self:push(bc.LoadConst, self.lx.ssr[name:int()])
+		self:push(bc.TblSet)
 	end
 end
 
@@ -459,7 +500,6 @@ emitStatSwitch = {
 		self:storename(name:int())
 	end,
 	function(self, node) -- 15 locals=exps
-		-- TODO scope resolving
 		local vars = {}
 		for i, v in selectIdents(node) do
 			vars[#vars+1] = v:int()
@@ -622,15 +662,22 @@ visitScope = {
 		asm.names = self.names
 		asm.isdotdotdot = isdotdotdot
 		asm.pcount = pcount
+		local params = {}
 		asm:scope(function()
 			if isMeth then
-				asm:name(2)
+				params[#params+1] = asm:name(2, true)
 			end
 			for i=1,#names do
-				asm:name(names[i]:int())
+				params[#params+1] = asm:name(names[i]:int(), true)
 			end
 			scopeNode(asm, ast.Block)
 		end)
+		for i=1,#params do
+			if params[i].free then
+				asm:push(bc.LoadParam, i-1)
+				asm:push(bc.StoreFree, params[i].idx)
+			end
+		end
 		emitNode(asm, ast.Block)
 		asm:push(bc.Return)
 		self.funcs[node] = {} -- TODO args for LoadFunc
