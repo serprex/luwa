@@ -141,8 +141,7 @@ return function(lx)
 		seq(s(lex._if), o(ast.ExpOr), s(lex._then), o(ast.Block), many(seq(s(lex._elseif), o(ast.ExpOr), s(lex._then), o(ast.Block))), maybe(seq(s(lex._else), o(ast.Block))), s(lex._end)),
 		seq(s(lex._for), name, s(lex._set), o(ast.ExpOr), s(lex._comma), o(ast.ExpOr), maybe(seq(s(lex._comma), o(ast.ExpOr))), s(lex._do), o(ast.Block), s(lex._end)),
 		seq(s(lex._for), Namelist, s(lex._in), Explist, s(lex._do), o(ast.Block), s(lex._end)),
-		seq(s(lex._function), seq(name, many(seq(s(lex._dot), name))), o(ast.Funcbody)),
-		seq(s(lex._function), seq(name, many(seq(s(lex._dot), name)), seq(s(lex._colon), name)), o(ast.Funcbody)),
+		seq(s(lex._function), seq(name, many(seq(s(lex._dot), name)), maybe(seq(s(lex._colon), name))), o(ast.Funcbody)),
 		seq(s(lex._local), s(lex._function), name, o(ast.Funcbody)),
 		seq(s(lex._local), Namelist, maybe(seq(s(lex._set), Explist)))
 	)

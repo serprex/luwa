@@ -282,23 +282,16 @@ scopeStatSwitch = {
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
 		self:usename(selectIdent(node))
-		visitScope[ast.Funcbody](clasm, fruit)
+		visitScope[ast.Funcbody](clasm, fruit, hasToken(node, lex._colon))
 	end,
-	function(self, node) -- 14 self:func
-		local clasm = Assembler(self.lx, self)
-		local fruit = selectNode(node, ast.Funcbody)
-		self:usename(selectIdent(node))
-		clasm:name(2)
-		visitScope[ast.Funcbody](clasm, fruit, true)
-	end,
-	function(self, node) -- 15 local func
+	function(self, node) -- 14 local func
 		local clasm = Assembler(self.lx, self)
 		local fruit = selectNode(node, ast.Funcbody)
 		local name = selectIdent(node)
 		self:name(name:int())
 		visitScope[ast.Funcbody](clasm, fruit)
 	end,
-	function(self, node) -- 16 locals=exps
+	function(self, node) -- 15 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
 			self:name(name:int())
@@ -460,16 +453,12 @@ emitStatSwitch = {
 			self:push(bc.TblSet)
 		end
 	end,
-	function(self, node) -- 14 self:func
-		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
-		-- TODO inject self, codegen
-	end,
-	function(self, node) -- 15 local func
+	function(self, node) -- 14 local func
 		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
 		local name = selectIdent(node)
 		self:storename(name:int())
 	end,
-	function(self, node) -- 16 locals=exps
+	function(self, node) -- 15 locals=exps
 		-- TODO scope resolving
 		local vars = {}
 		for i, v in selectIdents(node) do
