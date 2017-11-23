@@ -93,30 +93,41 @@ function asmmeta:usename(node)
 	end
 end
 
-function asmmeta:loadnamety(namety)
+local namety_loads = {
+	Free = bc.LoadFree,
+	ParamBox = bc.LoadParamBox,
+	LocalBox = bc.LoadLocalBox,
+	Param = bc.LoadParam,
+	Local = bc.LoadLocal,
+}
+local namety_stores = {
+	Free = bc.StoreFree,
+	ParamBox = bc.StoreParamBox,
+	LocalBox = bc.StoreLocalBox,
+	Param = bc.StoreParam,
+	Local = bc.StoreLocal,
+}
+function asmmeta:opnamety(ops, namety)
 	if namety.free then
-		self:push(bc.LoadFree, namety.idx)
+		if name.func ~= self then
+			self:push(ops.Free, namety.idx)
+		elseif namety.isparam then
+			self:push(ops.ParamBox, namety.idx)
+		else
+			self:push(ops.LocalBox, namety.idx)
+		end
 	elseif namety.isparam then
-		self:push(bc.LoadParam, namety.idx)
+		self:push(ops.Param, namety.idx)
 	else
-		self:push(bc.LoadLocal, namety.idx)
-	end
-end
-function asmmeta:storenamety(namety)
-	if namety.free then
-		self:push(bc.StoreFree, namety.idx)
-	elseif namety.isparam then
-		self:push(bc.StoreParam, namety.idx)
-	else
-		self:push(bc.StoreLocal, namety.idx)
+		self:push(ops.Local, namety.idx)
 	end
 end
 function asmmeta:loadname(name)
 	local namety = self.namety[name]
 	if namety then
-		self:loadnamety(namety)
+		self:opnamety(namety_loads, namety)
 	else
-		self:loadnamety(envty)
+		self:opnamety(namety_loads, envty)
 		self:push(bc.LoadConst, self.lx.ssr[name:int()])
 		self:push(bc.Idx)
 	end
@@ -124,10 +135,10 @@ end
 function asmmeta:storename(name)
 	local namety = self.namety[name]
 	if namety then
-		self:storenamety(namety)
+		self:opnamety(namety_stores, namety)
 	else
 		local envty = self.names[1]
-		self:loadnamety(envty)
+		self:opnamety(namety_loads, envty)
 		self:push(bc.LoadConst, self.lx.ssr[name:int()])
 		self:push(bc.TblSet)
 	end
@@ -674,8 +685,7 @@ visitScope = {
 		end)
 		for i=1,#params do
 			if params[i].free then
-				asm:push(bc.LoadParam, i-1)
-				asm:push(bc.StoreFree, params[i].idx)
+				asm:push(bc.BoxParam, i-1)
 			end
 		end
 		emitNode(asm, ast.Block)
