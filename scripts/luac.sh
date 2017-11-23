@@ -1,2 +1,2 @@
 #!/bin/sh
-./luac-lex.js "$1" | ./luac-bcgen.lua > "$1".bc
+./scripts/luac-lex.js "$1" | ./scripts/luac-bcgen.lua #> "$1".bc

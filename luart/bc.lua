@@ -35,4 +35,9 @@ return {
 	StoreParam = 33,
 	LoadFree = 34,
 	StoreFree = 35,
+	LoadParamBox = 36,
+	StoreParamBox = 37,
+	BoxParam = 38,
+	LoadLocalBox = 39,
+	StoreLocalBox = 40,
 }

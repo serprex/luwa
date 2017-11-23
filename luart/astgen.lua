@@ -8,8 +8,8 @@ local function iterone(x, y)
 		return x
 	end
 end
-local function yieldall(it)
-	for yi in it do
+local function yieldall(...)
+	for yi in ... do
 		coroutine.yield(yi)
 	end
 end
@@ -127,7 +127,7 @@ return function(lx)
 	local Fieldsep = oof(s(lex._comma), s(lex._semi))
 	local Call = seq(maybe(seq(s(lex._colon), name)), o(ast.Args))
 	local Funccall = seq(o(ast.Prefix), many(o(ast.Suffix)), Call)
-	sf(ast.Block, many(o(Stat)), maybe(s(lex._return), maybe(Explist), maybe(s(lex._semi))))
+	sf(ast.Block, many(o(ast.Stat)), maybe(seq(s(lex._return), maybe(Explist), maybe(s(lex._semi)))))
 	of(ast.Stat,
 		s(lex._semi),
 		seq(Varlist, s(lex._set), Explist),
@@ -210,8 +210,9 @@ return function(lx)
 	for k,v in ipairs(lx.ssr) do
 		print(k,v)
 	end
-	for child in rules[Block](root, root) do
-		print(child, child.nx)
+	for child in rules[ast.Block](root, root) do
+		print(child, child.nx, string.byte(lx.lex, child.nx))
+		for k,v in pairs(child) do print(k,v) end
 		if string.byte(lx.lex, child.nx) == 0 then
 			repeat
 				local prev_father = child
@@ -232,4 +233,5 @@ return function(lx)
 			return root
 		end
 	end
+	error('Invalid parse')
 end
