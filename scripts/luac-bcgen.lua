@@ -19,6 +19,39 @@ local astgen = require 'astgen'
 local bcgen = require 'bcgen'
 local lx = { lex = lx, snr = snr, ssr = ssr }
 local root = astgen(lx)
-print(root)
-print(bcgen(lx, root))
+local function pprintcore(x, dep, hist)
+   local a = {}
+   for i=1,dep do
+      a[i] = ' '
+   end
+   local a = table.concat(a, ' ')
+   --local a = tostring(dep)
+   if hist[x] then
+      return print(a .. '...', x)
+   end
+   hist[x] = true
+   if type(x.val) == 'function' then
+      print(a .. 'val:', x:val())
+   end
+   for k,v in pairs(x) do
+      if k ~= 'mother' and k ~= 'father' then
+      if type(v) == 'table' then
+         print(a .. tostring(k))
+         pprintcore(v, dep+1, hist)
+      elseif k == 'lex' and type(v) == 'string' then
+         print(a .. k, table.concat(table.pack(string.byte(v, 1, #v)), ','))
+      else
+         print(a .. tostring(k),v)
+      end
+   end
+   end
+end
+local function pprint(x)
+   return pprintcore(x, 0, {})
+end
+print('AST')
+pprint(root)
+local bcg = bcgen(lx, root)
+print('ASM')
+pprint(bcg)
 

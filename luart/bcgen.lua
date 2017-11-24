@@ -71,7 +71,8 @@ end
 
 function asmmeta:name(n, isparam)
 	local prevscope = self.names[n]
-	local newscope = { prev = prevscope, func = self, isparam = isparam }
+	-- TODO idx needs to be allocated after scoping
+	local newscope = { prev = prevscope, func = self, isparam = isparam, idx = 0 }
 	self.scopes[#self.scopes+1] = n
 	self.names[n] = newscope
 	return newscope
@@ -127,7 +128,7 @@ function asmmeta:loadname(name)
 	if namety then
 		self:opnamety(namety_loads, namety)
 	else
-		self:opnamety(namety_loads, envty)
+		self:opnamety(namety_loads, self.names[1])
 		self:push(bc.LoadConst, self.lx.ssr[name:int()+1])
 		self:push(bc.Idx)
 	end
@@ -137,16 +138,15 @@ function asmmeta:storename(name)
 	if namety then
 		self:opnamety(namety_stores, namety)
 	else
-		local envty = self.names[1]
-		self:opnamety(namety_loads, envty)
+		self:opnamety(namety_loads, self.names[1])
 		self:push(bc.LoadConst, self.lx.ssr[name:int()+1])
 		self:push(bc.TblSet)
 	end
 end
 
 local nextNode = {}
-for k,v in pairs(ast) do
-	nextNode[v] = function(node, i)
+for k,ty in pairs(ast) do
+	nextNode[ty] = function(node, i)
 		while i > 0 do
 			local child = node.fathered[i]
 			i = i - 1
@@ -186,14 +186,16 @@ local function selectNodes(node, ty)
 	return nextNode[ty], node, #node.fathered
 end
 local function selectNode(node, ty)
-	return nextNode[ty](node, #node.fathered)
+	local i, n = nextNode[ty](node, #node.fathered)
+	return n
 end
 
 local function selectIdents(node)
 	return nextIdent, node, #node.fathered
 end
 local function selectIdent(node)
-	return nextIdent(node, #node.fathered)
+	local i, n = nextIdent(node, #node.fathered)
+	return n
 end
 
 local unOps = { bc.Neg, bc.Not, bc.Len, bc.BNot }
@@ -202,29 +204,28 @@ local binOps = { bc.Add, bc.Sub, bc.Mul, bc.Div, bc.IDiv, bc.Pow, bc.Mod,
 	bc.CmpLt, bc.CmpLe, bc.CmpGt, bc.CmpGe, bc.CmpEq }
 local scopeStatSwitch, emitStatSwitch, emitValueSwitch, emitFieldSwitch, visitScope, emitScope
 
-local function singleNode(self, node, ty, visit, ...)
+local function singleNode(self, node, ty, fn, ...)
 	local sn = selectNode(node, ty)
 	if sn then
-		return visit[ty](self, sn, ...)
+		return fn(self, sn, ...)
 	end
 end
-local function multiNodes(self, node, ty, visit, ...)
-	local fn = visit[ty]
+local function multiNodes(self, node, ty, fn, ...)
 	for i, node in selectNodes(node, ty) do
 		fn(self, node, ...)
 	end
 end
 local function scopeNode(self, node, ty)
-	return singleNode(self, node, ty, visitScope)
+	return singleNode(self, node, ty, visitScope[ty])
 end
 local function emitNode(self, node, ty, ...)
-	return singleNode(self, node, ty, visitEmit, ...)
+	return singleNode(self, node, ty, visitEmit[ty], ...)
 end
 local function scopeNodes(self, node, ty)
-	return multiNodes(self, node, ty, visitScope)
+	return multiNodes(self, node, ty, visitScope[ty])
 end
 local function emitNodes(self, node, ty, ...)
-	return multiNodes(self, node, ty, visitEmit, ...)
+	return multiNodes(self, node, ty, visitEmit[ty], ...)
 end
 
 local Exp32 = ast.Exp|32
@@ -321,12 +322,14 @@ scopeStatSwitch = {
 		scopeNodes(self, node, ast.ExpOr)
 		local name = selectIdent(node)
 		self:name(name:int())
+		self:usename(name)
 		scopeNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 12 generic for
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
 			self:name(name:int())
+			self:usename(name)
 		end
 		scopeNode(self, node, ast.Block)
 	end,
@@ -341,12 +344,14 @@ scopeStatSwitch = {
 		local fruit = selectNode(node, ast.Funcbody)
 		local name = selectIdent(node)
 		self:name(name:int())
+		self:usename(name)
 		visitScope[ast.Funcbody](clasm, fruit)
 	end,
 	function(self, node) -- 15 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
 			self:name(name:int())
+			self:usename(name)
 		end
 	end,
 }
@@ -513,7 +518,7 @@ emitStatSwitch = {
 	function(self, node) -- 15 locals=exps
 		local vars = {}
 		for i, v in selectIdents(node) do
-			vars[#vars+1] = v:int()
+			vars[#vars+1] = v
 		end
 		emitExplist(self, node, #vars)
 		for i=#vars,1,-1 do
@@ -549,14 +554,14 @@ emitValueSwitch = {
 	end,
 	function(self, node, outputs) -- 3 num
 		return emit0(self, node, outputs, function(self, node)
-			local val = nextNumber(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()]))
+			local i, val = nextNumber(node, #node.fathered)
+			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()+1]))
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 4 str
 		return emit0(self, node, outputs, function(self, node)
-			local val = nextString(node, #node.fathered)
+			local i, val = nextString(node, #node.fathered)
 			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1]))
 			return 1
 		end)
@@ -599,7 +604,7 @@ emitFieldSwitch = {
 		self:push(bc.TblAdd)
 	end,
 	function(self, node) -- 2 name = exp
-		local val = nextString(node, #node.fathered)
+		local i, val = nextString(node, #node.fathered)
 		self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1]))
 		emitNode(self, node, ast.ExpOr)
 		self:push(bc.TblAdd)
@@ -621,7 +626,7 @@ visitScope = {
 		return scopeStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node)
-		if node.types >> 5 == 0 then
+		if node.type >> 5 == 0 then
 			self:usename(selectIdent(node))
 		else
 			scopeNode(self, node, ast.Prefix)
@@ -630,8 +635,8 @@ visitScope = {
 	end,
 	[ast.Exp] = function(self, node)
 		if #node.fathered == 1 then
-			assert(self.fathered[1].type == ast.Value)
-			return visitScope[ast.Value](self.fathered[1], node)
+			assert((node.fathered[1].type & 31) == ast.Value)
+			return visitScope[ast.Value](node.fathered[1], node)
 		elseif node.type >> 5 == 0 then
 			return scopeNodes(self, node, ast.Exp)
 		else
@@ -639,9 +644,9 @@ visitScope = {
 				local n = node.fathered[i]
 				local nt = n.type & 31
 				if nt == ast.Exp then
-					visitScope[ast.Exp](self, node)
+					visitScope[ast.Exp](self, n)
 				elseif nt == ast.Value then
-					visitScope[ast.Value](self, node)
+					visitScope[ast.Value](self, n)
 				end
 			end
 		end
@@ -774,7 +779,7 @@ visitEmit = {
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node, isload)
-		if self.type >> 5 == 0 then
+		if node.type >> 5 == 0 then
 			local name = selectIdent(node):int()
 			if isload then
 				self:loadname(name)
@@ -807,11 +812,12 @@ visitEmit = {
 						visitEmit[ast.Exp](self, op, 1)
 					end
 				end
+				return 1
 			end
 		end
 	end,
 	[ast.Prefix] = function(self, node)
-		if self.type >> 5 == 0 then
+		if node.type >> 5 == 0 then
 			self:loadname(selectIdent(node):int())
 		else
 			emitNode(self, node, ast.ExpOr, 1)
@@ -857,10 +863,14 @@ visitEmit = {
 		self:push(unaryOps[node.type >> 5])
 	end,
 	[ast.Value] = function(self, node, outputs)
-		local results = emitValueSwitch[self.type >> 5](self, node, outputs)
+		local results = emitValueSwitch[node.type >> 5](self, node, outputs)
 		for i=results+1, outputs do
 			self:push(bc.Pop)
 		end
+		for i=results-1, outputs do
+			self:push(bc.LoadNil)
+		end
+		return outputs
 	end,
 	[ast.Index] = function(self, node, isload)
 		if node.type >> 5 == 0 then
@@ -902,5 +912,5 @@ return function(lx, root)
 	end)
 	visitEmit[ast.Block](asm, root)
 	asm:push(bc.Return)
-	return asm.synth()
+	return asm:synth()
 end

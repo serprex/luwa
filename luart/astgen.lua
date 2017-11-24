@@ -104,6 +104,7 @@ return function(lx)
 		rules[o] = function(x, p)
 			return coroutine.wrap(function()
 				local p = x:spawn(o, p)
+				p.type = p.type + 32
 				for i=1,#xs do
 					yieldall(xs[i](x, p))
 					p.type = p.type + 32
@@ -212,7 +213,6 @@ return function(lx)
 	end
 	for child in rules[ast.Block](root, root) do
 		print(child, child.nx, string.byte(lx.lex, child.nx))
-		for k,v in pairs(child) do print(k,v) end
 		if string.byte(lx.lex, child.nx) == 0 then
 			repeat
 				local prev_father = child
