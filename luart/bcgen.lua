@@ -259,7 +259,6 @@ local function shunt(node)
 		else
 			coroutine.yield(node)
 		end
-		coroutine.yield()
 		for i=#ops, 1, -1 do
 			coroutine.yield(ops[i])
 		end
@@ -509,8 +508,7 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 14 local func
 		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
-		local name = selectIdent(node)
-		self:storename(name:int())
+		self:storename(selectIdent(node))
 	end,
 	function(self, node) -- 15 locals=exps
 		local vars = {}
@@ -549,44 +547,44 @@ emitValueSwitch = {
 			return 1
 		end)
 	end,
-	function(self, node, outputs) -- 3 num
+	function(self, node, outputs) -- 4 num
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextNumber(node, #node.fathered)
 			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()+1])-1)
 			return 1
 		end)
 	end,
-	function(self, node, outputs) -- 4 str
+	function(self, node, outputs) -- 5 str
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextString(node, #node.fathered)
 			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
 			return 1
 		end)
 	end,
-	function(self, node, outputs) -- 5 ...
+	function(self, node, outputs) -- 6 ...
 		return emit0(self, node, outputs, function(self, node)
 			self:push(bc.LoadVarg, outputs)
 			return outputs
 		end)
 	end,
-	function(self, node, outputs) -- 6 Funcbody
+	function(self, node, outputs) -- 7 Funcbody
 		return emit0(self, node, outputs, function(self, node)
 			emitNode(self, node, Funcbody)
 			return 1
 		end)
 	end,
-	function(self, node, outputs) -- 7 Table
+	function(self, node, outputs) -- 8 Table
 		emitNode(self, node, ast.Table)
 		return 1
 	end,
-	function(self, node, outputs) -- 8 Call
+	function(self, node, outputs) -- 9 Call
 		return emitFunccall(self, node, outputs)
 	end,
-	function(self, node, outputs) -- 9 Var load
+	function(self, node, outputs) -- 10 Var load
 		emitNode(self, node, ast.Var, true)
 		return 1
 	end,
-	function(self, node, outputs) -- 10 Exp
+	function(self, node, outputs) -- 11 Exp
 		emitNode(self, node, ast.ExpOr, 1)
 		return 1
 	end,
@@ -623,7 +621,7 @@ visitScope = {
 		return scopeStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			self:usename(selectIdent(node))
 		else
 			scopeNode(self, node, ast.Prefix)
@@ -634,7 +632,7 @@ visitScope = {
 		if #node.fathered == 1 then
 			assert((node.fathered[1].type & 31) == ast.Value)
 			return visitScope[ast.Value](node.fathered[1], node)
-		elseif node.type >> 5 == 0 then
+		elseif node.type >> 5 == 1 then
 			return scopeNodes(self, node, ast.Exp)
 		else
 			for i = #node.fathered, 1, -1 do
@@ -649,7 +647,7 @@ visitScope = {
 		end
 	end,
 	[ast.Prefix] = function(self, node)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			self:usename(selectIdent(node))
 		else
 			scopeNode(self, node, ast.ExpOr)
@@ -657,9 +655,9 @@ visitScope = {
 	end,
 	[ast.Args] = function(self, node)
 		local t = node.type >> 5
-		if t == 0 then
+		if t == 1 then
 			scopeNodes(self, node, ast.ExpOr)
-		elseif t == 1 then
+		elseif t == 2 then
 			scopeNode(self, node, ast.Table)
 		end
 	end,
@@ -719,12 +717,12 @@ visitScope = {
 		end
 	end,
 	[ast.Index] = function(self, node)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			scopeNode(self, node, ast.ExpOr)
 		end
 	end,
 	[ast.Suffix] = function(self, node)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			scopeNode(self, node, ast.Args)
 		else
 			scopeNode(self, node, ast.Index)
@@ -755,13 +753,17 @@ local function emitShortCircuitFactory(ty, opcode)
 			end
 			prod = 1
 		end
-		for i=prod+1, out do
-			self:push(bc.Pop)
+		if out ~= -1 then
+			for i=prod+1, out do
+				self:push(bc.Pop)
+			end
+			for i=prod-1, out, -1 do
+				self:push(bc.LoadNil)
+			end
+			return out
+		else
+			return prod
 		end
-		for i=prod-1, out, -1 do
-			self:push(bc.LoadNil)
-		end
-		return out
 	end
 end
 visitEmit = {
@@ -776,8 +778,9 @@ visitEmit = {
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node, isload)
-		if node.type >> 5 == 0 then
-			local name = selectIdent(node):int()
+		print('var', node.type)
+		if node.type >> 5 == 1 then
+			local name = selectIdent(node)
 			if isload then
 				self:loadname(name)
 			else
@@ -790,7 +793,7 @@ visitEmit = {
 		end
 	end,
 	[ast.Exp] = function(self, node, out)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			emitNode(self, node, ast.Exp, 1)
 			emitNode(self, node, ast.Unop)
 			return 1
@@ -800,6 +803,7 @@ visitEmit = {
 			else
 				for op in shunt(node) do
 					local ty = op.type & 31
+					print(ty, op:val(), op.type >> 5)
 					if ty == ast.Binop then
 						visitEmit[ast.Binop](self, op)
 					elseif ty == ast.Value then
@@ -814,7 +818,7 @@ visitEmit = {
 		end
 	end,
 	[ast.Prefix] = function(self, node)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			self:loadname(selectIdent(node):int())
 		else
 			emitNode(self, node, ast.ExpOr, 1)
@@ -823,10 +827,10 @@ visitEmit = {
 	[ast.Args] = function(self, node, outputs)
 		-- TODO we need to either mark exp-depth for varcall or implement call chaining
 		local ty, n = node.type >> 5
-		if ty == 0 then
+		if ty == 1 then
 			emitExplist(self, node, -1)
 			n = -1
-		elseif ty == 1 then
+		elseif ty == 2 then
 			self:push(bc.TblNew)
 			emitNodes(self, node, ast.Field)
 			n = 1
@@ -874,7 +878,7 @@ visitEmit = {
 		end
 	end,
 	[ast.Index] = function(self, node, isload)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			emitNode(self, node, ast.ExpOr, 1)
 		else
 			self:push(bc.LoadConst, self:const(self.lx.ssr[selectIdent(node):int()+1])-1)
@@ -886,7 +890,7 @@ visitEmit = {
 		end
 	end,
 	[ast.Suffix] = function(self, node)
-		if node.type >> 5 == 0 then
+		if node.type >> 5 == 1 then
 			return emitCall(self, node, 1)
 		else
 			return emitNode(self, node, ast.Index, true)
@@ -907,10 +911,14 @@ return function(lx, root)
 	local asm = Assembler(lx, nil)
 	asm.pcount = 1
 	asm.isdotdotdot = true
+	local env
 	asm:scope(function()
-		asm:name(1) -- _ENV
+		env = asm:name(1, true) -- _ENV
 		visitScope[ast.Block](asm, root)
 	end)
+	if env.free then
+		asm:push(bc.BoxParam, 0)
+	end
 	visitEmit[ast.Block](asm, root)
 	asm:push(bc.Return)
 	return asm:synth()
