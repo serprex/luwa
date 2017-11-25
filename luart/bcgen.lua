@@ -620,15 +620,11 @@ emitFieldSwitch = {
 	function(self, node) -- 2 name = exp
 		local i, val = nextString(node, #node.fathered)
 		self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
-		emitNode(self, node, ast.ExpOr)
+		emitNode(self, node, ast.ExpOr, 1)
 		self:push(bc.TblAdd)
 	end,
-	function(self, node) -- 3 exp
-		-- TODO need to defer these to end, also group num
-		local n = 0 -- TODO incr n
-		self:push(bc.LoadConst, self:const(n)-1)
-		emitNode(self, node, ast.ExpOr)
-		self:push(bc.TblAdd)
+	function(self, node, ary) -- 3 exp
+		ary[#ary+1] = node
 	end
 }
 visitScope = {
@@ -860,8 +856,7 @@ visitEmit = {
 			emitExplist(self, node, -1)
 			n = -1
 		elseif ty == 2 then
-			self:push(bc.TblNew)
-			emitNodes(self, node, ast.Field)
+			emitNode(self, node, ast.Table)
 			n = 1
 		else
 			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
@@ -879,10 +874,20 @@ visitEmit = {
 	end,
 	[ast.Table] = function(self, node)
 		self:push(bc.TblNew)
-		return emitNodes(self, node, ast.Field)
+		local ary = {}
+		emitNodes(self, node, ast.Field, ary)
+		if #ary > 0 then
+			for i=1,#ary-1 do
+				self:push(bc.LoadConst, self:const(i)-1)
+				emitNode(self, node, ast.ExpOr, 1)
+				self:push(bc.TblAdd)
+			end
+			-- TODO have exp concat to table
+			emitNode(self, node, ast.ExpOr, -1)
+		end
 	end,
-	[ast.Field] = function(self, node)
-		return emitFieldSwitch[node.type >> 5](self, node)
+	[ast.Field] = function(self, node, ary)
+		return emitFieldSwitch[node.type >> 5](self, node, ary)
 	end,
 	[ast.Binop] = function(self, node)
 		local op = binOps[node.type >> 5]
