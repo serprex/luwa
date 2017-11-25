@@ -157,7 +157,7 @@ for k,ty in pairs(ast) do
 	end
 end
 
-local function hasToken(node, tok)
+local function hasToken(node, ty)
 	for i=#node.fathered, 1, -1 do
 		local child = node.fathered[i]
 		if child.type == -1 and child:val() == ty then
@@ -228,7 +228,7 @@ local function emitNodes(self, node, ty, ...)
 	return multiNodes(self, node, ty, visitEmit[ty], ...)
 end
 
-local Exp32 = ast.Exp|32
+local ExpValue = ast.Exp+64
 local precedenceTable = {7, 7, 8, 8, 8, 9, 8, 5, 4, 3, 6, 6, 2, 1, 1, 1, 1, 1, 1}
 local function precedence(node)
 	if (node.type&31) == ast.Binop then
@@ -240,15 +240,12 @@ end
 local function shunt(node)
 	return coroutine.wrap(function()
 		local ops = {}
-		while node.type == Exp32 and node.fathered.length == 3 do
+		while node.type == ExpValue and #node.fathered == 3 do
 			local rson, op, lson = table.unpack(node.fathered)
 			coroutine.yield(lson)
-			while true do
-				if #ops == 0 then
-					break
-				end
+			while #ops > 0 do
 				local oprec = precedence(op)
-				if precedence(ops[#ops]) < precedence(op) and precedence(op) == 9 then
+				if precedence(ops[#ops]) < oprec or oprec == 9 then
 					break
 				end
 				coroutine.yield(ops[#ops])
@@ -257,7 +254,7 @@ local function shunt(node)
 			ops[#ops+1] = op
 			node = rson
 		end
-		if node.type == Exp32 then
+		if node.type == ExpValue then
 			coroutine.yield(selectNode(node, ast.Value))
 		else
 			coroutine.yield(node)
@@ -358,7 +355,7 @@ scopeStatSwitch = {
 local function emitCall(self, node, outputs)
 	local methname = selectIdent(node)
 	if methname then
-		self:push(bc.LoadConst, self:const(self.lx.ssr[methname:int()+1]))
+		self:push(bc.LoadConst, self:const(self.lx.ssr[methname:int()+1])-1)
 		self:push(bc.LoadMeth)
 	end
 	return emitNode(self, node, ast.Args, outputs)
@@ -497,7 +494,7 @@ emitStatSwitch = {
 					self:loadname(nlast)
 					first = false
 				else
-					self:push(bc.LoadConst, self:const(self.ssr[nlast+1]))
+					self:push(bc.LoadConst, self:const(self.ssr[nlast+1])-1)
 					self:push(bc.TblGet)
 				end
 			end
@@ -506,7 +503,7 @@ emitStatSwitch = {
 		if first then
 			self:storename(nlast)
 		else
-			self:push(bc.LoadConst, self:const(self.ssr[nlast+1]))
+			self:push(bc.LoadConst, self:const(self.ssr[nlast+1])-1)
 			self:push(bc.TblSet)
 		end
 	end,
@@ -555,14 +552,14 @@ emitValueSwitch = {
 	function(self, node, outputs) -- 3 num
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextNumber(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()+1]))
+			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()+1])-1)
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 4 str
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextString(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1]))
+			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
 			return 1
 		end)
 	end,
@@ -605,14 +602,14 @@ emitFieldSwitch = {
 	end,
 	function(self, node) -- 2 name = exp
 		local i, val = nextString(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1]))
+		self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
 		emitNode(self, node, ast.ExpOr)
 		self:push(bc.TblAdd)
 	end,
 	function(self, node) -- 3 exp
 		-- TODO need to defer these to end, also group num
 		local n = 0 -- TODO incr n
-		self:push(bc.LoadConst, self:const(n))
+		self:push(bc.LoadConst, self:const(n)-1)
 		emitNode(self, node, ast.ExpOr)
 		self:push(bc.TblAdd)
 	end
@@ -808,7 +805,7 @@ visitEmit = {
 					elseif ty == ast.Value then
 						visitEmit[ast.Value](self, op, 1)
 					else
-						assert(op.type >> 5 == 0)
+						assert(op.type >> 5 == 1)
 						visitEmit[ast.Exp](self, op, 1)
 					end
 				end
@@ -834,7 +831,7 @@ visitEmit = {
 			emitNodes(self, node, ast.Field)
 			n = 1
 		else
-			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1]))
+			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
 			n = 1
 		end
 		-- TODO RetCall
@@ -864,19 +861,23 @@ visitEmit = {
 	end,
 	[ast.Value] = function(self, node, outputs)
 		local results = emitValueSwitch[node.type >> 5](self, node, outputs)
-		for i=results+1, outputs do
-			self:push(bc.Pop)
+		if outputs ~= -1 then
+			for i=results+1, outputs do
+				self:push(bc.Pop)
+			end
+			for i=results-1, outputs, -1 do
+				self:push(bc.LoadNil)
+			end
+			return outputs
+		else
+			return results
 		end
-		for i=results-1, outputs do
-			self:push(bc.LoadNil)
-		end
-		return outputs
 	end,
 	[ast.Index] = function(self, node, isload)
 		if node.type >> 5 == 0 then
 			emitNode(self, node, ast.ExpOr, 1)
 		else
-			self:push(bc.LoadConst, self:const(self.lx.ssr[selectIdent(node):int()+1]))
+			self:push(bc.LoadConst, self:const(self.lx.ssr[selectIdent(node):int()+1])-1)
 		end
 		if isload then
 			self:push(bc.Idx)
