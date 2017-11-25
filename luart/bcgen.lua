@@ -4,6 +4,9 @@ local bc = require 'bc'
 
 local function nop()
 end
+local function namesort(a, b)
+	return a.idx < b.idx
+end
 
 local asmmeta = {}
 local asmmt = { __index = asmmeta }
@@ -11,6 +14,8 @@ local function Assembler(lx, uplink)
 	return setmetatable({
 		lx = lx,
 		pcount = 0,
+		locals = {},
+		frees = {},
 		isdotdotdot = false,
 		uplink = uplink,
 		scopes = nil,
@@ -26,6 +31,7 @@ local function Assembler(lx, uplink)
 			integer = {},
 			float = {},
 			string = {},
+			table = {},
 		},
 		names = {},
 		bc = {},
@@ -69,10 +75,9 @@ function asmmeta:const(c)
 	return n
 end
 
-function asmmeta:name(n, isparam)
+function asmmeta:name(n, paramidx)
 	local prevscope = self.names[n]
-	-- TODO idx needs to be allocated after scoping
-	local newscope = { prev = prevscope, func = self, isparam = isparam, idx = 0 }
+	local newscope = { prev = prevscope, func = self, isparam = paramidx }
 	self.scopes[#self.scopes+1] = n
 	self.names[n] = newscope
 	return newscope
@@ -108,19 +113,33 @@ local namety_stores = {
 	Param = bc.StoreParam,
 	Local = bc.StoreLocal,
 }
+local function idxtbl(tbl, namety)
+	local idx = #tbl
+	idxtbl[namety] = idx
+	idxtbl[idx+1] = namety
+	return idx
+end
 function asmmeta:opnamety(ops, namety)
+	local idx = namety.isparam
+	if not idx then
+		if namety.func ~= self then
+			idx = self.frees[namety] or idxtbl(self.frees, namety)
+		else
+			idx = self.locals[namety] or idxtbl(self.locals, namety)
+		end
+	end
 	if namety.free then
 		if name.func ~= self then
-			self:push(ops.Free, namety.idx)
+			self:push(ops.Free, idx)
 		elseif namety.isparam then
-			self:push(ops.ParamBox, namety.idx)
+			self:push(ops.ParamBox, idx)
 		else
-			self:push(ops.LocalBox, namety.idx)
+			self:push(ops.LocalBox, idx)
 		end
 	elseif namety.isparam then
-		self:push(ops.Param, namety.idx)
+		self:push(ops.Param, idx)
 	else
-		self:push(ops.Local, namety.idx)
+		self:push(ops.Local, idx)
 	end
 end
 function asmmeta:loadname(name)
@@ -676,10 +695,12 @@ visitScope = {
 		local params = {}
 		asm:scope(function()
 			if isMeth then
-				params[#params+1] = asm:name(2, true)
+				local param = asm:name(2, #params)
+				params[#params+1] = param
 			end
 			for i=1,#names do
-				params[#params+1] = asm:name(names[i]:int(), true)
+				local param = asm:name(names[i]:int(), #params)
+				params[#params+1] = param
 			end
 			scopeNode(asm, ast.Block)
 		end)
@@ -689,8 +710,16 @@ visitScope = {
 			end
 		end
 		emitNode(asm, ast.Block)
-		asm:push(bc.Return)
-		self.funcs[node] = {} -- TODO args for LoadFunc
+		asm:synth()
+		local func = { func = asm }
+		for k, v in pairs(asm.namety) do
+			if v.free[asm] and v.func ~= asm then
+				v.free[self] = true
+				func[#func+1] = v
+			end
+		end
+		table.sort(func, namesort)
+		self.funcs[node] = func
 	end,
 	[ast.Table] = function(self, node)
 		scopeNodes(self, node, ast.Field)
@@ -842,7 +871,11 @@ visitEmit = {
 		self:push(bc.Call)
 	end,
 	[ast.Funcbody] = function(self, node)
-		self:push(bc.LoadFunc, table.unpack(self.funcs[node]))
+		local func = self.funcs[node]
+		for i=1, #func do
+			self:loadname(func[i])
+		end
+		self:push(bc.LoadFunc, #func, self:const(func.func))
 	end,
 	[ast.Table] = function(self, node)
 		self:push(bc.TblNew)
@@ -901,6 +934,12 @@ visitEmit = {
 }
 
 function asmmeta:synth()
+	for k, v in pairs(self.namety) do
+		if not (v.isparam or self.locals[v] or self.frees[v]) then
+			self.namety[k] = nil
+		end
+	end
+	asm:push(bc.Return)
 	for k,v in pairs(self.gotos) do
 		self:patch(k, self.labels[v])
 	end
@@ -920,6 +959,5 @@ return function(lx, root)
 		asm:push(bc.BoxParam, 0)
 	end
 	visitEmit[ast.Block](asm, root)
-	asm:push(bc.Return)
 	return asm:synth()
 end

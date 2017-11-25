@@ -1,4 +1,5 @@
 return {
+	_eof = 0,
 	_and = 1,
 	_break = 2,
 	_do = 3,

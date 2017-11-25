@@ -40,4 +40,5 @@ return {
 	BoxParam = 38,
 	LoadLocalBox = 39,
 	StoreLocalBox = 40,
+	LoadMeth = 41,
 }
