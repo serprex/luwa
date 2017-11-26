@@ -373,8 +373,7 @@ scopeStatSwitch = {
 local function emitCall(self, node, outputs)
 	local methname = selectIdent(node)
 	if methname then
-		self:push(bc.LoadConst, self:const(self.lx.ssr[methname:int()+1])-1)
-		self:push(bc.LoadMeth)
+		self:push(bc.GetMeth, self:const(self.lx.ssr[methname:int()+1])-1)
 	end
 	return emitNode(self, node, ast.Args, outputs)
 end
@@ -423,7 +422,7 @@ emitStatSwitch = {
 	function(self, node) -- 5 break
 		assert(self.breaks, "break outside of loop")
 		self.breaks[#self.breaks+1] = #self.bc+1
-		self.push(bc.Goto, 0)
+		self.push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 6 goto
 		local name = selectIdent(node)
@@ -434,10 +433,10 @@ emitStatSwitch = {
 			gotosc = gotosc.prev
 		end
 		if not gotosc then
-			print('Goto out of scope', self.lx.ssr[nami+1])
+			print('Jmp out of scope', self.lx.ssr[nami+1])
 		end
 		self.gotos[#self.bc+1] = namei
-		self.push(bc.Goto, 0)
+		self.push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 7 do-end
 		return emitNode(self, node, ast.Block)
@@ -582,8 +581,12 @@ emitValueSwitch = {
 	end,
 	function(self, node, outputs) -- 6 ...
 		return emit0(self, node, outputs, function(self, node)
-			self:push(bc.LoadVarg, outputs)
-			return outputs
+			if outputs == -1 then
+				-- TODO pipe
+			else
+				self:push(bc.LoadVarg, outputs)
+				return outputs
+			end
 		end)
 	end,
 	function(self, node, outputs) -- 7 Funcbody
