@@ -33,8 +33,8 @@ return {
 	Syscall = 31,
 	LoadParam = 32,
 	StoreParam = 33,
-	LoadFree = 34,
-	StoreFree = 35,
+	LoadFreeBox = 34,
+	StoreFreeBox = 35,
 	LoadParamBox = 36,
 	StoreParamBox = 37,
 	BoxParam = 38,
@@ -59,4 +59,6 @@ return {
 	Shr = 57,
 	Shl = 58,
 	Concat = 59,
+	LoadFree = 60,
+	TblAdd1 = 61,
 }

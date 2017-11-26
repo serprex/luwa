@@ -100,18 +100,18 @@ function asmmeta:usename(node)
 end
 
 local namety_loads = {
-	Free = bc.LoadFree,
-	ParamBox = bc.LoadParamBox,
-	LocalBox = bc.LoadLocalBox,
 	Param = bc.LoadParam,
 	Local = bc.LoadLocal,
+	ParamBox = bc.LoadParamBox,
+	LocalBox = bc.LoadLocalBox,
+	FreeBox = bc.LoadFreeBox,
 }
 local namety_stores = {
-	Free = bc.StoreFree,
-	ParamBox = bc.StoreParamBox,
-	LocalBox = bc.StoreLocalBox,
 	Param = bc.StoreParam,
 	Local = bc.StoreLocal,
+	ParamBox = bc.StoreParamBox,
+	LocalBox = bc.StoreLocalBox,
+	FreeBox = bc.StoreFreeBox,
 }
 local function idxtbl(tbl, namety)
 	local idx = #tbl
@@ -119,18 +119,20 @@ local function idxtbl(tbl, namety)
 	idxtbl[idx+1] = namety
 	return idx
 end
-function asmmeta:opnamety(ops, namety)
-	local idx = namety.isparam
-	if not idx then
-		if namety.func ~= self then
-			idx = self.frees[namety] or idxtbl(self.frees, namety)
-		else
-			idx = self.locals[namety] or idxtbl(self.locals, namety)
-		end
+function asmmeta:nameidx(namety)
+	if namety.isparam then
+		return namety.isparam
+	elseif namety.func ~= self then
+		return self.frees[namety] or idxtbl(self.frees, namety)
+	else
+		return self.locals[namety] or idxtbl(self.locals, namety)
 	end
+end
+function asmmeta:opnamety(ops, namety)
+	local idx = self:nameidx(namety)
 	if namety.free then
 		if name.func ~= self then
-			self:push(ops.Free, idx)
+			self:push(ops.FreeBox, idx)
 		elseif namety.isparam then
 			self:push(ops.ParamBox, idx)
 		else
@@ -383,7 +385,7 @@ local function emitFunccall(self, node, outputs)
 	return emitCall(self, node, outputs)
 end
 local function emitExplist(self, node, outputs)
-	local lastv
+	local n, lastv = 0
 	for i, v in selectNodes(node, ast.ExpOr) do
 		if lastv then
 			if outputs == 0 then
@@ -392,12 +394,12 @@ local function emitExplist(self, node, outputs)
 				if outputs ~= -1 then
 					outputs = outputs - 1
 				end
-				visitEmit[ast.ExpOr](self, lastv, 1)
+				n = n + visitEmit[ast.ExpOr](self, lastv, 1)
 			end
 		end
 		lastv = v
 	end
-	return visitEmit[ast.ExpOr](self, lastv, outputs)
+	return n, visitEmit[ast.ExpOr](self, lastv, outputs)
 end
 emitStatSwitch = {
 	nop, -- 1 ;
@@ -498,7 +500,7 @@ emitStatSwitch = {
 		visitEmit[ast.Block](self, node, ast.Block)
 	end,
 	function(self, node) -- 12 generic for
-		visitExplist(self, node, 3)
+		emitExplist(self, node, 3)
 		-- TODO bind variables, loop
 		visitEmit[ast.Block](self, node, ast.Block)
 	end,
@@ -582,7 +584,7 @@ emitValueSwitch = {
 	function(self, node, outputs) -- 6 ...
 		return emit0(self, node, outputs, function(self, node)
 			if outputs == -1 then
-				-- TODO pipe
+				return { varg = true }
 			else
 				self:push(bc.LoadVarg, outputs)
 				return outputs
@@ -798,8 +800,17 @@ visitEmit = {
 	[ast.Block] = function(self, node)
 		emitNodes(self, node, ast.Stat)
 		if hasToken(node, lex._return) then
-			emitExplist(self, node, -1)
-			-- TODO RETURN
+			local res = emitExplist(self, node, -1)
+			if type(res) == 'number' then
+				self:push(bc.Return, res)
+			elseif not res.varg then
+				assert(#res > 0, 'None varg, no call, yet complex return')
+				self:push(bc.ReturnCall, #res, table.unpack(res))
+			elseif #res > 0 then
+				self:push(bc.ReturnCallVarg, #res, table.unpack(res))
+			else
+				self:push(bc.ReturnVarg)
+			end
 		end
 	end,
 	[ast.Stat] = function(self, node)
@@ -853,25 +864,47 @@ visitEmit = {
 		end
 	end,
 	[ast.Args] = function(self, node, outputs)
-		-- TODO we need to either mark exp-depth for varcall or implement call chaining
-		local ty, n = node.type >> 5
+		local ty, res = node.type >> 5
 		if ty == 1 then
-			emitExplist(self, node, -1)
-			n = -1
+			local n
+			n, res = emitExplist(self, node, -1)
+			if type(res) ~= 'number' then
+				res = { n }
+			else
+				res[#res+1] = n
+			end
 		elseif ty == 2 then
 			emitNode(self, node, ast.Table)
-			n = 1
+			res = { 1 }
 		else
 			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
-			n = 1
+			res = { 1 }
 		end
-		-- TODO RetCall
-		self:push(bc.Call)
+		if outputs == -1 then
+			return res
+		else
+			local op
+			if res.varg then
+				op = bc.CallVarg
+			else
+				op = bc.Call
+			end
+			self:push(op, #res, table.unpack(res))
+			return outputs
+		end
 	end,
 	[ast.Funcbody] = function(self, node)
 		local func = self.funcs[node]
 		for i=1, #func do
-			self:loadname(func[i])
+			local name = func[i]
+			local idx = self:nameidx(name)
+			if name.func ~= self then
+				self:push(ops.LoadFree, idx)
+			elseif name.isparam then
+				self:push(ops.LoadParam, idx)
+			else
+				self:push(ops.LoadLocal, idx)
+			end
 		end
 		self:push(bc.LoadFunc, #func, self:const(func.func))
 	end,
@@ -885,8 +918,19 @@ visitEmit = {
 				emitNode(self, node, ast.ExpOr, 1)
 				self:push(bc.TblAdd)
 			end
-			-- TODO have exp concat to table
-			emitNode(self, node, ast.ExpOr, -1)
+			local res = emitNode(self, node, ast.ExpOr, -1)
+			if type(res) == 'number' then
+				assert(res == 1, 'Somehow appending finite multiple values to table')
+				self:push(bc.LoadConst, self:const(#ary)-1)
+				self:push(bc.TblAdd1)
+			elseif not res.varg then
+				assert(#res > 0, 'None varg, no call, yet complex append')
+				self:push(bc.AppendCall, #res, table.unpack(res))
+			elseif #res > 0 then
+				self:push(bc.ReturnCallVarg, #res, table.unpack(res))
+			else
+				self:push(bc.AppendVarg)
+			end
 		end
 	end,
 	[ast.Field] = function(self, node, ary)
