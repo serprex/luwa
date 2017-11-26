@@ -115,8 +115,8 @@ local namety_stores = {
 }
 local function idxtbl(tbl, namety)
 	local idx = #tbl
-	idxtbl[namety] = idx
-	idxtbl[idx+1] = namety
+	tbl[namety] = idx
+	tbl[idx+1] = namety
 	return idx
 end
 function asmmeta:nameidx(namety)
@@ -399,7 +399,11 @@ local function emitExplist(self, node, outputs)
 		end
 		lastv = v
 	end
-	return n, visitEmit[ast.ExpOr](self, lastv, outputs)
+	if lastv then
+		return n, visitEmit[ast.ExpOr](self, lastv, outputs)
+	else
+		return n, 0
+	end
 end
 emitStatSwitch = {
 	nop, -- 1 ;
@@ -800,16 +804,16 @@ visitEmit = {
 	[ast.Block] = function(self, node)
 		emitNodes(self, node, ast.Stat)
 		if hasToken(node, lex._return) then
-			local res = emitExplist(self, node, -1)
+			local n, res = emitExplist(self, node, -1)
 			if type(res) == 'number' then
-				self:push(bc.Return, res)
+				self:push(bc.Return, n + res)
 			elseif not res.varg then
 				assert(#res > 0, 'None varg, no call, yet complex return')
-				self:push(bc.ReturnCall, #res, table.unpack(res))
+				self:push(bc.ReturnCall, n, #res, table.unpack(res))
 			elseif #res > 0 then
-				self:push(bc.ReturnCallVarg, #res, table.unpack(res))
+				self:push(bc.ReturnCallVarg, n, #res, table.unpack(res))
 			else
-				self:push(bc.ReturnVarg)
+				self:push(bc.ReturnVarg, n)
 			end
 		end
 	end,
@@ -817,7 +821,6 @@ visitEmit = {
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node, isload)
-		print('var', node.type)
 		if node.type >> 5 == 1 then
 			local name = selectIdent(node)
 			if isload then
@@ -828,7 +831,7 @@ visitEmit = {
 		else
 			emitNode(self, node, ast.Prefix)
 			emitNodes(self, node, ast.Suffix)
-			return emitNode(self, node, ast.Index, isload)
+			emitNode(self, node, ast.Index, isload)
 		end
 	end,
 	[ast.Exp] = function(self, node, out)
@@ -842,7 +845,6 @@ visitEmit = {
 			else
 				for op in shunt(node) do
 					local ty = op.type & 31
-					print(ty, op:val(), op.type >> 5)
 					if ty == ast.Binop then
 						visitEmit[ast.Binop](self, op)
 					elseif ty == ast.Value then
@@ -889,7 +891,7 @@ visitEmit = {
 			else
 				op = bc.Call
 			end
-			self:push(op, #res, table.unpack(res))
+			self:push(op, outputs, #res, table.unpack(res))
 			return outputs
 		end
 	end,
@@ -914,22 +916,19 @@ visitEmit = {
 		emitNodes(self, node, ast.Field, ary)
 		if #ary > 0 then
 			for i=1,#ary-1 do
-				self:push(bc.LoadConst, self:const(i)-1)
 				emitNode(self, node, ast.ExpOr, 1)
-				self:push(bc.TblAdd)
 			end
 			local res = emitNode(self, node, ast.ExpOr, -1)
 			if type(res) == 'number' then
 				assert(res == 1, 'Somehow appending finite multiple values to table')
-				self:push(bc.LoadConst, self:const(#ary)-1)
-				self:push(bc.TblAdd1)
+				self:push(bc.Append, #ary)
 			elseif not res.varg then
 				assert(#res > 0, 'None varg, no call, yet complex append')
-				self:push(bc.AppendCall, #res, table.unpack(res))
+				self:push(bc.AppendCall, #ary-1, #res, table.unpack(res))
 			elseif #res > 0 then
-				self:push(bc.ReturnCallVarg, #res, table.unpack(res))
+				self:push(bc.AppendCallVarg, #ary-1, #res, table.unpack(res))
 			else
-				self:push(bc.AppendVarg)
+				self:push(bc.AppendVarg, #ary-1)
 			end
 		end
 	end,
@@ -991,7 +990,7 @@ function asmmeta:synth()
 			self.namety[k] = nil
 		end
 	end
-	asm:push(bc.Return)
+	self:push(bc.Return, 0)
 	for k,v in pairs(self.gotos) do
 		self:patch(k, self.labels[v])
 	end

@@ -11,7 +11,7 @@ return {
 	TblNew = 9,
 	TblSet = 10,
 	TblAdd = 11,
-	Ret = 12,
+	Return = 12,
 	Call = 13,
 	RetCall = 14,
 	LoadConst = 15,
@@ -60,5 +60,5 @@ return {
 	Shl = 58,
 	Concat = 59,
 	LoadFree = 60,
-	TblAdd1 = 61,
+	Append = 61,
 }

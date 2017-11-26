@@ -36,7 +36,7 @@ local function pprintcore(x, dep, hist)
    for k,v in pairs(x) do
       if k ~= 'mother' and k ~= 'father' then
       if type(v) == 'table' then
-         print(a .. tostring(k))
+         print(a .. tostring(k), v)
          pprintcore(v, dep+1, hist)
       elseif k == 'lex' and type(v) == 'string' then
          print(a .. k, table.concat(table.pack(string.byte(v, 1, #v)), ','))
