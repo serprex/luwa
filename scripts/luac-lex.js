@@ -14,7 +14,6 @@ function ta2buf(x) {
 (async function() {
 	const buf = await promisify(fs.readFile)(process.argv[2]);
 	const rt = await runt();
-	rt.initstack();
 	const src = rt.newstr(buf.toString('utf8'));
 	rt.mod.lex(src.val);
 	const tokens = rt.rawobj2js(rt.mod.nthtmp(12));

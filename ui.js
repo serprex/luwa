@@ -13,8 +13,6 @@ const assert = {
 const util = require("./util");
 document.getElementById("btnRt").addEventListener("click", (s, e) => {
 	require("./rt")().then(rt => {
-		rt.initstack();
-
 		console.log(window.mod = rt);
 		let newt = rt.newtbl();
 		let news = rt.newstr("asdf");
@@ -86,8 +84,6 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 });
 document.getElementById("btnGo").addEventListener("click", (s, e) => {
 	require("./rt")().then(rt => {
-		rt.initstack();
-
 		let codestr = rt.newstr(taBoard.value);
 		console.log(rt.strbytes(codestr));
 		rt.mod.lex(codestr.val);

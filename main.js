@@ -18,7 +18,6 @@ function readline() {
 
 console.log(process.argv);
 rt().then(runt => {
-	runt.initstack();
 	if (process.argv.length < 3) {
 		let e = env();
 		while (true) {

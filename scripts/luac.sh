@@ -1,2 +1,8 @@
 #!/bin/sh
-./scripts/luac-lex.js "$1" | ./scripts/luac-bcgen.lua #> "$1".bc
+OUT="$1"
+shift
+echo 'return function() return ' > "$OUT"
+for f in "$@"
+do ./scripts/luac-lex.js "$f" | ./scripts/luac-bcgen.lua >> "$OUT"
+done
+echo 'end' > "$OUT"

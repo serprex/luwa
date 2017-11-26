@@ -24,8 +24,15 @@ metamethods: index newindex mode call metatable tostring len gc eq lt le
 metamath: unm add sub mul div idiv mod pow concat band bor bxor bnot bshl bshr
 ]]
 
+GN = {
+	integer = {},
+	float = {},
+}
 GS = {}
 GF = {}
+function getGC(n)
+	return GN[math.type(n)][n]
+end
 local function addHeader(base, mem, ty)
 	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', base+#mem), 1, 4)
 	mem[#mem+1] = ty
@@ -41,14 +48,45 @@ local function addString(base, mem, s)
 		mem[#mem+1] = 0
 	end
 end
+local function addNumber(base, mem, n)
+	local ty = math.type(n)
+	assert(ty, 'Non numeric addNumber')
+	local lty, bin
+	if ty == 'integer' then
+		lty, bin = types.int, string.pack('<i8', s[2])
+	else
+		lty, bin = types.float, string.pack('<d', s[2])
+	end
+	if not GN[ty][bin] then
+		GN[ty][bin] = base + #mem
+		addHeader(base, mem, lty)
+		mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4],
+			mem[#mem+5],mem[#mem+6],mem[#mem+7],mem[#mem+8] = string.byte(bin, 1, 8)
+		mem[#mem+1],mem[#mem+2],mem[#mem+3] = 0,0,0
+	end
+	return GN[ty][bin]
+end
 local function addStatics(base, mem, ...)
 	local fid = 0
 	for i = 1,select('#', ...) do
 		local s, sbase = select(i, ...), base + #mem
-		if type(s) == 'string' then
-			GS[s] = sbase
-			addString(base, mem, s)
-		else -- { funcname, paramc, isdotdotdot, bc }
+		local st = type(s)
+		while st == 'function' do
+			s = s()
+			st = type(s)
+		end
+		if st == 'string' then
+			if not GS[s] then
+				GS[s] = sbase
+				addString(base, mem, s)
+			end
+		elseif st == 'number' then
+			addNumber(base, mem, s)
+		elseif #s == 2 then
+			local name, snty = s[1], math.type(s[2])
+			assert(snty, '2-pair assumes numeric')
+			GN[ty][name] = addNumber(base, mem, s[2])
+		else -- { funcname, paramc, isdotdotdot, bc, consts?, localc? }
 			fid = fid - 1
 			GF[s[1]] = sbase
 			addHeader(base, mem, types.functy)
@@ -59,13 +97,25 @@ local function addStatics(base, mem, ...)
 				mem[#mem+1] = 0
 			end
 			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', sbase+functy.sizeof),1,4)
+			local vbase = #mem
 			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
 			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
+			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s[6] or 0),1,4)
 			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s[2]),1,4)
 			mem[#mem+1],mem[#mem+2] = 0,0
 			assert(base+#mem == sbase+functy.sizeof)
 			addString(base, mem, s[4])
+			local s5 = s[5]
+			if s5 then
+				mem[vbase+1],mem[vbase+2],mem[vbase+3],mem[vbae+4] = string.byte(string.pack('<i4', base+#mem),1,4)
+				addHeader(base, mem, types.vec)
+				mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', #s5),1,4)
+				for i=1, #s5 do
+					local s5i = s5()
+					assert(s5i, 'Got falsy value from s5')
+					mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s5i),1,4)
+				end
+			end
 		end
 	end
 	HEAPBASE = base + #mem
@@ -103,7 +153,8 @@ data(memory, addStatics(4, {
 	{'coro_status', 0, false, ''},
 	{'debug_getmetatable', 1, false, ''},
 	{'debug_setmetatable', 1, false, ''},
-	{'math_type', 1, false, ''}
+	{'math_type', 1, false, ''},
+	require('../bootrt')()
 ))
 
 heaptip = global(i32, true, HEAPBASE)

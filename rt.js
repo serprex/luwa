@@ -33,6 +33,10 @@ function rtwathen(ab) {
 		},
 	}}).then(mod => {
 		ffi.mod = mod.instance.exports;
+		const luastack = ffi.mkref(ffi.mod.newcoro());
+		ffi.mod.setluastack(luastack.val);
+		const mem = new Uint8Array(ffi.mem.buffer);
+		util.writeuint32(mem, luastack.val + 14, ffi.mod.newvecbuf(32));
 		return ffi;
 	});
 }
@@ -46,12 +50,6 @@ function FFI(mem) {
 	this.mod = null;
 	this.mem = mem;
 	this.handles = new Set();
-}
-FFI.prototype.initstack = function() {
-	const luastack = this.mkref(this.mod.newcoro());
-	this.mod.setluastack(luastack.val);
-	const mem = new Uint8Array(this.mem.buffer);
-	util.writeuint32(mem, luastack.val + 14, this.mod.newvecbuf(32));
 }
 FFI.prototype.free = function(h) {
 	this.handles.delete(h);
