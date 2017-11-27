@@ -6,7 +6,6 @@ const assert = require("assert"),
 
 require("../rt")().then(rt => {
 	const e = require("../env")();
-	rt.initstack();
 
 	let newt = rt.newtbl();
 	let news = rt.newstr("asdf");

@@ -6,7 +6,7 @@ I'll try avoid my usual stream of consciousness here, instead that's at [my devl
 
 `main.js` is the nodejs entrypoint
 
-While there's a semi functional implementation of Lua now in JS, it isn't WASM. Work towards the wasm engine is in `rt/`. `rt/make.lua` is the entry point for the assmembler. This produces an `rt.wasm` which `rt.js` contains glue code for
+WASM runtime is in `rt/`. `rt/make.lua` is the entry point for the assmembler. This produces an `rt.wasm` which `rt.js` contains glue code for
 
 The GC is a LISP2 compacting GC. GC performance is a low priority given the WASM GC RFC
 
