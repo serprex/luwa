@@ -156,7 +156,7 @@ return function(lx)
 		o(ast.Table),
 		slit)
 	sf(ast.Funcbody, s(lex._pl), maybe(oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(ast.Block), s(lex._end))
-	sf(ast.Table, s(lex._cl), maybe(seq(o(ast.Field), many(seq(ast.Fieldsep, o(ast.Field))), maybe(ast.Fieldsep))), s(lex._cr))
+	sf(ast.Table, s(lex._cl), maybe(seq(o(ast.Field), many(seq(Fieldsep, o(ast.Field))), maybe(Fieldsep))), s(lex._cr))
 	of(ast.Field,
 		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr), s(lex._set), o(ast.ExpOr)),
 		seq(name, s(lex._set), o(ast.ExpOr)),
@@ -205,14 +205,7 @@ return function(lx)
 	end
 
 	local root = Builder(0, 1, nil, nil, -2)
-	for i=1,#lx.lex,50 do
-		print(i, table.concat({string.byte(lx.lex, i, i+49)}, ','))
-	end
-	for k,v in ipairs(lx.ssr) do
-		print(k,v)
-	end
 	for child in rules[ast.Block](root, root) do
-		print(child, child.nx, string.byte(lx.lex, child.nx))
 		if string.byte(lx.lex, child.nx) == 0 then
 			repeat
 				local prev_father = child

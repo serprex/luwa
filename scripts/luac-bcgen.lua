@@ -20,12 +20,7 @@ local bcgen = require 'bcgen'
 local lx = { lex = lx, snr = snr, ssr = ssr }
 local root = astgen(lx)
 local function pprintcore(x, dep, hist)
-   local a = {}
-   for i=1,dep do
-      a[i] = ' '
-   end
-   local a = table.concat(a, ' ')
-   --local a = tostring(dep)
+   local a = string.rep(' ', dep)
    if hist[x] then
       return print(a .. '...', x)
    end
@@ -49,11 +44,11 @@ end
 local function pprint(x)
    return pprintcore(x, 0, {})
 end
-print('AST')
-pprint(root)
+-- print('AST')
+-- pprint(root)
 local bcg = bcgen(lx, root)
-print('ASM')
-pprint(bcg)
+-- print('ASM')
+-- pprint(bcg)
 
 local function sanitize(s)
    return 'string.char(' .. table.concat(table.pack(string.byte(s, 1, #s)), ',') .. ')'
@@ -67,6 +62,19 @@ local prevsult = {
 }
 local strconst = {}
 local funcnames = {}
+local function func2lua(func)
+   local name = 'boot' .. funcnums
+   funcnums = funcnums + 1
+   local subfuncs = {}
+   local consts = {}
+   for i=1, #func.consts do
+      local c = func.consts[i]
+      local ct = math.type(c) or type(c)
+      consts[#consts+1] = strconst[ct](c)
+   end
+   result[#result+1] = "{'" .. name .. "'," .. func.pcount .. "," .. tostring(func.isdotdotdot) .. ",string.char(" .. table.concat(func.bc, ',') .. "),{" .. table.concat(consts, ',') .. "}," .. #func.locals .. "}"
+   return name
+end
 function strconst.integer(c)
    if prevsult.integer[c] then
       return prevsult.integer[c]
@@ -93,25 +101,14 @@ function strconst.string(c)
    else
       local pack = sanitize(c)
       result[#result+1] = pack
-      prevsult.string[c] = 'function() return GS[' .. pack .. ')] end'
+      prevsult.string[c] = 'function() return GS[' .. pack .. '] end'
       return prevsult.string[c]
    end
 end
 function strconst.table(c)
    return 'function() return GF.' .. func2lua(c) .. ' end'
 end
-local function func2lua(func)
-   local name = 'boot' .. funcnums
-   funcnums = funcnums + 1
-   local subfuncs = {}
-   local consts = {}
-   for i=1, #func.consts do
-      local c = func.consts[i]
-      local ct = math.type(c) or type(c)
-      consts[#consts+1] = strconst[ct](c)
-   end
-   result[#result+1] = "{'" .. name .. "'," .. func.pcount .. "," .. tostring(func.isdotdotdot) .. ",string.char(" .. table.concat(func.bc, ',') .. "),{" .. table.concat(consts, ',') .. "}," .. #func.locals .. "}"
-   return name
-end
 func2lua(bcg)
-print(table.concat(result, ','))
+local f = assert(io.open(..., 'a'))
+f:write(table.concat(result, ','))
+f:close()

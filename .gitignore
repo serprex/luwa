@@ -1,4 +1,5 @@
 .ninja_*
 quire.js
 rt.wasm
+bootrt.lua
 lua-5.3.4-tests/

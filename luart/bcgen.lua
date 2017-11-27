@@ -4,20 +4,16 @@ local bc = require 'bc'
 
 local function nop()
 end
-local function namesort(a, b)
-	return a.idx < b.idx
-end
 
 local asmmeta = {}
 local asmmt = { __index = asmmeta }
-local function Assembler(lx, uplink)
+local function Assembler(lx)
 	return setmetatable({
 		lx = lx,
 		pcount = 0,
 		locals = {},
 		frees = {},
 		isdotdotdot = false,
-		uplink = uplink,
 		scopes = nil,
 		breaks = nil,
 		consts = {},
@@ -56,7 +52,7 @@ function asmmeta:breakscope(f)
 	self.breaks = self.breaks.prev
 end
 function asmmeta:scope(f)
-	self.scopes = { prev = self.scopes }
+	self.scopes = setmetatable({ prev = self.scopes }, { __index = self.scopes })
 	f(self)
 	for i=1, #self.scopes do
 		local name = self.scopes[i]
@@ -88,7 +84,8 @@ function asmmeta:usename(node)
 	if name then
 		self.namety[node] = name
 	else
-		name = self.names[1]
+		name = assert(self.names[1])
+		self.namety[node] = { env = name }
 	end
 	if name.func ~= self then
 		if name.free then
@@ -105,6 +102,7 @@ local namety_loads = {
 	ParamBox = bc.LoadParamBox,
 	LocalBox = bc.LoadLocalBox,
 	FreeBox = bc.LoadFreeBox,
+	Env = bc.Idx,
 }
 local namety_stores = {
 	Param = bc.StoreParam,
@@ -112,6 +110,7 @@ local namety_stores = {
 	ParamBox = bc.StoreParamBox,
 	LocalBox = bc.StoreLocalBox,
 	FreeBox = bc.StoreFreeBox,
+	Env = bc.TblSet,
 }
 local function idxtbl(tbl, namety)
 	local idx = #tbl
@@ -120,6 +119,7 @@ local function idxtbl(tbl, namety)
 	return idx
 end
 function asmmeta:nameidx(namety)
+	assert(namety)
 	if namety.isparam then
 		return namety.isparam
 	elseif namety.func ~= self then
@@ -128,10 +128,14 @@ function asmmeta:nameidx(namety)
 		return self.locals[namety] or idxtbl(self.locals, namety)
 	end
 end
-function asmmeta:opnamety(ops, namety)
+function asmmeta:opnamety(ops, name, namety)
 	local idx = self:nameidx(namety)
-	if namety.free then
-		if name.func ~= self then
+	if namety.env then
+		self:opnamety(namety_loads, nil, namety.env)
+		self:push(bc.LoadConst, self:const(self.lx.ssr[name:int()+1])-1)
+		self:push(ops.Env)
+	elseif namety.free then
+		if namety.func ~= self then
 			self:push(ops.FreeBox, idx)
 		elseif namety.isparam then
 			self:push(ops.ParamBox, idx)
@@ -145,24 +149,10 @@ function asmmeta:opnamety(ops, namety)
 	end
 end
 function asmmeta:loadname(name)
-	local namety = self.namety[name]
-	if namety then
-		self:opnamety(namety_loads, namety)
-	else
-		self:opnamety(namety_loads, self.names[1])
-		self:push(bc.LoadConst, self.lx.ssr[name:int()+1])
-		self:push(bc.Idx)
-	end
+	return self:opnamety(namety_loads, name, self.namety[name])
 end
 function asmmeta:storename(name)
-	local namety = self.namety[name]
-	if namety then
-		self:opnamety(namety_stores, namety)
-	else
-		self:opnamety(namety_loads, self.names[1])
-		self:push(bc.LoadConst, self.lx.ssr[name:int()+1])
-		self:push(bc.TblSet)
-	end
+	return self:opnamety(namety_stores, name, self.namety[name])
 end
 
 local nextNode = {}
@@ -293,7 +283,9 @@ scopeStatSwitch = {
 		scopeNodes(self, node, ast.Var)
 	end,
 	function(self, node) -- 3 call
-		scopeNode(self, node, ast.Functioncall)
+		scopeNode(self, node, ast.Prefix)
+		scopeNodes(self, node, ast.Suffix)
+		scopeNode(self, node, ast.Args)
 	end,
 	function(self, node) -- 4 label
 		local name = selectIdent(node):int()
@@ -331,7 +323,7 @@ scopeStatSwitch = {
 		scopeNodes(self, node, ast.ExpOr)
 		for i, block in selectNodes(node, ast.Block) do
 			self:scope(function()
-				visitScope[ty](self, block)
+				visitScope[ast.Block](self, block)
 			end)
 		end
 	end,
@@ -351,18 +343,14 @@ scopeStatSwitch = {
 		scopeNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 13 func
-		local clasm = Assembler(self.lx, self)
-		local fruit = selectNode(node, ast.Funcbody)
 		self:usename(selectIdent(node))
-		visitScope[ast.Funcbody](clasm, fruit, hasToken(node, lex._colon))
+		scopeNode(self, node, ast.Funcbody, hasToken(node, lex._colon))
 	end,
 	function(self, node) -- 14 local func
-		local clasm = Assembler(self.lx, self)
-		local fruit = selectNode(node, ast.Funcbody)
 		local name = selectIdent(node)
 		self:name(name:int())
 		self:usename(name)
-		visitScope[ast.Funcbody](clasm, fruit)
+		scopeNode(self, node, ast.Funcbody)
 	end,
 	function(self, node) -- 15 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
@@ -479,7 +467,7 @@ emitStatSwitch = {
 				emitNode(self, node, ast.Block)
 				if i > 2 then
 					eob[#eob+1] = #self.bc+1
-					emitNode(bc.Jmp, 0)
+					self:push(bc.Jmp, 0)
 				end
 				if condbr then
 					self:patch(condbr, #self.bc)
@@ -501,15 +489,15 @@ emitStatSwitch = {
 			self:push(bc.LoadConst, 1)
 		end
 		-- TODO bind variables, loop
-		visitEmit[ast.Block](self, node, ast.Block)
+		emitNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 12 generic for
 		emitExplist(self, node, 3)
 		-- TODO bind variables, loop
-		visitEmit[ast.Block](self, node, ast.Block)
+		emitNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 13 func
-		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
+		emitNode(self, node, ast.Funcbody)
 		local first, nlast = true
 		for i, name in selectIdents(node) do
 			if nlast then
@@ -517,21 +505,21 @@ emitStatSwitch = {
 					self:loadname(nlast)
 					first = false
 				else
-					self:push(bc.LoadConst, self:const(self.ssr[nlast+1])-1)
+					self:push(bc.LoadConst, self:const(self.lx.ssr[nlast:int()+1])-1)
 					self:push(bc.TblGet)
 				end
 			end
-			nlast = name:int()
+			nlast = name
 		end
 		if first then
 			self:storename(nlast)
 		else
-			self:push(bc.LoadConst, self:const(self.ssr[nlast+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.ssr[nlast:int()+1])-1)
 			self:push(bc.TblSet)
 		end
 	end,
 	function(self, node) -- 14 local func
-		visitEmit[ast.Funcbody](self, node, ast.Funcbody)
+		emitNode(self, node, ast.Funcbody)
 		self:storename(selectIdent(node))
 	end,
 	function(self, node) -- 15 locals=exps
@@ -622,12 +610,12 @@ emitFieldSwitch = {
 		local f, obj, idx = selectNodes(node, ast.ExpOr)
 		local i, key = f(obj, idx)
 		visitEmit[ast.ExpOr](self, key, 1)
-		local _i, val = f(obj, i)
+		local i, val = f(obj, i)
 		visitEmit[ast.ExpOr](self, val, 1)
 		self:push(bc.TblAdd)
 	end,
 	function(self, node) -- 2 name = exp
-		local i, val = nextString(node, #node.fathered)
+		local i, val = nextIdent(node, #node.fathered)
 		self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
 		emitNode(self, node, ast.ExpOr, 1)
 		self:push(bc.TblAdd)
@@ -645,30 +633,18 @@ visitScope = {
 		return scopeStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node)
+		print('scope', node)
 		if node.type >> 5 == 1 then
 			self:usename(selectIdent(node))
 		else
 			scopeNode(self, node, ast.Prefix)
+			scopeNodes(self, node, ast.Suffix)
 			scopeNode(self, node, ast.Index)
 		end
 	end,
 	[ast.Exp] = function(self, node)
-		if #node.fathered == 1 then
-			assert((node.fathered[1].type & 31) == ast.Value)
-			return visitScope[ast.Value](node.fathered[1], node)
-		elseif node.type >> 5 == 1 then
-			return scopeNodes(self, node, ast.Exp)
-		else
-			for i = #node.fathered, 1, -1 do
-				local n = node.fathered[i]
-				local nt = n.type & 31
-				if nt == ast.Exp then
-					visitScope[ast.Exp](self, n)
-				elseif nt == ast.Value then
-					visitScope[ast.Value](self, n)
-				end
-			end
-		end
+		scopeNodes(self, node, ast.Value)
+		scopeNodes(self, node, ast.Exp)
 	end,
 	[ast.Prefix] = function(self, node)
 		if node.type >> 5 == 1 then
@@ -686,16 +662,18 @@ visitScope = {
 		end
 	end,
 	[ast.Funcbody] = function(self, node, isMeth)
-		local isdotdotdot = hasToken(node, lex._dotdotdot)
-		local names = {selectIdents(node)}
+		local names = {}
+		for i, n in selectIdents(node) do
+			names[#names+1] = n
+		end
 		local pcount = #names
 		if isMeth then
 			pcount = pcount + 1
 		end
-		local asm = Assembler(lx, self)
-		asm.scopes = { prev = self.scopes }
+		local asm = Assembler(self.lx)
+		asm.scopes = self.scopes
 		asm.names = self.names
-		asm.isdotdotdot = isdotdotdot
+		asm.isdotdotdot = hasToken(node, lex._dotdotdot)
 		asm.pcount = pcount
 		local params = {}
 		asm:scope(function()
@@ -707,23 +685,25 @@ visitScope = {
 				local param = asm:name(names[i]:int(), #params)
 				params[#params+1] = param
 			end
-			scopeNode(asm, ast.Block)
+			scopeNode(asm, node, ast.Block)
 		end)
 		for i=1,#params do
 			if params[i].free then
 				asm:push(bc.BoxParam, i-1)
 			end
 		end
-		emitNode(asm, ast.Block)
+		emitNode(asm, node, ast.Block)
 		asm:synth()
 		local func = { func = asm }
 		for k, v in pairs(asm.namety) do
-			if v.free[asm] and v.func ~= asm then
+			if v.free and v.free[asm] and v.func ~= asm then
 				v.free[self] = true
 				func[#func+1] = v
 			end
 		end
-		table.sort(func, namesort)
+		table.sort(func, function(a, b)
+			return asm.frees[a] < asm.frees[b]
+		end)
 		self.funcs[node] = func
 	end,
 	[ast.Table] = function(self, node)
@@ -736,18 +716,20 @@ visitScope = {
 	[ast.Unop] = nop,
 	[ast.Value] = function(self, node)
 		local t = node.type >> 5
-		-- TODO if t == 5 then assert(self.isdotdotdot)
 		if t == 7 then
 			scopeNode(self, node, ast.Funcbody)
 		elseif t == 8 then
 			scopeNode(self, node, ast.Table)
 		elseif t == 9 then
 			scopeNode(self, node, ast.Prefix)
+			scopeNodes(self, node, ast.Suffix)
 			scopeNode(self, node, ast.Args)
 		elseif t == 10 then
 			scopeNode(self, node, ast.Var)
 		elseif t == 11 then
 			scopeNode(self, node, ast.ExpOr)
+		else
+			assert(t ~= 6 or self.isdotdotdot, '... outside of ... context')
 		end
 	end,
 	[ast.Index] = function(self, node)
@@ -775,7 +757,7 @@ local function emitShortCircuitFactory(ty, opcode)
 		if #node.fathered == 1 then
 			prod = visitEmit[ty](self, node.fathered[1], out)
 		else
-			for i, n in selectNode(node, ty) do
+			for i, n in selectNodes(node, ty) do
 				visitEmit[ty](self, n, 1)
 				if lab then
 					self:patch(lab, #self.bc)
@@ -821,6 +803,7 @@ visitEmit = {
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node, isload)
+		print('emit', node)
 		if node.type >> 5 == 1 then
 			local name = selectIdent(node)
 			if isload then
@@ -860,7 +843,7 @@ visitEmit = {
 	end,
 	[ast.Prefix] = function(self, node)
 		if node.type >> 5 == 1 then
-			self:loadname(selectIdent(node):int())
+			self:loadname(selectIdent(node))
 		else
 			emitNode(self, node, ast.ExpOr, 1)
 		end
@@ -870,7 +853,7 @@ visitEmit = {
 		if ty == 1 then
 			local n
 			n, res = emitExplist(self, node, -1)
-			if type(res) ~= 'number' then
+			if type(res) == 'number' then
 				res = { n }
 			else
 				res[#res+1] = n
@@ -901,11 +884,11 @@ visitEmit = {
 			local name = func[i]
 			local idx = self:nameidx(name)
 			if name.func ~= self then
-				self:push(ops.LoadFree, idx)
+				self:push(bc.LoadFree, idx)
 			elseif name.isparam then
-				self:push(ops.LoadParam, idx)
+				self:push(bc.LoadParam, idx)
 			else
-				self:push(ops.LoadLocal, idx)
+				self:push(bc.LoadLocal, idx)
 			end
 		end
 		self:push(bc.LoadFunc, #func, self:const(func.func))
@@ -945,7 +928,7 @@ visitEmit = {
 		end
 	end,
 	[ast.Unop] = function(self, node)
-		self:push(unaryOps[node.type >> 5])
+		self:push(unOps[node.type >> 5])
 	end,
 	[ast.Value] = function(self, node, outputs)
 		local results = emitValueSwitch[node.type >> 5](self, node, outputs)
@@ -998,13 +981,16 @@ function asmmeta:synth()
 end
 
 return function(lx, root)
-	local asm = Assembler(lx, nil)
+	assert(lx.ssr[1] == '_ENV')
+	assert(lx.ssr[2] == 'self')
+	local asm = Assembler(lx)
 	asm.pcount = 1
 	asm.isdotdotdot = true
 	local env
 	asm:scope(function()
-		env = asm:name(1, true) -- _ENV
+		env = asm:name(1, 0) -- _ENV
 		visitScope[ast.Block](asm, root)
+		print('end of all scopes')
 	end)
 	if env.free then
 		asm:push(bc.BoxParam, 0)
