@@ -132,6 +132,15 @@ loadframebase = func(i32, function(f)
 	f:sub()
 end)
 
+param0 = func(i32, function(f)
+	f:call(loadframebase)
+	f:i32load(dataframe.base)
+	f:loadg(oluastack)
+	f:i32load(coro.stack)
+	f:i32load(buf.ptr)
+	f:add()
+end)
+
 -- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
 eval = export('eval', func(i32, function(f)
 	local a, b, c, d, e,
