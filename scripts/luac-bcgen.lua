@@ -50,8 +50,17 @@ local bcg = bcgen(lx, root)
 -- print('ASM')
 -- pprint(bcg)
 
+local function sanitize_func(c)
+   if c == "'" then
+      return "\\'"
+   end
+   local b = string.byte(c)
+   if b < 32 or b > 126 then
+      return string.format('\\x%.2x', b)
+   end
+end
 local function sanitize(s)
-   return 'string.char(' .. table.concat(table.pack(string.byte(s, 1, #s)), ',') .. ')'
+   return "'" .. s:gsub('.', sanitize_func) .. "'"
 end
 local funcnums = 0
 local result = {}
@@ -72,7 +81,7 @@ local function func2lua(func)
       local ct = math.type(c) or type(c)
       consts[#consts+1] = strconst[ct](c)
    end
-   result[#result+1] = "{'" .. name .. "'," .. func.pcount .. "," .. tostring(func.isdotdotdot) .. ",string.char(" .. table.concat(func.bc, ',') .. "),{" .. table.concat(consts, ',') .. "}," .. #func.locals .. "}"
+   result[#result+1] = "{'" .. name .. "'," .. func.pcount .. "," .. tostring(func.isdotdotdot) .. "," .. sanitize(string.char(table.unpack(func.bc))) .. ",{" .. table.concat(consts, ',') .. "}," .. #func.locals .. "}"
    return name
 end
 function strconst.integer(c)

@@ -53,9 +53,9 @@ local function addNumber(base, mem, n)
 	assert(ty, 'Non numeric addNumber')
 	local lty, bin
 	if ty == 'integer' then
-		lty, bin = types.int, string.pack('<i8', s[2])
+		lty, bin = types.int, string.pack('<i8', n)
 	else
-		lty, bin = types.float, string.pack('<d', s[2])
+		lty, bin = types.float, string.pack('<d', n)
 	end
 	if not GN[ty][bin] then
 		GN[ty][bin] = base + #mem
@@ -107,11 +107,11 @@ local function addStatics(base, mem, ...)
 			addString(base, mem, s[4])
 			local s5 = s[5]
 			if s5 then
-				mem[vbase+1],mem[vbase+2],mem[vbase+3],mem[vbae+4] = string.byte(string.pack('<i4', base+#mem),1,4)
+				mem[vbase+1],mem[vbase+2],mem[vbase+3],mem[vbase+4] = string.byte(string.pack('<i4', base+#mem),1,4)
 				addHeader(base, mem, types.vec)
 				mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', #s5),1,4)
 				for i=1, #s5 do
-					local s5i = s5()
+					local s5i = s5[i]()
 					assert(s5i, 'Got falsy value from s5')
 					mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s5i),1,4)
 				end
