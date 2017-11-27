@@ -388,8 +388,7 @@ function funcmeta:brtable(...)
 	assert(n > 0)
 	self:emituint(n-1)
 	for i = 1, n do
-		local scp = select(i, ...)
-		assert(scp, 'nil case: ' .. i)
+		local scp = assert(select(i, ...), i)
 		self:emitscope(scp)
 	end
 end
@@ -423,7 +422,7 @@ function funcmeta:switch(expr, ...)
 		return self:brtable(scopes[0], table.unpack(scopes))
 	end
 	for idx=1,select('#', ...) do
-		local x = select(idx, ...)
+		local x = assert(select(idx, ...), idx)
 		local xt, oldj = type(x), jmp
 		if xt == 'function' then
 			function jmp(scp)
@@ -432,7 +431,7 @@ function funcmeta:switch(expr, ...)
 			end
 		elseif xt == 'table' then
 			function jmp(scp)
-				local lastx = x[#x]
+				local lastx = assert(x[#x])
 				for i=1,#x-1 do
 					assert(not scopes[x[i]])
 					scopes[x[i]] = lastx
@@ -442,7 +441,7 @@ function funcmeta:switch(expr, ...)
 		else
 			function jmp(scp)
 				assert(not scopes[x])
-				scopes[x] = scp
+				scopes[x] = assert(scp)
 				return oldj(scp)
 			end
 		end
