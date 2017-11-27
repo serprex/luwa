@@ -5,5 +5,6 @@ rule mkrt
 rule mkboot
  command=./scripts/luac.sh $out $in
 build quire.js:mkcjs lex.js luwa.js rt.js util.js
-build bootrt.lua:mkboot luart/prelude.lua | ./scripts/luac.sh ./scripts/luac-lex.js ./scripts/luac-bcgen.lua
+build scripts/lex.wasm:mkrt rt/override_bootrt.lua rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/stack.lua rt/obj.lua rt/std.lua rt/stdcoro.lua rt/stddebug.lua rt/string.lua rt/table.lua rt/util.lua rt/vm.lua rt/env.lua | rt/make.lua
+build bootrt.lua:mkboot luart/prelude.lua | ./scripts/luac.sh ./scripts/luac-lex.js ./scripts/luac-bcgen.lua ./scripts/lex.wasm
 build rt.wasm:mkrt rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/stack.lua rt/obj.lua rt/std.lua rt/stdcoro.lua rt/stddebug.lua rt/string.lua rt/table.lua rt/util.lua rt/vm.lua rt/env.lua | rt/make.lua

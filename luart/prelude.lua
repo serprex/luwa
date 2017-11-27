@@ -2,7 +2,7 @@ _VERSION = "Luwa 0.1"
 _G = _ENV
 
 math.mininteger = -9223372036854775808
-math.maxinteger = -9223372036854775807
+math.maxinteger = 9223372036854775807
 math.pi = 0x1.921fb54442d18p1
 math.huge = 1./0.
 package.config = '/\n;\n?\n!\n-\n'

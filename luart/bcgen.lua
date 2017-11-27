@@ -633,7 +633,6 @@ visitScope = {
 		return scopeStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node)
-		print('scope', node)
 		if node.type >> 5 == 1 then
 			self:usename(selectIdent(node))
 		else
@@ -803,7 +802,6 @@ visitEmit = {
 		return emitStatSwitch[node.type >> 5](self, node)
 	end,
 	[ast.Var] = function(self, node, isload)
-		print('emit', node)
 		if node.type >> 5 == 1 then
 			local name = selectIdent(node)
 			if isload then
@@ -990,7 +988,6 @@ return function(lx, root)
 	asm:scope(function()
 		env = asm:name(1, 0) -- _ENV
 		visitScope[ast.Block](asm, root)
-		print('end of all scopes')
 	end)
 	if env.free then
 		asm:push(bc.BoxParam, 0)

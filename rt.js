@@ -26,7 +26,7 @@ function rtwathen(ab) {
 			}
 		},
 		gcfix: () => {
-			let memta = new Uint8Array(mem.buffer);
+			const memta = new Uint8Array(mem.buffer);
 			for (const h of ffi.handles) {
 				h.val = util.readuint32(memta, h.val)&-8;
 			}
@@ -36,7 +36,8 @@ function rtwathen(ab) {
 		const luastack = ffi.mkref(ffi.mod.newcoro());
 		ffi.mod.setluastack(luastack.val);
 		const mem = new Uint8Array(ffi.mem.buffer);
-		util.writeuint32(mem, luastack.val + 14, ffi.mod.newvecbuf(32));
+		const newvec = ffi.mod.newvecbuf(32);
+		util.writeuint32(mem, luastack.val + 14, newvec);
 		return ffi;
 	});
 }

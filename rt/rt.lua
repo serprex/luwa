@@ -154,7 +154,7 @@ data(memory, addStatics(4, {
 	{'debug_getmetatable', 1, false, ''},
 	{'debug_setmetatable', 1, false, ''},
 	{'math_type', 1, false, ''},
-	require('./bootrt')()
+	(BOOTRT or require('./bootrt'))()
 ))
 
 heaptip = global(i32, true, HEAPBASE)
