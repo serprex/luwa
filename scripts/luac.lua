@@ -124,7 +124,7 @@ for i=2,select('#', ...) do
    end
    func2lua(bcg)
 end
-local f = assert(io.open(..., 'a'))
+local f = assert(io.open(..., 'w'))
 f:write('return function() return ')
 f:write(table.concat(result, ','))
 f:write(' end')

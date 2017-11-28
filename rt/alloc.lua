@@ -320,6 +320,25 @@ newvec = export('newvec', func(i32, i32, function(f, sz)
 	end)
 end))
 
+newvec1 = export('newvec1', func(i32, i32, function(f, val)
+	local p, n = f:locals(i32, 2)
+	f:load(val)
+	f:storeg(otmp)
+
+	f:i32(16)
+	f:i32(types.vec)
+	f:call(newobj)
+	f:tee(p)
+	f:i32(4)
+	f:i32store(vec.len)
+
+	f:load(p)
+	f:loadg(otmp)
+	f:i32store(vec.base)
+
+	f:load(p)
+end))
+
 newbuf = func(i32, function(f)
 	local p = f:locals(i32)
 	f:i32(16)
