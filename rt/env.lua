@@ -28,11 +28,15 @@ mkenv = func(function(f)
 				addkv(select(i, ...))
 			end
 			f:call(param0)
+			f:i32load(vec.base)
 			f:i32(name)
 			f:loadg(otmp)
 		end
 		f:call(tblset)
 	end
+
+	f:i32(GF.prelude0)
+	f:call(init)
 
 	f:call(newtbl)
 	f:storeg(otmp)
@@ -62,8 +66,6 @@ mkenv = func(function(f)
 	addmod(GS.table)
 	addmod(GS.utf8)
 
-	f:i32(GF.prelude0)
-	f:call(init)
 	f:loop(function(loop)
 		f:call(eval)
 		f:brif(loop)

@@ -45,4 +45,4 @@ rt().then(runt => {
 			*/
 		});
 	}
-});
+}).catch(e => setImmediate(() => { throw e; }));
