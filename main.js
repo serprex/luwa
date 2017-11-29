@@ -1,30 +1,26 @@
-#!/bin/node --expose-wasm
-const lua = require("./luwa"),
-	env = require("./env"),
-	fs = require("fs"),
+#!/bin/node
+const fs = require("fs"),
 	rt = require('./rt');
 
 function readline() {
 	var ret = "";
-	var buf = new Buffer(1);
+	const buf = new Buffer(1);
 	while (true) {
 		try {
-			var bytesRead = fs.readSync(process.stdin.fd, buf, 0, 1);
+			const bytesRead = fs.readSync(process.stdin.fd, buf, 0, 1);
 			if (!bytesRead || buf[0] == 10) return ret;
 			ret += String.fromCharCode(buf[0]);
 		} catch (e) {}
 	}
 }
 
-console.log(process.argv);
 rt().then(runt => {
 	if (process.argv.length < 3) {
-		let e = env();
 		while (true) {
 			process.stdout.write("> ");
-			let line = readline().replace(/^\s*=/, "return ");
+			const line = readline().replace(/^\s*=/, "return ");
 			try {
-				console.log(...lua.eval(runt, line, e));
+				console.log(...lua.eval(runt, line));
 			} catch (e) {
 				console.log("Error:", e);
 			}

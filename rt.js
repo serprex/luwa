@@ -33,11 +33,6 @@ function rtwathen(ab) {
 		},
 	}}).then(mod => {
 		ffi.mod = mod.instance.exports;
-		const luastack = ffi.mkref(ffi.mod.newcoro());
-		ffi.mod.setluastack(luastack.val);
-		const mem = new Uint8Array(ffi.mem.buffer);
-		const newvec = ffi.mod.newvecbuf(32);
-		util.writeuint32(mem, luastack.val + 14, newvec);
 		return ffi;
 	});
 }

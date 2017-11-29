@@ -1,0 +1,13 @@
+start(func(function(f)
+	local a = f:locals(i32, 1)
+
+	f:call(newcoro)
+	f:storeg(oluastack)
+	f:i32(32)
+	f:call(newvecbuf)
+	f:store(a)
+	f:loadg(oluastack)
+	f:load(a)
+	f:i32store(coro.stack)
+	f:call(mkenv)
+end))
