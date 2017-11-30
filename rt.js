@@ -8,6 +8,11 @@ function rtwathen(ab) {
 	const mem = new WebAssembly.Memory({initial:1}), ffi = new FFI(mem);
 	return WebAssembly.instantiate(ab, {'':{
 		m: mem,
+		echoptr: x => {
+			const memta = new Uint8Array(mem.buffer);
+			console.log(x, x&7, memta[x+4]);
+			return x;
+		},
 		echo: x => {
 			console.log(x);
 			return x;

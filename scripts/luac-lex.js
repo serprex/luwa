@@ -23,10 +23,8 @@ function readint(mem, idx) {
 		rtsrc.buffer.slice(rtsrc.byteOffset, rtsrc.byteOffset + rtsrc.byteLength),
 		{'':{
 			m: mem,
-			echo: x => {
-				console.log(x);
-				return x;
-			},
+			echo: x => x,
+			echoptr: x => x,
 			sin: Math.sin,
 			cos: Math.cos,
 			asin: Math.asin,

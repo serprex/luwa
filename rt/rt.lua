@@ -115,10 +115,17 @@ local function addStatics(base, mem, ...)
 					assert(s5i, 'Got falsy value from s5')
 					mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s5i),1,4)
 				end
+				while (base+#mem&7) ~= 0 do
+					mem[#mem+1] = 0
+				end
 			end
 		end
 	end
 	HEAPBASE = base + #mem
+	assert((HEAPBASE&7) == 0)
+	while mem[#mem] == 0 do
+		mem[#mem] = nil
+	end
 	return base, mem
 end
 
@@ -162,6 +169,7 @@ heaptip = global(i32, true, HEAPBASE)
 igcfix = importfunc('', 'gcfix')
 igcmark = importfunc('', 'gcmark')
 echo = importfunc('', 'echo', i32, i32)
+echoptr = importfunc('', 'echoptr', i32, i32)
 sin = importfunc('', 'sin', f64, f64)
 cos = importfunc('', 'cos', f64, f64)
 asin = importfunc('', 'asin', f64, f64)
