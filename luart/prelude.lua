@@ -22,7 +22,7 @@ package.loaded = {
 local rad_coef, deg_coef = 0x1.921fb54442d18p1/180., 180./0x1.921fb54442d18p1
 -- capture globals so that behavior doesn't change if rebound
 local _rawget, _type = rawget, type
-local _error, _getmetatable, _next, _select, _tostring, _xpcall = error, getmetatable, next, select, tostring, xpcall
+local _error, _getmetatable, _next, _select, _tostring, _pcall = error, getmetatable, next, select, tostring, pcall
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
@@ -43,13 +43,7 @@ local _assert = assert
 
 function getmetatable(object)
 	object = debug_getmetatable(object)
-	if _type(x) == 'table' then
-		local mt =_rawget(object, '__metatable')
-		if mt then
-			return mt
-		end
-	end
-	return x
+	return (_type(x) == 'table' and _rawget(object, '__metatable')) or x
 end
 
 function setmetatable(table, metatable)

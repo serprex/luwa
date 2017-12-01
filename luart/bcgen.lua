@@ -243,7 +243,7 @@ local ExpValue = ast.Exp+64
 local precedenceTable = {7, 7, 8, 8, 8, 9, 8, 5, 4, 3, 6, 6, 2, 1, 1, 1, 1, 1, 1}
 local function precedence(node)
 	if (node.type&31) == ast.Binop then
-		return precedenceTable[x.type >> 5]
+		return precedenceTable[node.type >> 5]
 	else
 		return 0
 	end
@@ -585,7 +585,7 @@ emitValueSwitch = {
 	end,
 	function(self, node, outputs) -- 7 Funcbody
 		return emit0(self, node, outputs, function(self, node)
-			emitNode(self, node, Funcbody)
+			emitNode(self, node, ast.Funcbody)
 			return 1
 		end)
 	end,
@@ -897,9 +897,9 @@ visitEmit = {
 		emitNodes(self, node, ast.Field, ary)
 		if #ary > 0 then
 			for i=1,#ary-1 do
-				emitNode(self, node, ast.ExpOr, 1)
+				emitNode(self, ary[i], ast.ExpOr, 1)
 			end
-			local res = emitNode(self, node, ast.ExpOr, -1)
+			local res = emitNode(self, ary[#ary], ast.ExpOr, -1)
 			if type(res) == 'number' then
 				assert(res == 1, 'Somehow appending finite multiple values to table')
 				self:push(bc.Append, #ary)

@@ -50,14 +50,15 @@ for i=2,select('#', ...) do
    local snr, ssr = {}, {}
    for i=1,snrlen do
       if string.byte(data, offs) == 0 then
-         snr[#snr+1], offs = string.unpack('<i8', data, offs+1)
+         snr[i], offs = string.unpack('<i8', data, offs+1)
       else
-         snr[#snr+1], offs = string.unpack('d', data, offs+1)
+         snr[i], offs = string.unpack('d', data, offs+1)
       end
    end
    local ssrlen, offs = string.unpack('<i4', data, offs)
    for i=1,ssrlen do
-      ssr[#ssr+1], offs = string.unpack('<s4', data, offs)
+      ssr[i], offs = string.unpack('<s4', data, offs)
+      print(i, ssr[i])
    end
    local lx = { lex = lx, snr = snr, ssr = ssr }
    local root = astgen(lx)

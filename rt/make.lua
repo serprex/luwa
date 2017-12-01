@@ -863,11 +863,11 @@ loopSection(10, Mod.func, function(bc, fu)
 		params[i] = i
 	end
 	fu:pushscope(fu.rety, true)
-	for k,v in pairs(_ENV) do
-		if v == fu then
-			print(k)
-		end
-	end
+	--for k,v in pairs(_ENV) do
+	--	if v == fu then
+	--		print(k)
+	--	end
+	--end
 	fu:bgen(table.unpack(params))
 	fu:popscope()
 
@@ -885,7 +885,7 @@ loopSection(10, Mod.func, function(bc, fu)
 	for j = 1, #fc do
 		bc[#bc+1] = fc[j]
 	end
-	print(Mod.impfid + fu.id, table.concat(fu.bcode, ':'))
+	--print(Mod.impfid + fu.id, table.concat(fu.bcode, ':'))
 end)
 
 loopSection(11, Mod.data, function(bc, data)

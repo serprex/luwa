@@ -10,7 +10,15 @@ function rtwathen(ab) {
 		m: mem,
 		echoptr: x => {
 			const memta = new Uint8Array(mem.buffer);
-			console.log(x, x&7, memta[x+4]);
+			console.log(x, x&7, x+4 < memta.length && memta[x+4]);
+			if (x+4 < memta.length && memta[x+4] == 5) {
+				console.log(new Uint8Array(memta.buffer, x+13, util.readuint32(memta, x+5)));
+				let s = "";
+				for (const c of new Uint8Array(memta.buffer, x+13, util.readuint32(memta, x+5))) {
+					s += String.fromCharCode(c);
+				}
+				console.log(s);
+			}
 			return x;
 		},
 		echo: x => {
