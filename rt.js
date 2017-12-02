@@ -11,13 +11,10 @@ function rtwathen(ab) {
 		echoptr: x => {
 			const memta = new Uint8Array(mem.buffer);
 			console.log(x, x&7, x+4 < memta.length && memta[x+4]);
-			if (x+4 < memta.length && memta[x+4] == 5) {
-				console.log(new Uint8Array(memta.buffer, x+13, util.readuint32(memta, x+5)));
-				let s = "";
-				for (const c of new Uint8Array(memta.buffer, x+13, util.readuint32(memta, x+5))) {
-					s += String.fromCharCode(c);
-				}
-				console.log(s);
+			if (x+4 < memta.length && memta[x+4] < 8) {
+				try{
+				console.log(ffi.rawobj2js(x));
+				}catch(e){console.log(e)}
 			}
 			return x;
 		},
@@ -95,7 +92,7 @@ FFI.prototype.gettypeid = function(h) {
 	let memta = new Uint8Array(this.mem.buffer);
 	return memta[h.val+4];
 }
-const tys = ["number", "number", "nil", "boolean", "table", "string"];
+const tys = ["number", "number", "nil", "boolean", "table", "string", "vec", "buf", "function", "thread"];
 FFI.prototype.gettype = function(h) {
 	return tys[this.gettypeid(h)];
 }
@@ -140,7 +137,7 @@ FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer)) {
 		case 7:
 			return this.rawobj2js(util.readuint32(memta, p + 9), memta);
 		default:
-			throw "Unknown type: " + memta[p+4] + " @ " + p;
+			return "Unknown type: " + memta[p+4] + " @ " + p;
 	}
 }
 FFI.prototype.obj2js = function(h) {

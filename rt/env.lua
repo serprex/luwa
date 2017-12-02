@@ -24,15 +24,12 @@ mkenv = func(function(f)
 	end
 
 	local function addmod(name, ...)
-		f:call(newtbl)
 		if select('#', ...) == 0 then
-			f:store(a)
-			f:call(param0)
-			f:i32load(vec.base)
 			f:i32(name)
-			f:load(a)
-			f:call(tblset)
+			f:call(newtbl)
+			f:call(addkv2env)
 		else
+			f:call(newtbl)
 			f:call(tmppush)
 			for i=1,select('#', ...),2 do
 				local k, v = select(i, ...)
@@ -40,12 +37,10 @@ mkenv = func(function(f)
 				f:i32(v)
 				f:call(addkv2top)
 			end
-			f:call(param0)
-			f:i32load(vec.base)
 			f:i32(name)
 			f:i32(4)
 			f:call(nthtmp)
-			f:call(tblset)
+			f:call(addkv2env)
 			f:call(tmppop)
 		end
 	end
@@ -54,10 +49,10 @@ mkenv = func(function(f)
 	f:call(init)
 
 	f:call(newtbl)
-	f:storeg(otmp)
+	f:store(a)
 
 	f:call(param0)
-	f:loadg(otmp)
+	f:load(a)
 	f:i32store(vec.base)
 
 	addfun(GS.select, GF.select)
@@ -71,7 +66,8 @@ mkenv = func(function(f)
 		GS.running, GF.coro_running,
 		GS.status, GF.coro_status)
 	addmod(GS.debug,
-		GS.setmetatable, GF.debug_getmetatable)
+		GS.getmetatable, GF.debug_getmetatable,
+		GS.setmetatable, GF.debug_setmetatable)
 	addmod(GS.io)
 	addmod(GS.math,
 		GS.type, GF.math_type)
@@ -81,8 +77,6 @@ mkenv = func(function(f)
 	addmod(GS.table)
 	addmod(GS.utf8)
 
-	f:loadg(otmp)
-	f:call(tmppush)
 	f:loop(function(loop)
 		f:call(eval)
 		f:eqz()
