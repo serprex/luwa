@@ -1,5 +1,14 @@
-local addkv2otmp = func(i32, i32, void, function(f, k, v)
-	f:loadg(otmp)
+local addkv2env = func(i32, i32, void, function(f, k, v)
+	f:call(param0)
+	f:i32load(vec.base)
+	f:load(k)
+	f:load(v)
+	f:call(tblset)
+end)
+
+local addkv2top = func(i32, i32, void, function(f, k, v)
+	f:i32(4)
+	f:call(nthtmp)
 	f:load(k)
 	f:load(v)
 	f:call(tblset)
@@ -8,31 +17,37 @@ end)
 mkenv = func(function(f)
 	local a = f:locals(i32)
 
-	local function addkv(k, v)
+	local function addfun(k, v)
 		f:i32(k)
 		f:i32(v)
-		f:call(addkv2otmp)
+		f:call(addkv2env)
 	end
 
 	local function addmod(name, ...)
+		f:call(newtbl)
 		if select('#', ...) == 0 then
-			f:call(newtbl)
 			f:store(a)
-			f:loadg(otmp)
+			f:call(param0)
+			f:i32load(vec.base)
 			f:i32(name)
 			f:load(a)
+			f:call(tblset)
 		else
-			f:call(newtbl)
-			f:storeg(otmp)
+			f:call(tmppush)
 			for i=1,select('#', ...),2 do
-				addkv(select(i, ...))
+				local k, v = select(i, ...)
+				f:i32(k)
+				f:i32(v)
+				f:call(addkv2top)
 			end
 			f:call(param0)
 			f:i32load(vec.base)
 			f:i32(name)
-			f:loadg(otmp)
+			f:i32(4)
+			f:call(nthtmp)
+			f:call(tblset)
+			f:call(tmppop)
 		end
-		f:call(tblset)
 	end
 
 	f:i32(GF.prelude0)
@@ -45,9 +60,9 @@ mkenv = func(function(f)
 	f:loadg(otmp)
 	f:i32store(vec.base)
 
-	addkv(GS.select, GF.select)
-	addkv(GS.pcall, GF.pcall)
-	addkv(GS.error, GF.error)
+	addfun(GS.select, GF.select)
+	addfun(GS.pcall, GF.pcall)
+	addfun(GS.error, GF.error)
 
 	addmod(GS.coroutine,
 		GS.create, GF.coro_create,
