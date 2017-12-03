@@ -58,7 +58,6 @@ for i=2,select('#', ...) do
    local ssrlen, offs = string.unpack('<i4', data, offs)
    for i=1,ssrlen do
       ssr[i], offs = string.unpack('<s4', data, offs)
-      print(i, ssr[i])
    end
    local lx = { lex = lx, snr = snr, ssr = ssr }
    local root = astgen(lx)
