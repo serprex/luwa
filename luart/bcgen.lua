@@ -64,8 +64,8 @@ function asmmeta:const(c)
 	local ty = math.type(c) or type(c)
 	local n = self.rconsts[ty][c]
 	if not n then
-		n = #self.consts+1
-		self.consts[n] = c
+		n = #self.consts
+		self.consts[n+1] = c
 		self.rconsts[ty][c] = n
 	end
 	return n
@@ -132,7 +132,7 @@ function asmmeta:opnamety(ops, name, namety)
 	local idx = self:nameidx(namety)
 	if namety.env then
 		self:opnamety(namety_loads, nil, namety.env)
-		self:push(bc.LoadConst, self:const(self.lx.vals[name:int()+1])-1)
+		self:push(bc.LoadConst, self:const(self.lx.vals[name:int()+1]))
 		self:push(ops.Env)
 	elseif namety.free then
 		if namety.func ~= self then
@@ -363,7 +363,7 @@ scopeStatSwitch = {
 local function emitCall(self, node, outputs)
 	local methname = selectIdent(node)
 	if methname then
-		self:push(bc.GetMeth, self:const(self.lx.vals[methname:int()+1])-1)
+		self:push(bc.GetMeth, self:const(self.lx.vals[methname:int()+1]))
 	end
 	return emitNode(self, node, ast.Args, outputs)
 end
@@ -486,7 +486,7 @@ emitStatSwitch = {
 			exps = exps+1
 		end
 		if exps == 2 then
-			self:push(bc.LoadConst, 1)
+			self:push(bc.LoadConst, self:const(1))
 		end
 		-- TODO bind variables, loop
 		emitNode(self, node, ast.Block)
@@ -505,7 +505,7 @@ emitStatSwitch = {
 					self:loadname(nlast)
 					first = false
 				else
-					self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1])-1)
+					self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1]))
 					self:push(bc.TblGet)
 				end
 			end
@@ -514,7 +514,7 @@ emitStatSwitch = {
 		if first then
 			self:storename(nlast)
 		else
-			self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1]))
 			self:push(bc.TblSet)
 		end
 	end,
@@ -562,14 +562,14 @@ emitValueSwitch = {
 	function(self, node, outputs) -- 4 num
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextNumber(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 5 str
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextString(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
 			return 1
 		end)
 	end,
@@ -616,7 +616,7 @@ emitFieldSwitch = {
 	end,
 	function(self, node) -- 2 name = exp
 		local i, val = nextIdent(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
+		self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
 		emitNode(self, node, ast.ExpOr, 1)
 		self:push(bc.TblAdd)
 	end,
@@ -677,18 +677,21 @@ visitScope = {
 		local params = {}
 		asm:scope(function()
 			if isMeth then
-				local param = asm:name(2, #params)
-				params[#params+1] = param
+				params[#params+1] = asm:name(2, #params)
 			end
 			for i=1,#names do
-				local param = asm:name(names[i]:int(), #params)
-				params[#params+1] = param
+				params[#params+1] = asm:name(names[i]:int(), #params)
 			end
 			scopeNode(asm, node, ast.Block)
 		end)
 		for i=1,#params do
 			if params[i].free then
 				asm:push(bc.BoxParam, i-1)
+			end
+		end
+		for k,v in pairs(asm.namety) do
+			if not v.isparam and v.free and v.func == asm then
+				asm:push(bc.BoxLocal, asm:nameidx(v))
 			end
 		end
 		emitNode(asm, node, ast.Block)
@@ -860,7 +863,7 @@ visitEmit = {
 			emitNode(self, node, ast.Table)
 			res = { 1 }
 		else
-			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
 			res = { 1 }
 		end
 		if outputs == -1 then
@@ -946,7 +949,7 @@ visitEmit = {
 		if node.type >> 5 == 1 then
 			emitNode(self, node, ast.ExpOr, 1)
 		else
-			self:push(bc.LoadConst, self:const(self.lx.vals[selectIdent(node):int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[selectIdent(node):int()+1]))
 		end
 		if isload then
 			self:push(bc.Idx)

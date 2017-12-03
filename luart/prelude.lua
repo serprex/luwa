@@ -29,7 +29,7 @@ local co_create, co_resume, co_running = coroutine.create, coroutine.resume, cor
 
 debug_setmetatable('', string)
 
-function assert(v, message, ...)
+local function _assert(v, message, ...)
 	if not message then
 		message = "assertion failed!"
 	end
@@ -39,7 +39,7 @@ function assert(v, message, ...)
 		return _error(message, 2)
 	end
 end
-local _assert = assert
+assert = _assert
 
 function getmetatable(object)
 	object = debug_getmetatable(object)
@@ -56,6 +56,7 @@ function setmetatable(table, metatable)
 	return debug_setmetatable(table, metatable)
 end
 
+math.atan2 = math.atan
 function math.deg(x)
 	return x * deg_coef
 end
@@ -85,6 +86,9 @@ function math.modf(x)
 		local xi = math.ceil(x)
 		return -xi, x + xi
 	end
+end
+function math.pow(x, y)
+	return x ^ y
 end
 function math.rad(x)
 	return x * rad_coef
@@ -269,10 +273,11 @@ local function inext(a, b)
 end
 function ipairs(t)
 	local mt = _getmetatable(t)
-	if not mt then
-		local __ipairs = mt.__ipairs
+	if mt then
+		local __ipairs = _rawget(mt, '__ipairs')
 		if __ipairs then
-			return __ipairs(t)
+			local a, b, c = __ipairs(t)
+			return a, b, c
 		end
 	end
 	return inext, t, 0

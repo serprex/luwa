@@ -61,4 +61,5 @@ return {
 	Concat = 59,
 	LoadFree = 60,
 	Append = 61,
+	BoxLocal = 62,
 }

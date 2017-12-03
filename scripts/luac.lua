@@ -32,7 +32,7 @@ local function sanitize_func(c)
    if c == "'" then
       return "\\'"
    end
-   local b = string.byte(c)
+   local b = c:byte()
    if b < 32 or b > 126 then
       return string.format('\\x%.2x', b)
    end
@@ -44,12 +44,12 @@ end
 local result = {}
 for i=2,select('#', ...) do
    local srcfile = select(i, ...)
-   local data = io.popen("./scripts/luac-lex.js '" .. srcfile:gsub("'", "'\\''") .. "'"):read('*a')
+   local data = io.popen("./scripts/luac-lex.js '" .. srcfile:gsub("'", "'\\''") .. "'"):read('a')
    local lx, offs = string.unpack('<s4', data)
    local vlen, offs = string.unpack('<i4', data, offs)
    local vals = {}
    for i=1,vlen do
-      local ty = string.byte(data, offs)
+      local ty = data:byte(offs)
       if ty == 0 then
          vals[i], offs = string.unpack('<i8', data, offs+1)
       elseif ty == 1 then
@@ -74,7 +74,7 @@ for i=2,select('#', ...) do
    }
    local strconst = {}
    local funcnames = {}
-   local funcprefix = string.gsub(srcfile, '^.*/(.*)%.lua$', '%1')
+   local funcprefix = srcfile:gsub('^.*/(.*)%.lua$', '%1')
    local function func2lua(func, toplevel)
       local name = funcprefix .. funcnums
       funcnums = funcnums + 1

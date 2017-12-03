@@ -30,6 +30,7 @@ function rtwathen(ab) {
 		atan2: Math.atan2,
 		exp: Math.exp,
 		log: Math.log,
+		pow: Math.pow,
 		gcmark: x => {
 			for (const h of ffi.handles) {
 				ffi.mod.gcmark(h.val);

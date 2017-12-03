@@ -33,6 +33,7 @@ function readint(mem, idx) {
 			atan2: Math.atan2,
 			exp: Math.exp,
 			log: Math.log,
+			pow: Math.pow,
 			gcmark: x => {
 				for (const h of handles) {
 					mod.gcmark(h.val);
