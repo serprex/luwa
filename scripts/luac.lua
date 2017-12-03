@@ -46,20 +46,19 @@ for i=2,select('#', ...) do
    local srcfile = select(i, ...)
    local data = io.popen("./scripts/luac-lex.js '" .. srcfile:gsub("'", "'\\''") .. "'"):read('*a')
    local lx, offs = string.unpack('<s4', data)
-   local snrlen, offs = string.unpack('<i4', data, offs)
-   local snr, ssr = {}, {}
-   for i=1,snrlen do
-      if string.byte(data, offs) == 0 then
-         snr[i], offs = string.unpack('<i8', data, offs+1)
+   local vlen, offs = string.unpack('<i4', data, offs)
+   local vals = {}
+   for i=1,vlen do
+      local ty = string.byte(data, offs)
+      if ty == 0 then
+         vals[i], offs = string.unpack('<i8', data, offs+1)
+      elseif ty == 1 then
+         vals[i], offs = string.unpack('<d', data, offs+1)
       else
-         snr[i], offs = string.unpack('d', data, offs+1)
+         vals[i], offs = string.unpack('<s4', data, offs+1)
       end
    end
-   local ssrlen, offs = string.unpack('<i4', data, offs)
-   for i=1,ssrlen do
-      ssr[i], offs = string.unpack('<s4', data, offs)
-   end
-   local lx = { lex = lx, snr = snr, ssr = ssr }
+   local lx = { lex = lx, vals = vals }
    local root = astgen(lx)
    -- print('AST')
    -- pprint(root)

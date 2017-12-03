@@ -61,27 +61,26 @@ function readint(mem, idx) {
 	mem8 = new Uint8Array(mem.buffer);
 	srcbuf.copy(mem8, src.val+13);
 	mod.lex(src.val);
-	const tokens = mkref(mod.nthtmp(12));
-	const snr = mkref(mod.nthtmp(4));
-	const ssr = mkref(mod.nthtmp(8));
+	const tokens = mkref(mod.nthtmp(8));
+	const values = mkref(mod.nthtmp(4));
 	mem8 = new Uint8Array(mem.buffer);
 	const tokenlen = readint(mem8, tokens.val + 5);
 	const tokenstart = tokens.val + 13;
 	process.stdout.write(int2buf(tokenlen));
 	process.stdout.write(Buffer.from(mem.buffer, tokenstart, tokenlen));
-	const snrlen = readint(mem8, snr.val + 5)>>2;
-	process.stdout.write(int2buf(snrlen))
-	for (let i=0; i<snrlen; i++) {
-		const nptr = readint(mem8, snr.val + 9 + i*4);
-		process.stdout.write(Buffer.from(mem.buffer, nptr+5, 9));
-	}
-	const ssrlen = readint(mem8, ssr.val + 5)>>2;
-	process.stdout.write(int2buf(ssrlen))
-	for (let i=0; i<ssrlen; i++) {
-		const sptr = readint(mem8, ssr.val + 9 + i*4);
-		const slen = readint(mem8, sptr + 5);
-		process.stdout.write(int2buf(slen));
-		process.stdout.write(Buffer.from(mem.buffer, sptr+13, slen));
+	const valuelen = readint(mem8, values.val + 5)>>2;
+	process.stdout.write(int2buf(valuelen));
+	for (let i=0; i<valuelen; i++) {
+		const ptr = readint(mem8, values.val + 9 + i*4);
+		const ptrtype = Buffer.from(mem.buffer, ptr+4, 1);
+		process.stdout.write(ptrtype);
+		if (ptrtype[0] == 5) {
+			const slen = readint(mem8, ptr + 5);
+			process.stdout.write(int2buf(slen));
+			process.stdout.write(Buffer.from(mem.buffer, ptr+13, slen));
+		} else {
+			process.stdout.write(Buffer.from(mem.buffer, ptr+5, 8));
+		}
 	}
 })().catch(e => setImmediate(() => {
 	throw e;

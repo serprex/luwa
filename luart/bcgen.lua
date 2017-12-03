@@ -132,7 +132,7 @@ function asmmeta:opnamety(ops, name, namety)
 	local idx = self:nameidx(namety)
 	if namety.env then
 		self:opnamety(namety_loads, nil, namety.env)
-		self:push(bc.LoadConst, self:const(self.lx.ssr[name:int()+1])-1)
+		self:push(bc.LoadConst, self:const(self.lx.vals[name:int()+1])-1)
 		self:push(ops.Env)
 	elseif namety.free then
 		if namety.func ~= self then
@@ -290,7 +290,7 @@ scopeStatSwitch = {
 	function(self, node) -- 4 label
 		local name = selectIdent(node):int()
 		if self.labelscope[name] then
-			print('Duplicate label', self.lx.ssr[name+1])
+			print('Duplicate label', self.lx.vals[name+1])
 		end
 		if node.father.fathered[1] == node then
 			self.labelscope[name] = self.scopes.prev
@@ -363,7 +363,7 @@ scopeStatSwitch = {
 local function emitCall(self, node, outputs)
 	local methname = selectIdent(node)
 	if methname then
-		self:push(bc.GetMeth, self:const(self.lx.ssr[methname:int()+1])-1)
+		self:push(bc.GetMeth, self:const(self.lx.vals[methname:int()+1])-1)
 	end
 	return emitNode(self, node, ast.Args, outputs)
 end
@@ -427,7 +427,7 @@ emitStatSwitch = {
 			gotosc = gotosc.prev
 		end
 		if not gotosc then
-			print('Jmp out of scope', self.lx.ssr[nami+1])
+			print('Jmp out of scope', self.lx.vals[nami+1])
 		end
 		self.gotos[#self.bc+1] = namei
 		self.push(bc.Jmp, 0)
@@ -505,7 +505,7 @@ emitStatSwitch = {
 					self:loadname(nlast)
 					first = false
 				else
-					self:push(bc.LoadConst, self:const(self.lx.ssr[nlast:int()+1])-1)
+					self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1])-1)
 					self:push(bc.TblGet)
 				end
 			end
@@ -514,7 +514,7 @@ emitStatSwitch = {
 		if first then
 			self:storename(nlast)
 		else
-			self:push(bc.LoadConst, self:const(self.lx.ssr[nlast:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1])-1)
 			self:push(bc.TblSet)
 		end
 	end,
@@ -562,14 +562,14 @@ emitValueSwitch = {
 	function(self, node, outputs) -- 4 num
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextNumber(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.snr[val:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 5 str
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextString(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
 			return 1
 		end)
 	end,
@@ -616,7 +616,7 @@ emitFieldSwitch = {
 	end,
 	function(self, node) -- 2 name = exp
 		local i, val = nextIdent(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
+		self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
 		emitNode(self, node, ast.ExpOr, 1)
 		self:push(bc.TblAdd)
 	end,
@@ -860,7 +860,7 @@ visitEmit = {
 			emitNode(self, node, ast.Table)
 			res = { 1 }
 		else
-			self:push(bc.LoadConst, self:const(self.lx.ssr[val:int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1])-1)
 			res = { 1 }
 		end
 		if outputs == -1 then
@@ -946,7 +946,7 @@ visitEmit = {
 		if node.type >> 5 == 1 then
 			emitNode(self, node, ast.ExpOr, 1)
 		else
-			self:push(bc.LoadConst, self:const(self.lx.ssr[selectIdent(node):int()+1])-1)
+			self:push(bc.LoadConst, self:const(self.lx.vals[selectIdent(node):int()+1])-1)
 		end
 		if isload then
 			self:push(bc.Idx)
@@ -979,8 +979,8 @@ function asmmeta:synth()
 end
 
 return function(lx, root)
-	assert(lx.ssr[1] == '_ENV')
-	assert(lx.ssr[2] == 'self')
+	assert(lx.vals[1] == '_ENV')
+	assert(lx.vals[2] == 'self')
 	local asm = Assembler(lx)
 	asm.pcount = 1
 	asm.isdotdotdot = true

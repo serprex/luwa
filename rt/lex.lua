@@ -1,9 +1,16 @@
 local tokens = require'../luart/lex'
-local srcslot, lexslot, rmapslot, strslot, numslot = 20, 16, 12, 8, 4
+local srcslot, lexslot, rmapslot, frmapslot, constslot = 20, 16, 12, 8, 4
 
-local lxaddval = func(i32, i32, i32, function(f, o, tmpid)
-	local boxlen, buflen = f:locals(i32, 2)
+local lxaddval = func(i32, i32, function(f, o)
+	local boxlen, buflen, rmslot = f:locals(i32, 3)
+	f:i32(frmapslot)
 	f:i32(rmapslot)
+	f:load(o)
+	f:i32load8u(obj.type)
+	f:i32(1)
+	f:eq()
+	f:select()
+	f:tee(rmslot)
 	f:call(nthtmp)
 	f:load(o)
 	f:call(tblget)
@@ -14,7 +21,7 @@ local lxaddval = func(i32, i32, i32, function(f, o, tmpid)
 		-- push const to constvec
 		f:load(o)
 		f:call(tmppush)
-		f:load(tmpid)
+		f:i32(constslot+4)
 		f:call(nthtmp)
 		f:tee(buflen)
 		f:i32load(buf.len)
@@ -26,7 +33,7 @@ local lxaddval = func(i32, i32, i32, function(f, o, tmpid)
 		f:call(nthtmp)
 		f:tee(o)
 		f:call(pushvec)
-		f:load(tmpid)
+		f:i32(constslot+4)
 		f:call(setnthtmp)
 
 		f:tee(buflen)
@@ -35,7 +42,9 @@ local lxaddval = func(i32, i32, i32, function(f, o, tmpid)
 		f:store(boxlen)
 
 		-- add entry to revmap
-		f:i32(rmapslot+4)
+		f:load(rmslot)
+		f:i32(4)
+		f:add()
 		f:call(nthtmp)
 		f:i32(4)
 		f:call(nthtmp)
@@ -50,15 +59,6 @@ local lxaddval = func(i32, i32, i32, function(f, o, tmpid)
 	f:i32load(num.val)
 end)
 
-local function lxaddnum(f)
-	f:i32(8)
-	f:call(lxaddval)
-end
-local function lxaddstr(f)
-	f:i32(12)
-	f:call(lxaddval)
-end
-
 local CHZERO = string.byte('0')
 
 lex = export('lex', func(i32, void, function(f, src)
@@ -70,34 +70,33 @@ lex = export('lex', func(i32, void, function(f, src)
 	f:i32load(str.len)
 	f:store(srclen)
 
-	-- 5 src
+	-- srcslot
 	f:load(src)
 	f:call(tmppush)
 
-	-- 4 lex
+	-- lexslot
 	f:i32(1011)
 	f:call(newstrbuf)
 	f:call(tmppush)
 
-	-- 3 reverse mapping of strs/nums
+	-- rmapslot
 	f:call(newtbl)
 	f:call(tmppush)
 
-	-- 2 [strs]
+	-- frmapslot
+	f:call(newtbl)
+	f:call(tmppush)
+
+	-- constslot
 	f:i32(256)
 	f:call(newvecbuf)
 	f:call(tmppush)
 
-	-- 1 [nums]
-	f:i32(64)
-	f:call(newvecbuf)
-	f:call(tmppush)
-
 	f:i32(GS._ENV)
-	lxaddstr(f)
+	f:call(lxaddval)
 	f:drop()
 	f:i32(GS.self)
-	lxaddstr(f)
+	f:call(lxaddval)
 	f:drop()
 
 	f:block(function(loopwrap)
@@ -534,7 +533,7 @@ lex = export('lex', func(i32, void, function(f, src)
 							f:load(tlen)
 							f:call(unbufstr)
 							f:call(tmppop)
-							lxaddstr(f)
+							f:call(lxaddval)
 							f:store(ch)
 
 							f:i32(lexslot)
@@ -1166,7 +1165,7 @@ lex = export('lex', func(i32, void, function(f, src)
 								f:load(temp64)
 								f:call(newi64)
 							end)
-							lxaddnum(f)
+							f:call(lxaddval)
 							f:store(ch)
 
 							f:i32(lexslot)
@@ -1567,7 +1566,7 @@ lex = export('lex', func(i32, void, function(f, src)
 							f:call(memcpy1rl)
 
 							f:load(src)
-							lxaddstr(f)
+							f:call(lxaddval)
 							f:store(ch)
 
 							f:i32(lexslot)
@@ -1753,7 +1752,7 @@ lex = export('lex', func(i32, void, function(f, src)
 											f:call(memcpy1rl)
 
 											f:load(src)
-											lxaddstr(f)
+											f:call(lxaddval)
 											f:store(ch)
 
 											f:i32(lexslot)
@@ -1863,18 +1862,14 @@ lex = export('lex', func(i32, void, function(f, src)
 	f:i32(tokens._eof)
 	f:call(pushstr)
 	f:call(unbufstr)
-	f:i32(strslot)
+	f:i32(constslot)
 	f:call(nthtmp)
 	f:call(unbufvec)
-	f:i32(numslot)
-	f:call(nthtmp)
-	f:call(unbufvec)
+	f:call(tmppop)
 	f:call(tmppop)
 	f:call(tmppop)
 	f:i32(4)
 	f:call(setnthtmp)
 	f:i32(8)
-	f:call(setnthtmp)
-	f:i32(12)
 	f:call(setnthtmp)
 end))
