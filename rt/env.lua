@@ -45,15 +45,11 @@ mkenv = func(function(f)
 		end
 	end
 
+	f:call(newtbl)
+	f:call(tmppush)
+
 	f:i32(GF.prelude0)
 	f:call(init)
-
-	f:call(newtbl)
-	f:store(a)
-
-	f:call(param0)
-	f:load(a)
-	f:i32store(vec.base)
 
 	addfun(GS.select, GF.select)
 	addfun(GS.pcall, GF.pcall)
