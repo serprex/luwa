@@ -170,7 +170,6 @@ param0 = func(i32, function(f)
 	f:add()
 end)
 
--- TODO settle on base/retc units & absolute vs relative. Then fix mismatchs everywhere
 eval = export('eval', func(i32, function(f)
 	local a, b, c, d, e,
 		meta_callty, meta_retb, meta_retc, meta_key, meta_off,
@@ -630,8 +629,102 @@ eval = export('eval', func(i32, function(f)
 
 		f:br(scopes.nop)
 	end, ops.Call, function(scopes)
-	-- push stack frame header
-		f:unreachable()
+		readArg()
+		f:store(b)
+
+		f:loadg(oluastack)
+		f:loadg(oluastack)
+		f:i32load(coro.data)
+		readArg()
+		f:tee(a)
+		f:i32(19)
+		f:mul()
+
+		f:i32(0)
+		f:store(c)
+		f:load(a)
+		f:store(d)
+		f:loop(function(loop)
+			f:load(bc)
+			f:load(pc)
+			f:add()
+			f:load(c)
+			f:add()
+			f:i32load(str.base)
+			f:load(d)
+			f:add()
+			f:store(d)
+
+			f:load(c)
+			f:i32(1)
+			f:add()
+			f:tee(c)
+			f:load(a)
+			f:ltu()
+			f:brif()
+		end)
+		f:load(d)
+		f:i32(2)
+		f:shl()
+		f:store(d)
+
+		f:call(extendstr)
+		f:i32store(coro.data)
+
+		-- a numcalls
+		-- b retc
+		-- set c to current dataframe base
+		-- nthtmp(d) == last function of call chain
+		-- set e to coro.stack + coro.stack.len - d
+
+		f:loadg(oluastack)
+		f:i32load(coro.data)
+		f:i32load(buf.ptr)
+		f:load(base)
+		f:add()
+		f:tee(c)
+		f:i32(calltypes.norm)
+		f:i32store8(dataframe.type + dataframe.sizeof)
+
+		f:load(c)
+		f:i32(0)
+		f:i32store(dataframe.pc + dataframe.sizeof)
+
+		f:load(c)
+		f:loadg(oluastack)
+		f:i32load(coro.stack)
+		f:i32load(buf.len)
+		f:load(d)
+		f:sub()
+		f:tee(e)
+		f:i32(4)
+		f:add()
+		f:i32store(dataframe.base + dataframe.sizeof)
+
+		f:load(c)
+		f:loadg(oluastack)
+		f:i32load(coro.stack)
+		f:i32load(buf.ptr)
+		f:load(e)
+		f:add()
+		f:tee(e)
+		f:i32load(vec.base)
+		f:i32load(functy.paramc)
+		f:i32(2)
+		f:shl()
+		f:i32store(dataframe.dotdotdot + dataframe.sizeof)
+
+		f:load(c)
+		f:i32(-4)
+		f:i32store16(dataframe.retb + dataframe.sizeof)
+
+		f:load(c)
+		f:load(b)
+		f:i32store16(dataframe.retc + dataframe.sizeof)
+
+		-- TODO add remaining frames
+		-- calc last frame's locals/frame offsets
+
 		f:br(scopes.nop)
 	end, ops.ReturnCall, function(scopes)
 	-- pop stack frame, then call
