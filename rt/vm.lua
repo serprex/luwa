@@ -790,7 +790,22 @@ eval = export('eval', func(i32, function(f)
 			end)
 		end)
 
-		-- calc last frame's locals/frame offsets
+		f:load(d)
+		readArg4()
+		f:tee(b)
+		f:i32store16(dataframe.locals + dataframe.sizeof)
+
+		f:load(d)
+		f:load(b)
+		f:load(e)
+		f:i32load(vec.base)
+		f:i32load(functy.localc)
+		f:i32(2)
+		f:shl()
+		f:add()
+		f:i32store16(dataframe.frame + dataframe.sizeof)
+
+		-- TODO write objframe
 
 		f:br(scopes.nop)
 	end, ops.ReturnCall, function(scopes)
