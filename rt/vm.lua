@@ -712,7 +712,7 @@ eval = export('eval', func(i32, function(f)
 		f:i32load(functy.paramc)
 		f:i32(2)
 		f:shl()
-		f:i32store(dataframe.dotdotdot + dataframe.sizeof)
+		f:i32store16(dataframe.dotdotdot + dataframe.sizeof)
 
 		f:load(c)
 		f:i32(-4)
@@ -721,6 +721,55 @@ eval = export('eval', func(i32, function(f)
 		f:load(c)
 		f:load(b)
 		f:i32store16(dataframe.retc + dataframe.sizeof)
+
+		-- for b=1;b<a;b++
+		--   d = c+b*19
+		--   e += readArg4()+4
+		f:i32(1)
+		f:tee(b)
+		f:load(a)
+		f:ltu()
+		f:iff(function()
+			f:loop(function(loop)
+				f:load(c)
+				f:load(b)
+				f:i32(19)
+				f:mul()
+				f:add()
+				f:tee(d)
+				f:i32(0)
+				f:i32store(dataframe.pc + dataframe.sizeof)
+
+				f:load(d)
+				-- BASE
+				f:i32store(dataframe.base + dataframe.sizeof)
+
+				f:load(d)
+				readArg4()
+				f:i32(4)
+				f:add()
+				f:load(e)
+				f:add()
+				f:tee(e)
+				f:i32load(vec.base)
+				f:i32load(functy.paramc)
+				f:i32(2)
+				f:shl()
+				f:i32store16(dataframe.dotdotdot + dataframe.sizeof)
+
+				f:load(d)
+				f:i32(-1)
+				f:i32store16(dataframe.retc + dataframe.sizeof)
+
+				f:load(b)
+				f:i32(1)
+				f:add()
+				f:tee(b)
+				f:load(a)
+				f:ltu()
+				f:brif(loop)
+			end)
+		end)
 
 		-- TODO add remaining frames
 		-- calc last frame's locals/frame offsets
