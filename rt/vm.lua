@@ -632,12 +632,16 @@ eval = export('eval', func(i32, function(f)
 		readArg()
 		f:store(b)
 
-		f:loadg(oluastack)
+		f:load(base)
+		f:load(framebase)
+		f:i32load16u(dataframe.frame)
+		f:add()
+
 		f:loadg(oluastack)
 		f:i32load(coro.data)
 		readArg()
 		f:tee(a)
-		f:i32(19)
+		f:i32(dataframe.sizeof)
 		f:mul()
 
 		f:i32(0)
@@ -669,7 +673,17 @@ eval = export('eval', func(i32, function(f)
 		f:store(d)
 
 		f:call(extendstr)
+		f:store(c)
+		f:loadg(oluastack)
+		f:load(c)
 		f:i32store(coro.data)
+
+		f:loadg(oluastack)
+		f:i32load(coro.stack)
+		f:i32load(buf.ptr)
+		f:add()
+		f:i32load(objframe.bc)
+		f:store(bc)
 
 		-- a numcalls
 		-- b retc
@@ -677,8 +691,7 @@ eval = export('eval', func(i32, function(f)
 		-- nthtmp(d) == last function of call chain
 		-- set e to coro.stack + coro.stack.len - d
 
-		f:loadg(oluastack)
-		f:i32load(coro.data)
+		f:load(c)
 		f:i32load(buf.ptr)
 		f:load(base)
 		f:add()
@@ -733,16 +746,12 @@ eval = export('eval', func(i32, function(f)
 			f:loop(function(loop)
 				f:load(c)
 				f:load(b)
-				f:i32(19)
+				f:i32(dataframe.sizeof)
 				f:mul()
 				f:add()
 				f:tee(d)
 				f:i32(0)
 				f:i32store(dataframe.pc + dataframe.sizeof)
-
-				f:load(d)
-				-- BASE
-				f:i32store(dataframe.base + dataframe.sizeof)
 
 				f:load(d)
 				readArg4()
@@ -751,11 +760,21 @@ eval = export('eval', func(i32, function(f)
 				f:load(e)
 				f:add()
 				f:tee(e)
+				f:i32(4)
+				f:add()
+				f:i32store(dataframe.base + dataframe.sizeof)
+
+				f:load(d)
+				f:load(e)
 				f:i32load(vec.base)
 				f:i32load(functy.paramc)
 				f:i32(2)
 				f:shl()
 				f:i32store16(dataframe.dotdotdot + dataframe.sizeof)
+
+				f:load(d)
+				f:i32(-4)
+				f:i32store16(dataframe.retb + dataframe.sizeof)
 
 				f:load(d)
 				f:i32(-1)
@@ -771,7 +790,6 @@ eval = export('eval', func(i32, function(f)
 			end)
 		end)
 
-		-- TODO add remaining frames
 		-- calc last frame's locals/frame offsets
 
 		f:br(scopes.nop)
