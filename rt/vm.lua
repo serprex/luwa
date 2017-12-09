@@ -644,6 +644,14 @@ eval = export('eval', func(i32, function(f)
 		f:i32(dataframe.sizeof)
 		f:mul()
 
+		f:load(framebase)
+		f:load(pc)
+		f:load(a)
+		f:i32(2)
+		f:shl()
+		f:add()
+		f:i32store(dataframe.pc)
+
 		f:i32(0)
 		f:store(c)
 		f:load(a)
@@ -665,7 +673,7 @@ eval = export('eval', func(i32, function(f)
 			f:tee(c)
 			f:load(a)
 			f:ltu()
-			f:brif()
+			f:brif(loop)
 		end)
 		f:load(d)
 		f:i32(2)
@@ -804,6 +812,9 @@ eval = export('eval', func(i32, function(f)
 		f:shl()
 		f:add()
 		f:i32store16(dataframe.frame + dataframe.sizeof)
+
+		f:i32(0)
+		f:store(pc)
 
 		-- TODO write objframe
 
