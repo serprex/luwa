@@ -27,7 +27,7 @@ local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmeta
 local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
-debug_setmetatable('', string)
+debug_setmetatable('', { __index = string })
 
 local function _assert(v, message, ...)
 	if not message then
