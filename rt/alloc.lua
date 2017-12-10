@@ -180,7 +180,6 @@ newtbl = export('newtbl', func(i32, function(f)
 	assert(tbl.hash == tbl.arr + 4)
 	-- Need to set arr/hash before alloc in case of gc
 	f:loadg(otmp) -- arr, hash = nil
-	assert(NIL == 0)
 	f:i64(0)
 	f:i64store(tbl.arr)
 
@@ -308,7 +307,6 @@ newvec = export('newvec', func(i32, i32, function(f, sz)
 		f:brif(f)
 		f:load(n)
 		f:add()
-		assert(NIL == 0)
 		f:i64(0)
 		f:i64store(vec.base)
 

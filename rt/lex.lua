@@ -15,7 +15,6 @@ local lxaddval = func(i32, i32, function(f, o)
 	f:load(o)
 	f:call(tblget)
 	f:tee(boxlen)
-	assert(NIL == 0)
 	f:eqz()
 	f:iff(function()
 		-- push const to constvec
