@@ -22,7 +22,7 @@ package.loaded = {
 local rad_coef, deg_coef = 0x1.921fb54442d18p1/180., 180./0x1.921fb54442d18p1
 -- capture globals so that behavior doesn't change if rebound
 local _rawget, _type = rawget, type
-local _error, _getmetatable, _next, _select, _tostring, _pcall = error, getmetatable, next, select, tostring, pcall
+local _error, _next, _select, _tostring, _pcall = error, next, select, tostring, pcall
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
@@ -41,10 +41,11 @@ local function _assert(v, message, ...)
 end
 assert = _assert
 
-function getmetatable(object)
+local function _getmetatable(object)
 	object = debug_getmetatable(object)
 	return (_type(x) == 'table' and _rawget(object, '__metatable')) or x
 end
+getmetatable = _getmetatable
 
 function setmetatable(table, metatable)
 	_assert(_type(tablety) == 'table')
@@ -108,9 +109,9 @@ function math.ult(m, n)
 	end
 end
 
-function string.len(s)
-	assert(type(s) == "string", "bad argument #1 to 'len' (string expected)")
-	return #s
+function string:len()
+	assert(type(self) == "string", "bad argument #1 to 'len' (string expected)")
+	return #self
 end
 
 utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
@@ -232,13 +233,13 @@ function coro_wrap_handler(t, ...)
 	end
 end
 function coroutine.wrap(f)
-	local c = coroutine_create(f)
+	local c = co_create(f)
 	return function(...)
-		return coro_wrap_handler(coroutine_resume(...))
+		return coro_wrap_handler(co_resume(...))
 	end
 end
 function coroutine.isyieldable()
-	local a, b = coroutine_running()
+	local a, b = co_running()
 	return b
 end
 

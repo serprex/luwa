@@ -704,7 +704,7 @@ visitScope = {
 			end
 		end
 		table.sort(func, function(a, b)
-			return asm.frees[a] < asm.frees[b]
+			return asm:nameidx(a) < asm:nameidx(b)
 		end)
 		self.funcs[node] = func
 	end,
@@ -854,6 +854,9 @@ visitEmit = {
 		if ty == 1 then
 			local n
 			n, res = emitExplist(self, node, -1)
+			if outputs ~= -1 then
+				n = n+1
+			end
 			if type(res) == 'number' then
 				res = { n }
 			else

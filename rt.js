@@ -101,7 +101,13 @@ FFI.prototype.strbytes = function(h) {
 	const memta = new Uint8Array(this.mem.buffer);
 	return new Uint8Array(memta.buffer, h.val+13, util.readuint32(memta, h.val+5));
 }
-FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer)) {
+FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer), memo = new Map()) {
+	if (memo.has(p)) return memo.get(p);
+	const result = this.rawobj2jsCore(p, memta, memo);
+	memo.set(p, result);
+	return result;
+}
+FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer), memo = new Map()) {
 	switch (memta[p+4]) {
 		case 0:
 			return new Uint32Array(memta.slice(p+5, p+13).buffer);
@@ -115,12 +121,13 @@ FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer)) {
 			const hash = util.readuint32(memta, p+21),
 				hashlen = util.readuint32(memta, hash+5),
 				map = new Map();
+			memo.set(p, map);
 			for (let i=0; i<hashlen; i+=8) {
 				const k = util.readuint32(memta, hash+9+i);
 				if (k) {
 					const v = util.readuint32(memta, hash+13+i);
 					if (v) {
-						map.set(this.rawobj2js(k, memta), this.rawobj2js(v, memta));
+						map.set(this.rawobj2js(k, memta, memo), this.rawobj2js(v, memta, memo));
 					}
 				}
 			}
@@ -130,13 +137,14 @@ FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer)) {
 			return new Uint8Array(memta.buffer, p+13, util.readuint32(memta, p+5));
 		case 6: {
 			const len = util.readuint32(memta, p+5), ret = [];
+			memo.set(p, ret);
 			for (let i=0; i<len; i+=4) {
-				ret.push(this.rawobj2js(util.readuint32(memta, p + 9 + i), memta));
+				ret.push(this.rawobj2js(util.readuint32(memta, p + 9 + i), memta, memo));
 			}
 			return ret;
 		}
 		case 7:
-			return this.rawobj2js(util.readuint32(memta, p + 9), memta);
+			return this.rawobj2js(util.readuint32(memta, p + 9), memta, memo);
 		default:
 			return "Unknown type: " + memta[p+4] + " @ " + p;
 	}
