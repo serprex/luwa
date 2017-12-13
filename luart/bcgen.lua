@@ -790,14 +790,14 @@ visitEmit = {
 		if hasToken(node, lex._return) then
 			local n, res = emitExplist(self, node, -1)
 			if type(res) == 'number' then
-				self:push(bc.Return, n + res)
+				self:push(bc.Return)
 			elseif not res.varg then
 				assert(#res > 0, 'None varg, no call, yet complex return')
-				self:push(bc.ReturnCall, n, #res, table.unpack(res))
+				self:push(bc.ReturnCall, #res, table.unpack(res))
 			elseif #res > 0 then
-				self:push(bc.ReturnCallVarg, n, #res, table.unpack(res))
+				self:push(bc.ReturnCallVarg, #res, table.unpack(res))
 			else
-				self:push(bc.ReturnVarg, n)
+				self:push(bc.ReturnVarg)
 			end
 		end
 	end,
@@ -854,11 +854,8 @@ visitEmit = {
 		if ty == 1 then
 			local n
 			n, res = emitExplist(self, node, -1)
-			if outputs ~= -1 then
-				n = n+1
-			end
 			if type(res) == 'number' then
-				res = { n }
+				res = { n + res }
 			else
 				res[#res+1] = n
 			end
@@ -977,7 +974,7 @@ function asmmeta:synth()
 			self.namety[k] = nil
 		end
 	end
-	self:push(bc.Return, 0)
+	self:push(bc.Return)
 	for k,v in pairs(self.gotos) do
 		self:patch(k, self.labels[v])
 	end

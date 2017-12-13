@@ -97,7 +97,7 @@ init = export('init', func(i32, void, function(f, fn)
 	f:i32store16(dataframe.frame)
 
 	f:load(newstsz)
-	f:i32(12)
+	f:i32(objframe.sizeof)
 	f:add()
 	f:call(extendtmp)
 
@@ -601,10 +601,71 @@ eval = export('eval', func(i32, function(f)
 				end)
 			end)
 
-			-- TODO
-			-- handle retc
-			-- push? copy to tbl
-			-- else copy to retb
+			-- TODO handle retc ~= stack size
+			f:load(framebase)
+			f:i32load16u(dataframe.frame)
+			f:load(base)
+			f:add()
+			f:store(e)
+
+			f:load(framebase)
+			f:i32load16u(dataframe.retc)
+			f:tee(c)
+			f:i32(65535)
+			f:eq()
+			f:iff(function()
+				f:load(e)
+				f:loadg(oluastack)
+				f:i32load(data.stack)
+				f:i32load(buf.len)
+				f:sub()
+				f:i32(objframe.sizeof)
+				f:sub()
+				f:store(c)
+			end)
+
+			f:load(c)
+			f:iff(function()
+				f:i32(0)
+				f:store(a)
+				f:load(c)
+				f:i32(2)
+				f:shl()
+				f:store(c)
+
+				f:load(meta_callty)
+				f:i32(calltypes.push)
+				f:eq()
+				f:iff(function()
+					-- copy to tbl @ retb
+					f:unreachable()
+				end, function()
+					-- copy to retb
+					f:loop(function(loop)
+						f:loadg(oluastack)
+						f:i32load(buf.ptr)
+						f:load(meta_retb)
+						f:add()
+						f:loadg(oluastack)
+						f:i32load(buf.ptr)
+						f:load(e)
+						f:add()
+						f:load(a)
+						f:add()
+						f:i32load(vec.base + objframe.sizeof)
+						f:i32store(vec.base)
+
+						f:load(a)
+						f:i32(4)
+						f:add()
+						f:tee(a)
+						f:load(c)
+						f:ltu()
+						f:brif(loop)
+					end)
+				end)
+			end)
+
 			-- call? blargh
 		end)
 
@@ -699,7 +760,7 @@ eval = export('eval', func(i32, function(f)
 		f:add()
 		f:store(c)
 
-		f:i32(12)
+		f:i32(objframe.sizeof)
 		f:call(extendtmp)
 
 		f:loadg(oluastack)

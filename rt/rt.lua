@@ -153,14 +153,14 @@ data(memory, addStatics(4, {
 	{'pcall', 1, true, '\x1f\x00'},
 	{'select', 1, true, '\x1f\x01'},
 	{'error', 2, false, '\x1f\x07'},
-	{'coro_create', 1, false, '\x1f\x08\x0c\x01\0\0\0'},
+	{'coro_create', 1, false, '\x1f\x08\x0c'},
 	{'coro_resume', 1, true, '\x1f\x09'},
 	{'coro_yield', 0, true, '\x1f\x0a'},
-	{'coro_running', 0, false, '\x1f\x03\x0c\x02\0\0\0'},
-	{'coro_status', 0, false, '\x1f\x02\x0c\x01\0\0\0'},
-	{'debug_getmetatable', 1, false, '\x1f\x04\x0c\x01\0\0\0'},
-	{'debug_setmetatable', 1, false, '\x1f\x05\x0c\x01\0\0\0'},
-	{'math_type', 1, false, '\x1f\x06\x0c\x01\0\0\0'},
+	{'coro_running', 0, false, '\x1f\x03\x0c'},
+	{'coro_status', 0, false, '\x1f\x02\x0c'},
+	{'debug_getmetatable', 1, false, '\x1f\x04\x0c'},
+	{'debug_setmetatable', 1, false, '\x1f\x05\x0c'},
+	{'math_type', 1, false, '\x1f\x06\x0c'},
 	(BOOTRT or require('./bootrt'))()
 ))
 
