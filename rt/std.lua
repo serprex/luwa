@@ -183,3 +183,6 @@ std_type = func(function(f)
 	end)
 	f:call(tmppush)
 end)
+
+std_error = func(function(f)
+end)
