@@ -7,9 +7,8 @@ end
 
 local asmmeta = {}
 local asmmt = { __index = asmmeta }
-local function Assembler(lx)
+local function Assembler()
 	return setmetatable({
-		lx = lx,
 		pcount = 0,
 		locals = {},
 		frees = {},
@@ -72,6 +71,7 @@ function asmmeta:const(c)
 end
 
 function asmmeta:name(n, paramidx)
+	assert(type(n) == 'string')
 	local prevscope = self.names[n]
 	local newscope = { prev = prevscope, func = self, isparam = paramidx }
 	self.scopes[#self.scopes+1] = n
@@ -80,11 +80,11 @@ function asmmeta:name(n, paramidx)
 end
 
 function asmmeta:usename(node)
-	local name = self.names[node:int()]
+	local name = self.names[node:arg()]
 	if name then
 		self.namety[node] = name
 	else
-		name = assert(self.names[1])
+		name = assert(self.names._ENV)
 		self.namety[node] = { env = name }
 	end
 	if name.func ~= self then
@@ -132,7 +132,7 @@ function asmmeta:opnamety(ops, name, namety)
 	local idx = self:nameidx(namety)
 	if namety.env then
 		self:opnamety(namety_loads, nil, namety.env)
-		self:push(bc.LoadConst, self:const(self.lx.vals[name:int()+1]))
+		self:push(bc.LoadConst, self:const(name:arg()))
 		self:push(ops.Env)
 	elseif namety.free then
 		if namety.func ~= self then
@@ -288,9 +288,9 @@ scopeStatSwitch = {
 		scopeNode(self, node, ast.Args)
 	end,
 	function(self, node) -- 4 label
-		local name = selectIdent(node):int()
+		local name = selectIdent(node):arg()
 		if self.labelscope[name] then
-			print('Duplicate label', self.lx.vals[name+1])
+			print('Duplicate label', name)
 		end
 		if node.father.fathered[1] == node then
 			self.labelscope[name] = self.scopes.prev
@@ -330,14 +330,14 @@ scopeStatSwitch = {
 	function(self, node) -- 11 for
 		scopeNodes(self, node, ast.ExpOr)
 		local name = selectIdent(node)
-		self:name(name:int())
+		self:name(name:arg())
 		self:usename(name)
 		scopeNode(self, node, ast.Block)
 	end,
 	function(self, node) -- 12 generic for
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
-			self:name(name:int())
+			self:name(name:arg())
 			self:usename(name)
 		end
 		scopeNode(self, node, ast.Block)
@@ -348,14 +348,14 @@ scopeStatSwitch = {
 	end,
 	function(self, node) -- 14 local func
 		local name = selectIdent(node)
-		self:name(name:int())
+		self:name(name:arg())
 		self:usename(name)
 		scopeNode(self, node, ast.Funcbody)
 	end,
 	function(self, node) -- 15 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
-			self:name(name:int())
+			self:name(name:arg())
 			self:usename(name)
 		end
 	end,
@@ -363,7 +363,7 @@ scopeStatSwitch = {
 local function emitCall(self, node, outputs)
 	local methname = selectIdent(node)
 	if methname then
-		self:push(bc.GetMeth, self:const(self.lx.vals[methname:int()+1]))
+		self:push(bc.GetMeth, self:const(methname:arg()))
 	end
 	return emitNode(self, node, ast.Args, outputs)
 end
@@ -411,7 +411,7 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 4 label
 		local name = selectIdent(node)
-		self.labels[name:int()] = #self.bc
+		self.labels[name:arg()] = #self.bc
 	end,
 	function(self, node) -- 5 break
 		assert(self.breaks, "break outside of loop")
@@ -420,14 +420,14 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 6 goto
 		local name = selectIdent(node)
-		local namei = name:int()
+		local namei = name:arg()
 		local gotosc = self.gotoscope[node]
 		local labelsc = self.labelscope[namei]
 		while gotosc and gotosc ~= labelsc do
 			gotosc = gotosc.prev
 		end
 		if not gotosc then
-			print('Jmp out of scope', self.lx.vals[nami+1])
+			print('Jmp out of scope', nami)
 		end
 		self.gotos[#self.bc+1] = namei
 		self.push(bc.Jmp, 0)
@@ -505,7 +505,7 @@ emitStatSwitch = {
 					self:loadname(nlast)
 					first = false
 				else
-					self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1]))
+					self:push(bc.LoadConst, self:const(nlast:arg()))
 					self:push(bc.TblGet)
 				end
 			end
@@ -514,7 +514,7 @@ emitStatSwitch = {
 		if first then
 			self:storename(nlast)
 		else
-			self:push(bc.LoadConst, self:const(self.lx.vals[nlast:int()+1]))
+			self:push(bc.LoadConst, self:const(nlast:arg()))
 			self:push(bc.TblSet)
 		end
 	end,
@@ -562,14 +562,14 @@ emitValueSwitch = {
 	function(self, node, outputs) -- 4 num
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextNumber(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
+			self:push(bc.LoadConst, self:const(val:arg()))
 			return 1
 		end)
 	end,
 	function(self, node, outputs) -- 5 str
 		return emit0(self, node, outputs, function(self, node)
 			local i, val = nextString(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
+			self:push(bc.LoadConst, self:const(val:arg()))
 			return 1
 		end)
 	end,
@@ -616,7 +616,7 @@ emitFieldSwitch = {
 	end,
 	function(self, node) -- 2 name = exp
 		local i, val = nextIdent(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
+		self:push(bc.LoadConst, self:const(val:arg()))
 		emitNode(self, node, ast.ExpOr, 1)
 		self:push(bc.TblAdd)
 	end,
@@ -669,7 +669,7 @@ visitScope = {
 		if isMeth then
 			pcount = pcount + 1
 		end
-		local asm = Assembler(self.lx)
+		local asm = Assembler()
 		asm.scopes = self.scopes
 		asm.names = self.names
 		asm.isdotdotdot = hasToken(node, lex._dotdotdot)
@@ -677,10 +677,10 @@ visitScope = {
 		local params = {}
 		asm:scope(function()
 			if isMeth then
-				params[#params+1] = asm:name(2, #params)
+				params[#params+1] = asm:name('self', #params)
 			end
 			for i=1,#names do
-				params[#params+1] = asm:name(names[i]:int(), #params)
+				params[#params+1] = asm:name(names[i]:arg(), #params)
 			end
 			scopeNode(asm, node, ast.Block)
 		end)
@@ -863,7 +863,7 @@ visitEmit = {
 			emitNode(self, node, ast.Table)
 			res = { 1 }
 		else
-			self:push(bc.LoadConst, self:const(self.lx.vals[val:int()+1]))
+			self:push(bc.LoadConst, self:const(val:arg()))
 			res = { 1 }
 		end
 		if outputs == -1 then
@@ -949,7 +949,7 @@ visitEmit = {
 		if node.type >> 5 == 1 then
 			emitNode(self, node, ast.ExpOr, 1)
 		else
-			self:push(bc.LoadConst, self:const(self.lx.vals[selectIdent(node):int()+1]))
+			self:push(bc.LoadConst, self:const(selectIdent(node):arg()))
 		end
 		if isload then
 			self:push(bc.Idx)
@@ -981,15 +981,13 @@ function asmmeta:synth()
 	return self
 end
 
-return function(lx, root)
-	assert(lx.vals[1] == '_ENV')
-	assert(lx.vals[2] == 'self')
-	local asm = Assembler(lx)
+return function(root)
+	local asm = Assembler()
 	asm.pcount = 1
 	asm.isdotdotdot = true
 	local env
 	asm:scope(function()
-		env = asm:name(1, 0) -- _ENV
+		env = asm:name('_ENV', 0)
 		visitScope[ast.Block](asm, root)
 	end)
 	if env.free then

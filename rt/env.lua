@@ -54,6 +54,7 @@ mkenv = func(function(f)
 	addfun(GS.select, GF.select)
 	addfun(GS.pcall, GF.pcall)
 	addfun(GS.error, GF.error)
+	addfun(GS.type, GF.type)
 
 	addmod(GS.coroutine,
 		GS.create, GF.coro_create,

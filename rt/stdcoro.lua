@@ -106,6 +106,9 @@ end)
 coro_resume = func(function(f)
 end)
 
+coro_yield = func(function(f)
+end)
+
 coro_running = func(function(f)
 	f:loadg(oluastack)
 	f:call(tmppush)

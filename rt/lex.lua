@@ -91,13 +91,6 @@ lex = export('lex', func(i32, void, function(f, src)
 	f:call(newvecbuf)
 	f:call(tmppush)
 
-	f:i32(GS._ENV)
-	f:call(lxaddval)
-	f:drop()
-	f:i32(GS.self)
-	f:call(lxaddval)
-	f:drop()
-
 	f:block(function(loopwrap)
 		f:load(srclen)
 		f:eqz()

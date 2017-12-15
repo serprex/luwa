@@ -194,8 +194,8 @@ return function(lx)
 		self.nx = self.nx+4
 		return self
 	end
-	function BuilderMeta:int()
-		return (string.unpack('<i4', lx.lex, self.li+1))
+	function BuilderMeta:arg()
+		return lx.vals[string.unpack('<i4', lx.lex, self.li+1)+1]
 	end
 	function BuilderMeta:next(p)
 		return Builder(self.nx, self.nx+1, self, p, -1)

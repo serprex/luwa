@@ -62,7 +62,7 @@ for i=2,select('#', ...) do
    local root = astgen(lx)
    -- print('AST')
    -- pprint(root)
-   local bcg = bcgen(lx, root)
+   local bcg = bcgen(root)
    -- print('ASM')
    -- pprint(bcg)
 
