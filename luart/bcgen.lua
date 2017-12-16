@@ -993,6 +993,11 @@ return function(root)
 	if env.free then
 		asm:push(bc.BoxParam, 0)
 	end
+	for k,v in pairs(asm.namety) do
+		if not v.isparam and v.free and v.func == asm then
+			asm:push(bc.BoxLocal, asm:nameidx(v))
+		end
+	end
 	visitEmit[ast.Block](asm, root)
 	return asm:synth()
 end

@@ -152,7 +152,7 @@ data(memory, addStatics(4, {
 	{'pcall', 1, true, '\x1f\x00'},
 	{'select', 1, true, '\x1f\x01'},
 	{'error', 2, false, '\x1f\x07'},
-	{'type', 1, false, '\x1f\0b\x0c'},
+	{'type', 1, false, '\x1f\x0b\x0c'},
 	{'coro_create', 1, false, '\x1f\x08\x0c'},
 	{'coro_resume', 1, true, '\x1f\x09'},
 	{'coro_yield', 0, true, '\x1f\x0a'},
