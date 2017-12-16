@@ -674,26 +674,19 @@ visitScope = {
 		asm.names = self.names
 		asm.isdotdotdot = hasToken(node, lex._dotdotdot)
 		asm.pcount = pcount
-		local params = {}
+		local pidx = 0
 		asm:scope(function()
 			if isMeth then
-				params[#params+1] = asm:name('self', #params)
+				asm:name('self', pidx)
+				pidx = pidx + 1
 			end
 			for i=1,#names do
-				params[#params+1] = asm:name(names[i]:arg(), #params)
+				asm:name(names[i]:arg(), pidx)
+				pidx = pidx + 1
 			end
 			scopeNode(asm, node, ast.Block)
 		end)
-		for i=1,#params do
-			if params[i].free then
-				asm:push(bc.BoxParam, i-1)
-			end
-		end
-		for k,v in pairs(asm.namety) do
-			if not v.isparam and v.free and v.func == asm then
-				asm:push(bc.BoxLocal, asm:nameidx(v))
-			end
-		end
+		asm:genBoxPrologue()
 		emitNode(asm, node, ast.Block)
 		asm:synth()
 		local func = { func = asm }
@@ -968,6 +961,18 @@ visitEmit = {
 	[ast.ExpAnd] = emitShortCircuitFactory(ast.Exp, bc.JifNotOrPop),
 }
 
+function asmmeta:genBoxPrologue()
+	for k, v in pairs(self.namety) do
+		if v.free and v.func == asm then
+			if v.isparam then
+				self:push(bc.BoxParam, v.isparam)
+			else
+				self:push(bc.BoxLocal, self:nameidx(v))
+			end
+		end
+	end
+end
+
 function asmmeta:synth()
 	for k, v in pairs(self.namety) do
 		if not (v.isparam or self.locals[v] or self.frees[v]) then
@@ -985,19 +990,11 @@ return function(root)
 	local asm = Assembler()
 	asm.pcount = 1
 	asm.isdotdotdot = true
-	local env
 	asm:scope(function()
-		env = asm:name('_ENV', 0)
+		asm:name('_ENV', 0)
 		visitScope[ast.Block](asm, root)
 	end)
-	if env.free then
-		asm:push(bc.BoxParam, 0)
-	end
-	for k,v in pairs(asm.namety) do
-		if not v.isparam and v.free and v.func == asm then
-			asm:push(bc.BoxLocal, asm:nameidx(v))
-		end
-	end
+	asm:genBoxPrologue()
 	visitEmit[ast.Block](asm, root)
 	return asm:synth()
 end
