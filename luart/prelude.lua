@@ -29,14 +29,13 @@ local co_create, co_resume, co_running = coroutine.create, coroutine.resume, cor
 
 debug_setmetatable('', { __index = string })
 
-local function _assert(v, message, ...)
-	if not message then
-		message = "assertion failed!"
-	end
+local function _assert(v, ...)
 	if v then
-		return v, message, ...
+		return v, ...
+	elseif select('#', ...) == 0 then
+		return _error('assertion failed!', 2)
 	else
-		return _error(message, 2)
+		return _error(..., 2)
 	end
 end
 assert = _assert
@@ -235,7 +234,7 @@ end
 function coroutine.wrap(f)
 	local c = co_create(f)
 	return function(...)
-		return coro_wrap_handler(co_resume(...))
+		return coro_wrap_handler(co_resume(c, ...))
 	end
 end
 function coroutine.isyieldable()
@@ -248,7 +247,7 @@ function print(...)
 		if i > 1 then
 			io_write('\t')
 		end
-		io_write(_tostring(_select(i, ...)))
+		io_write(_tostring((_select(i, ...))))
 	end
 	io_write('\n')
 end
