@@ -111,8 +111,7 @@ local function addStatics(base, mem, ...)
 				addHeader(base, mem, types.vec)
 				mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', #s5),1,4)
 				for i=1, #s5 do
-					local s5i = s5[i]()
-					assert(s5i, 'Got falsy value from s5')
+					local s5i = assert(s5[i](), 'Got falsy value from s5')
 					mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s5i),1,4)
 				end
 				while (base+#mem&7) ~= 0 do
