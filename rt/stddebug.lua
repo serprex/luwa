@@ -73,6 +73,8 @@ debug_setmetatable = func(function(f)
 
 		f:load(b)
 		f:storeg(ostrmt)
+		f:load(a)
+		f:call(tmppush)
 		f:ret()
 	end)
 	f:unreachable()

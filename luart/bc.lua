@@ -62,4 +62,5 @@ return {
 	LoadFree = 60,
 	Append = 61,
 	BoxLocal = 62,
+	LoadFunc = 63,
 }

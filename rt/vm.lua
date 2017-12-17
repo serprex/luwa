@@ -599,6 +599,7 @@ eval = export('eval', func(i32, function(f)
 				end)
 			end)
 
+			-- TODO stack pop needs to be different for coro
 			-- TODO handle retc ~= stack size
 			f:load(framebase)
 			f:i32load16u(dataframe.frame)
@@ -635,7 +636,8 @@ eval = export('eval', func(i32, function(f)
 				f:i32(calltypes.push)
 				f:eq()
 				f:iff(function()
-					-- copy to tbl @ retb
+					-- copy to tbl @ retb, starting at index retc
+					-- TODO skip retc pruning logic if calltype is push
 					f:unreachable()
 				end, function()
 					-- copy to retb
@@ -673,6 +675,17 @@ eval = export('eval', func(i32, function(f)
 		f:tee(a)
 		f:load(a)
 		f:i32load(buf.len)
+		f:load(meta_retb)
+		f:add()
+		f:load(c)
+		f:add()
+		f:i32store(buf.len)
+
+		f:loadg(oluastack)
+		f:i32load(coro.data)
+		f:tee(a)
+		f:load(a)
+		f:i32load(buf.len)
 		f:i32(dataframe.sizeof)
 		f:sub()
 		f:tee(b)
@@ -683,6 +696,8 @@ eval = export('eval', func(i32, function(f)
 		f:i32load(buf.ptr)
 		f:load(b)
 		f:add()
+		f:i32(dataframe.sizeof)
+		f:sub()
 		f:tee(framebase)
 		f:i32load(dataframe.pc)
 		f:store(pc)
@@ -1695,6 +1710,8 @@ eval = export('eval', func(i32, function(f)
 		f:i32load(vec.base)
 		f:call(tmppush)
 		f:br(scopes.nop)
+	end, ops.LoadFunc, function(scopes)
+		f:unreachable()
 	end, ops.Append, function(scopes)
 		-- invariant: arg > 0
 		-- TODO implement table arrays, then this becomes a memcpy4
