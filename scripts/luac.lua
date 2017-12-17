@@ -85,7 +85,7 @@ for i=2,select('#', ...) do
          local ct = math.type(c) or type(c)
          consts[#consts+1] = strconst[ct](c)
       end
-      result[#result+1] = "{'" .. name .. "'," .. func.pcount .. "," .. tostring(func.isdotdotdot) .. "," .. sanitize(string.char(table.unpack(func.bc))) .. ",{" .. table.concat(consts, ',') .. "}," .. #func.locals .. "}"
+      result[#result+1] = "{'" .. name .. "'," .. #func.params .. "," .. tostring(func.isdotdotdot) .. "," .. sanitize(string.char(table.unpack(func.bc))) .. ",{" .. table.concat(consts, ',') .. "}," .. #func.locals .. "}"
       return name
    end
    function strconst.integer(c)

@@ -9,7 +9,7 @@ local asmmeta = {}
 local asmmt = { __index = asmmeta }
 local function Assembler()
 	return setmetatable({
-		pcount = 0,
+		params = {},
 		locals = {},
 		frees = {},
 		isdotdotdot = false,
@@ -70,10 +70,17 @@ function asmmeta:const(c)
 	return n
 end
 
-function asmmeta:name(n, paramidx)
+function asmmeta:name(n, isparam)
 	assert(type(n) == 'string')
 	local prevscope = self.names[n]
+	local paramidx
+	if isparam then
+		paramidx = #self.params
+	end
 	local newscope = { prev = prevscope, func = self, isparam = paramidx }
+	if isparam then
+		self.params[#self.params+1] = newscope
+	end
 	self.scopes[#self.scopes+1] = n
 	self.names[n] = newscope
 	return newscope
@@ -665,24 +672,16 @@ visitScope = {
 		for i, n in selectIdents(node) do
 			names[#names+1] = n
 		end
-		local pcount = #names
-		if isMeth then
-			pcount = pcount + 1
-		end
 		local asm = Assembler()
 		asm.scopes = self.scopes
 		asm.names = self.names
 		asm.isdotdotdot = hasToken(node, lex._dotdotdot)
-		asm.pcount = pcount
-		local pidx = 0
 		asm:scope(function()
 			if isMeth then
-				asm:name('self', pidx)
-				pidx = pidx + 1
+				asm:name('self', true)
 			end
 			for i=1,#names do
-				asm:name(names[i]:arg(), pidx)
-				pidx = pidx + 1
+				asm:name(names[i]:arg(), true)
 			end
 			scopeNode(asm, node, ast.Block)
 		end)
@@ -962,13 +961,16 @@ visitEmit = {
 }
 
 function asmmeta:genBoxPrologue()
-	for k, v in pairs(self.namety) do
-		if v.free and v.func == asm then
-			if v.isparam then
-				self:push(bc.BoxParam, v.isparam)
-			else
-				self:push(bc.BoxLocal, self:nameidx(v))
-			end
+	for i=1,#self.params do
+		local v = self.params[i]
+		if v.free and v.func == self then
+			self:push(bc.BoxParam, v.isparam)
+		end
+	end
+	for i=1,#self.locals do
+		local v = self.locals[i]
+		if v.free and v.func == self then
+			self:push(bc.BoxLocal, self:nameidx(v))
 		end
 	end
 end
@@ -988,10 +990,9 @@ end
 
 return function(root)
 	local asm = Assembler()
-	asm.pcount = 1
 	asm.isdotdotdot = true
 	asm:scope(function()
-		asm:name('_ENV', 0)
+		asm:name('_ENV', true)
 		visitScope[ast.Block](asm, root)
 	end)
 	asm:genBoxPrologue()
