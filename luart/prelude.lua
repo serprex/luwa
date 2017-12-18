@@ -19,7 +19,6 @@ package.loaded = {
 	utf8 = utf8,
 }
 
-local rad_coef, deg_coef = 0x1.921fb54442d18p1/180., 180./0x1.921fb54442d18p1
 -- capture globals so that behavior doesn't change if rebound
 local _rawget, _type = rawget, type
 local _error, _next, _select, _tostring, _pcall = error, next, select, tostring, pcall
@@ -58,7 +57,7 @@ end
 
 math.atan2 = math.atan
 function math.deg(x)
-	return x * deg_coef
+	return x * (180./0x1.921fb54442d18p1)
 end
 function math.max(x, ...)
 	for i = 1,_select('#', ...) do
@@ -91,7 +90,7 @@ function math.pow(x, y)
 	return x ^ y
 end
 function math.rad(x)
-	return x * rad_coef
+	return x * (0x1.921fb54442d18p1/180.)
 end
 function math.sqrt(x)
 	return x ^ .5

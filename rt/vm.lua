@@ -1711,7 +1711,79 @@ eval = export('eval', func(i32, function(f)
 		f:call(tmppush)
 		f:br(scopes.nop)
 	end, ops.LoadFunc, function(scopes)
-		f:unreachable()
+		readArg4()
+		f:tee(a)
+
+		f:load(objbase)
+		f:i32load(objframe.consts)
+		readArg4()
+		f:add()
+		f:i32load(vec.base)
+		f:storeg(otmp)
+
+		f:i32(functy.sizeof)
+		f:i32(types.functy)
+		f:call(newobj)
+		f:tee(b)
+		f:loadg(otmp)
+		f:i64load(0)
+		f:i64store(0)
+
+		for offs=8,functy.sizeof-8 do
+			f:load(b)
+			f:loadg(otmp)
+			f:i64load(offs)
+			f:i64store(offs)
+		end
+
+		f:load(b)
+		f:call(nextid)
+		f:i32store(functy.id)
+
+		-- use tee a result here
+		f:iff(i32, function()
+			f:load(b)
+			f:storeg(otmp)
+
+			f:load(a)
+			f:call(newvec)
+			f:store(b)
+
+			f:loadg(otmp)
+			f:load(b)
+			f:i32store(functy.frees)
+
+			f:loadg(oluastack)
+			f:i32load(coro.stack)
+			f:tee(c)
+			f:i32load(buf.ptr)
+			f:load(c)
+			f:i32load(buf.len)
+			f:tee(d)
+			f:add()
+			f:load(a)
+			f:sub()
+			f:i32(vec.base)
+			f:add()
+			f:load(b)
+			f:i32(vec.base)
+			f:add()
+			f:load(a)
+			f:call(memcpy4)
+
+			f:load(c)
+			f:load(d)
+			f:load(a)
+			f:sub()
+			f:i32store(buf.len)
+
+			f:loadg(otmp)
+		end, function()
+			f:load(b)
+		end)
+		f:call(tmppush)
+
+		f:br(scopes.nop)
 	end, ops.Append, function(scopes)
 		-- invariant: arg > 0
 		-- TODO implement table arrays, then this becomes a memcpy4
