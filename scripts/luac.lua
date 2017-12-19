@@ -31,6 +31,8 @@ end
 local function sanitize_func(c)
    if c == "'" then
       return "\\'"
+   elseif c == '\\' then
+      return "\\\\"
    end
    local b = c:byte()
    if b < 32 or b > 126 then
