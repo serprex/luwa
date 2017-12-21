@@ -13,7 +13,7 @@ local function yieldall(...)
 		coroutine.yield(yi)
 	end
 end
-return function(lx)
+return function(lx, vals)
 	local rules = {}
 
 	local function name(x, p)
@@ -188,14 +188,14 @@ return function(lx)
 		}, BuilderMT)
 	end
 	function BuilderMeta:val()
-		return string.byte(lx.lex, self.li)
+		return string.byte(lx, self.li)
 	end
 	function BuilderMeta:skipint()
 		self.nx = self.nx+4
 		return self
 	end
 	function BuilderMeta:arg()
-		return lx.vals[string.unpack('<i4', lx.lex, self.li+1)+1]
+		return vals[string.unpack('<i4', lx, self.li+1)+1]
 	end
 	function BuilderMeta:next(p)
 		return Builder(self.nx, self.nx+1, self, p, -1)
@@ -206,7 +206,7 @@ return function(lx)
 
 	local root = Builder(0, 1, nil, nil, -2)
 	for child in rules[ast.Block](root, root) do
-		if string.byte(lx.lex, child.nx) == 0 then
+		if string.byte(lx, child.nx) == 0 then
 			repeat
 				local prev_father = child
 				local father = child.father

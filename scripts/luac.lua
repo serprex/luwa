@@ -60,8 +60,7 @@ for i=2,select('#', ...) do
          vals[i], offs = string.unpack('<s4', data, offs+1)
       end
    end
-   local lx = { lex = lx, vals = vals }
-   local root = astgen(lx)
+   local root = astgen(lx, vals)
    -- print('AST')
    -- pprint(root)
    local bcg = bcgen(root)
@@ -132,7 +131,5 @@ for i=2,select('#', ...) do
    func2lua(bcg)
 end
 local f = assert(io.open(..., 'w'))
-f:write('return function() return ')
-f:write(table.concat(result, ','))
-f:write(' end')
+f:write('return function() return ', table.concat(result, ','),' end')
 f:close()

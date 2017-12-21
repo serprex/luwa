@@ -152,3 +152,31 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 FFI.prototype.obj2js = function(h) {
 	return this.rawobj2js(h.val);
 }
+FFI.prototype.compile = function(env, str) {
+	return this.rawcompile(env.val, str.val);
+}
+FFI.prototype.rawcompile = function(env, str) {
+	// TODO get compile fn from env
+	return this.rawexec(fn, str);
+}
+FFI.prototype.exec = function(fn, ...param) {
+	return this.rawexec(fn.val, ...param.map(x => x.val))
+}
+FFI.prototype.rawexec = function(fn, ...param) {
+	return new Promise(resolve => {
+		// TODO clear stack
+		// TODO have a flag for when mid computation?
+		for (const v of rest) {
+			this.mod.tmppush(v);
+		}
+		this.mod.init(fn);
+		function core() {
+			if (this.mod.eval()) {
+				resolve();
+			} else {
+				setTimeout(core, 0);
+			}
+		}
+		core();
+	});
+}

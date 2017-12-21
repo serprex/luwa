@@ -23,6 +23,8 @@ package.loaded = {
 local _rawget, _type = rawget, type
 local _error, _next, _select, _tostring, _pcall = error, next, select, tostring, pcall
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
+local table_unpack = table.unpack
+local string_char = string.char
 local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
@@ -38,6 +40,31 @@ local function _assert(v, ...)
 	end
 end
 assert = _assert
+
+function loadstring(src, name, mode)
+	-- TODO function names
+	local lx, vals = _luwa.lex(src)
+	if not lx then
+		return nil, vals
+	end
+	local result, root = pcall(_luwa.astgen, lx, vals)
+	if not result then
+		return nil, root
+	end
+	-- TODO need to signal _ENV is free
+	local result, bcg = pcall(_luwa.bcgen, root)
+	if not result then
+		return nil, bcg
+	end
+	local fn = _luwa.fn_new()
+	_luwa.fn_set_localc(fn, #bcg.locals)
+	_luwa.fn_set_paramc(fn, #bcg.params)
+	_luwa.fn_set_isdotdotdot(fn, true)
+	_luwa.fn_set_bc(fn, string_char(table_unpack(bcg.bc)))
+	_luwa.fn_set_frees(fn, _luwa.vec_new(_ENV))
+	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
+	return fn
+end
 
 local function _getmetatable(object)
 	object = debug_getmetatable(object)
