@@ -30,6 +30,12 @@ GN = {
 }
 GS = {}
 GF = {}
+
+local function doboot()
+	package.path = 'luart/?.lua;' .. package.path
+	return table.unpack(require('bootrt')('./luart/prelude.lua'))
+end
+
 function getGC(n)
 	return GN[math.type(n)][n]
 end
@@ -160,7 +166,7 @@ data(memory, addStatics(4, {
 	{'debug_getmetatable', 1, false, '\x1f\x04\x0c'},
 	{'debug_setmetatable', 1, false, '\x1f\x05\x0c'},
 	{'math_type', 1, false, '\x1f\x06\x0c'},
-	(BOOTRT or require('./bootrt'))()
+	(BOOTRT or doboot)()
 ))
 
 heaptip = global(i32, true, HEAPBASE)
