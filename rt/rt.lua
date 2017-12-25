@@ -33,7 +33,10 @@ GF = {}
 
 local function doboot()
 	package.path = 'luart/?.lua;' .. package.path
-	return table.unpack(require('bootrt')('./luart/prelude.lua'))
+	return table.unpack(require('bootrt')(
+		'./luart/prelude.lua',
+		'./luart/astgen.lua', './luart/bcgen.lua',
+		'./luart/ast.lua', './luart/bc.lua', './luart/lex.lua'))
 end
 
 function getGC(n)

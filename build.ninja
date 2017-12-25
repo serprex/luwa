@@ -7,5 +7,5 @@ rule mkboot
 build quire.js:mkcjs rt.js util.js
 build scripts/lex.wasm:mkrt rt/override_bootrt.lua rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/stack.lua rt/obj.lua rt/table.lua rt/util.lua | rt/make.lua
 build bootrt.lua:mkboot luart/prelude.lua | scripts/luac.lua scripts/luac-lex.js scripts/lex.wasm luart/bcgen.lua luart/bc.lua luart/lex.lua luart/ast.lua luart/astgen.lua
-build rt.wasm:mkrt rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/stack.lua rt/obj.lua rt/std.lua rt/stdcoro.lua rt/stddebug.lua rt/stdmath.lua rt/string.lua rt/table.lua rt/util.lua rt/vm.lua rt/env.lua rt/start.lua | rt/make.lua
+build rt.wasm:mkrt rt/alloc.lua rt/gc.lua rt/lex.lua rt/rt.lua rt/stack.lua rt/obj.lua rt/std.lua rt/stdcoro.lua rt/stddebug.lua rt/stdmath.lua rt/string.lua rt/table.lua rt/util.lua rt/vm.lua rt/env.lua rt/start.lua | rt/make.lua luart/bootrt.lua
 default rt.wasm

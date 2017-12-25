@@ -297,7 +297,7 @@ scopeStatSwitch = {
 	function(self, node) -- 4 label
 		local name = selectIdent(node):arg()
 		if self.labelscope[name] then
-			print('Duplicate label', name)
+			error('Duplicate label', name)
 		end
 		if node.father.fathered[1] == node then
 			self.labelscope[name] = self.scopes.prev
@@ -434,7 +434,7 @@ emitStatSwitch = {
 			gotosc = gotosc.prev
 		end
 		if not gotosc then
-			print('Jmp out of scope', nami)
+			error('Jmp out of scope', nami)
 		end
 		self.gotos[#self.bc+1] = namei
 		self.push(bc.Jmp, 0)

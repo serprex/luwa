@@ -41,31 +41,6 @@ local function _assert(v, ...)
 end
 assert = _assert
 
-function loadstring(src, name, mode)
-	-- TODO function names
-	local lx, vals = _luwa.lex(src)
-	if not lx then
-		return nil, vals
-	end
-	local result, root = pcall(_luwa.astgen, lx, vals)
-	if not result then
-		return nil, root
-	end
-	-- TODO need to signal _ENV is free
-	local result, bcg = pcall(_luwa.bcgen, root)
-	if not result then
-		return nil, bcg
-	end
-	local fn = _luwa.fn_new()
-	_luwa.fn_set_localc(fn, #bcg.locals)
-	_luwa.fn_set_paramc(fn, #bcg.params)
-	_luwa.fn_set_isdotdotdot(fn, true)
-	_luwa.fn_set_bc(fn, string_char(table_unpack(bcg.bc)))
-	_luwa.fn_set_frees(fn, _luwa.vec_new(_ENV))
-	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
-	return fn
-end
-
 local function _getmetatable(object)
 	object = debug_getmetatable(object)
 	return (_type(x) == 'table' and _rawget(object, '__metatable')) or x
@@ -342,3 +317,71 @@ end
 function xpcall(f, msgh, ...)
 	return xpcallcore(msgh, _pcall(f, ...))
 end
+
+local _luwa = ...
+local fakereqtbl = {
+	ast = _luwa.ast0,
+	bc = _lwua.bc0,
+	lex =  _luwa.lex0,
+	astgen = _luwa.astgen0,
+	bcgen = _luwa.bcgen0,
+}
+local fakereqcache = {}
+local fakereq = {
+	assert = assert,
+	error = error,
+	select = select,
+	setmetatable = setmetatable,
+	type = type,
+	pairs = pairs,
+	print = print,
+	require = function(s)
+		if not fakereqcache[s] then
+			fakereqcache[s] = fakereqtbl[s](fakereq)
+		end
+		return fakereqcache[s]
+	end,
+	coroutine = {
+		create = co_create,
+		wrap = coroutine.wrap,
+		yield = coroutine.yield,
+	},
+	string = {
+		byte = string.byte,
+		pack = string.pack,
+	},
+	table = {
+		pack = table.pack,
+		unpack = table.unpack,
+		insert = table.insert,
+		sort = table.sort,
+	},
+}
+local astgen = fakereq('astgen')
+local bcgen = fakereq('bcgen')
+
+function loadstring(src, name, mode)
+	-- TODO function names
+	local lx, vals = _luwa.lex(src)
+	if not lx then
+		return nil, vals
+	end
+	local result, root = pcall(astgen, lx, vals)
+	if not result then
+		return nil, root
+	end
+	-- TODO need to signal _ENV is free
+	local result, bcg = pcall(bcgen, root)
+	if not result then
+		return nil, bcg
+	end
+	local fn = _luwa.fn_new()
+	_luwa.fn_set_localc(fn, #bcg.locals)
+	_luwa.fn_set_paramc(fn, #bcg.params)
+	_luwa.fn_set_isdotdotdot(fn, true)
+	_luwa.fn_set_bc(fn, string_char(table_unpack(bcg.bc)))
+	_luwa.fn_set_frees(fn, _luwa.vec_new(_ENV))
+	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
+	return fn
+end
+
