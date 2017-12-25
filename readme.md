@@ -8,7 +8,7 @@ I'll try avoid my usual stream of consciousness here, instead that's at [my devl
 
 WASM runtime is in `rt/`. [`rt/make.lua`](rt/make.lua) is the entry point for the assmembler. This produces an `rt.wasm` which [`rt.js`](rt.js) contains glue code for
 
-The GC is a LISP2 compacting GC. GC performance is a low priority given the WASM GC RFC
+The GC is a LISP2 compacting GC. GC performance is a low priority given the WASM GC RFC. See [`rt/gc.lua`](rt/gc.lua)
 
 The VM needs to be reentrant. The currently running coroutine is oluastack. Builtins which call functions work by returning after setting up a necessary callstack. See [`rt/vm.lua`](rt/vm.lua)
 

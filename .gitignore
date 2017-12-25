@@ -2,5 +2,5 @@
 quire.js
 rt.wasm
 scripts/lex.wasm
-bootrt.lua
+./bootrt.lua
 lua-5.3.4-tests/

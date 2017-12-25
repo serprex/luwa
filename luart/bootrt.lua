@@ -1,0 +1,98 @@
+local astgen = require 'astgen'
+local bcgen = require 'bcgen'
+
+return function(...)
+	local result = {}
+	local prevsult = {
+		integer = {},
+		float = {},
+		string = {},
+	}
+
+	local funcnums, funcprefix
+	local strconst = {}
+	local function func2lua(func, toplevel)
+		local name = funcprefix .. funcnums
+		funcnums = funcnums + 1
+		local subfuncs = {}
+		local consts = {}
+		for i=1, #func.consts do
+			local c = func.consts[i]
+			local ct = math.type(c) or type(c)
+			consts[#consts+1] = strconst[ct](c)
+		end
+		if #consts == 0 then
+			consts = nil
+		end
+		result[#result+1] = {
+			name,
+			#func.params,
+			func.isdotdotdot,
+			string.char(table.unpack(func.bc)),
+			consts,
+			#func.locals,
+		}
+		return name
+	end
+	function strconst.integer(c)
+		if prevsult.integer[c] then
+			return prevsult.integer[c]
+		else
+			local pack = string.pack('<i8', c)
+			result[#result+1] = c
+			prevsult.integer[c] = function() return GN.integer[pack] end
+			return prevsult.integer[c]
+		end
+	end
+	function strconst.float(c)
+		if prevsult.float[c] then
+			return prevsult.float[c]
+		else
+			local pack = string.pack('<d', c)
+			result[#result+1] = c
+			prevsult.float[c] = function() return GN.float[pack] end
+			return prevsult.float[c]
+		end
+	end
+	function strconst.string(c)
+		if prevsult.string[c] then
+			return prevsult.string[c]
+		else
+			result[#result+1] = c
+			prevsult.string[c] = function() return GS[c] end
+			return prevsult.string[c]
+		end
+	end
+	function strconst.table(c)
+		local pack = func2lua(c)
+		return function() return GF[pack] end
+	end
+	local lexers = {}
+	for i=1,select('#', ...) do
+		local srcfile = select(i, ...)
+		lexers[srcfile] = io.popen("./scripts/luac-lex.js '" .. srcfile:gsub("'", "'\\''") .. "'")
+	end
+	for i=1,select('#', ...) do
+		local srcfile = select(i, ...)
+		local data = lexers[srcfile]:read('a')
+		local lx, offs = string.unpack('<s4', data)
+		local vlen, offs = string.unpack('<i4', data, offs)
+		local vals = {}
+		for i=1,vlen do
+			local ty = data:byte(offs)
+			if ty == 0 then
+				vals[i], offs = string.unpack('<i8', data, offs+1)
+			elseif ty == 1 then
+				vals[i], offs = string.unpack('<d', data, offs+1)
+			else
+				vals[i], offs = string.unpack('<s4', data, offs+1)
+			end
+		end
+
+		funcnums = 0
+		funcprefix = srcfile:gsub('^.*/(.*)%.lua$', '%1')
+		print(funcprefix)
+		func2lua(bcgen(astgen(lx, vals)))
+	end
+	return result
+end

@@ -104,9 +104,14 @@ end
 function strconst.table(c)
 	return 'function() return GF.' .. func2lua(c) .. ' end'
 end
+local lexers = {}
 for i=2,select('#', ...) do
 	local srcfile = select(i, ...)
-	local data = io.popen("./scripts/luac-lex.js '" .. srcfile:gsub("'", "'\\''") .. "'"):read('a')
+	lexers[srcfile] = io.popen("./scripts/luac-lex.js '" .. srcfile:gsub("'", "'\\''") .. "'")
+end
+for i=2,select('#', ...) do
+	local srcfile = select(i, ...)
+	local data = lexers[srcfile]:read('a')
 	local lx, offs = string.unpack('<s4', data)
 	local vlen, offs = string.unpack('<i4', data, offs)
 	local vals = {}
