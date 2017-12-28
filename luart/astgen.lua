@@ -93,33 +93,59 @@ return function(lx, vals)
 	end
 	local function maybe(f)
 		return function(x, p)
-			return coroutine.wrap(function()
-				yieldall(f(x, p))
-				coroutine.yield(x)
-			end)
+			local f, s, var = f(x, p)
+			return function()
+				if f then
+					var = f(s, var)
+					if var then
+						return var
+					else
+						f = nil
+						return x
+					end
+				end
+			end
 		end
 	end
 	local function of(o, ...)
 		local xs = {...}
 		rules[o] = function(x, p)
-			return coroutine.wrap(function()
-				local p = x:spawn(o, p)
-				p.type = p.type + 32
-				for i=1,#xs do
-					yieldall(xs[i](x, p))
-					p.type = p.type + 32
+			p = x:spawn(o, p)
+			p.type = p.type + 32
+			local i, f, s, var = 1, xs[1](x, p)
+			return function()
+				::retry::
+				var = f(s, var)
+				if var then
+					return var
+				else
+					i = i + 1
+					if i <= #xs then
+						p.type = p.type + 32
+						f, s, var = xs[i](x, p)
+						goto retry
+					end
 				end
-			end)
+			end
 		end
 	end
 	local function oof(...)
 		local xs = {...}
 		return function(x, p)
-			return coroutine.wrap(function()
-				for i=1,#xs do
-					yieldall(xs[i](x, p))
+			local i, f, s, var = 1, xs[1](x, p)
+			return function()
+				::retry::
+				var = f(s, var)
+				if var then
+					return var
+				else
+					i = i + 1
+					if i <= #xs then
+						f, s, var = xs[i](x, p)
+						goto retry
+					end
 				end
-			end)
+			end
 		end
 	end
 	local Explist = seq(o(ast.ExpOr), many(seq(s(lex._comma), o(ast.ExpOr))))

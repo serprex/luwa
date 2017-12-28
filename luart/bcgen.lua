@@ -40,7 +40,7 @@ function asmmeta:push(op, ...)
 	end
 end
 function asmmeta:patch(idx, x)
-	self.bc[idx],self.bc[idx+1],self.bc[idx+2],self.bc[idx+3] = string.byte(string.pack('<i4', x), 1, 4)
+	self.bc[idx],self.bc[idx+1],self.bc[idx+2],self.bc[idx+3] = string.byte(string.pack('<i4', assert(x)), 1, 4)
 end
 function asmmeta:breakscope(f)
 	self.breaks = { prev = self.breaks }
@@ -423,7 +423,7 @@ emitStatSwitch = {
 	function(self, node) -- 5 break
 		assert(self.breaks, "break outside of loop")
 		self.breaks[#self.breaks+1] = #self.bc+1
-		self.push(bc.Jmp, 0)
+		self:push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 6 goto
 		local name = selectIdent(node)
@@ -437,7 +437,7 @@ emitStatSwitch = {
 			error('Jmp out of scope', nami)
 		end
 		self.gotos[#self.bc+1] = namei
-		self.push(bc.Jmp, 0)
+		self:push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 7 do-end
 		return emitNode(self, node, ast.Block)
@@ -751,6 +751,7 @@ local function emitShortCircuitFactory(ty, opcode)
 		if #node.fathered == 1 then
 			prod = visitEmit[ty](self, node.fathered[1], out)
 		else
+			local lab
 			for i, n in selectNodes(node, ty) do
 				visitEmit[ty](self, n, 1)
 				if lab then
@@ -855,7 +856,7 @@ visitEmit = {
 			emitNode(self, node, ast.Table)
 			res = { 1 }
 		else
-			self:push(bc.LoadConst, self:const(val:arg()))
+			self:push(bc.LoadConst, self:const(node.fathered[1]:arg()))
 			res = { 1 }
 		end
 		if outputs == -1 then
