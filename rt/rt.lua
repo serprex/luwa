@@ -1,13 +1,21 @@
+local M = require 'make'
+local func, global = M.func, M.global
+local importfunc = M.importfunc
+local i32, i64, f32, f64 = M.i32, M.i64, M.f32, M.f64
+
+local alloc = require 'alloc'
+local types, str, functy, allocsizef = alloc.types, alloc.str, alloc.functy, alloc.allocsizef
+
 NIL = 0
 TRUE = 8
 FALSE = 16
-otmp = global(i32, true)
-oluastack = global(i32, true) -- default to NIL
-ostrmt = global(i32, true)
-markbit = global(i32, true)
-idcount = global(i32, true)
+otmp = M.global(i32, true)
+oluastack = M.global(i32, true) -- default to NIL
+ostrmt = M.global(i32, true)
+markbit = M.global(i32, true)
+idcount = M.global(i32, true)
 
-memory = importmemory('', 'm', 1)
+local memory = M.importmemory('', 'm', 1)
 
 --[[TODO
 corountine.status: running suspended normal dead
@@ -32,7 +40,6 @@ GS = {}
 GF = {}
 
 local function doboot()
-	package.path = 'luart/?.lua;' .. package.path
 	return table.unpack(require('bootrt')(
 		'./luart/prelude.lua',
 		'./luart/astgen.lua', './luart/bcgen.lua',
@@ -137,7 +144,7 @@ local function addStatics(base, mem, ...)
 	return base, mem
 end
 
-data(memory, addStatics(4, {
+local image = M.data(memory, addStatics(4, {
 	-- nil
 	2, 0, 0, 0,
 	-- false
@@ -174,36 +181,57 @@ data(memory, addStatics(4, {
 
 heaptip = global(i32, true, HEAPBASE)
 
-igcfix = importfunc('', 'gcfix')
-igcmark = importfunc('', 'gcmark')
-echo = importfunc('', 'echo', i32, i32)
-echoptr = importfunc('', 'echoptr', i32, i32)
-sin = importfunc('', 'sin', f64, f64)
-cos = importfunc('', 'cos', f64, f64)
-asin = importfunc('', 'asin', f64, f64)
-acos = importfunc('', 'acos', f64, f64)
-atan = importfunc('', 'atan', f64, f64)
-atan2 = importfunc('', 'atan2', f64, f64, f64)
-exp = importfunc('', 'exp', f64, f64)
-log = importfunc('', 'log', f64, f64)
+local igcfix = importfunc('', 'gcfix')
+local igcmark = importfunc('', 'gcmark')
+local echo = importfunc('', 'echo', i32, i32)
+local echoptr = importfunc('', 'echoptr', i32, i32)
+local sin = importfunc('', 'sin', f64, f64)
+local cos = importfunc('', 'cos', f64, f64)
+local asin = importfunc('', 'asin', f64, f64)
+local acos = importfunc('', 'acos', f64, f64)
+local atan = importfunc('', 'atan', f64, f64)
+local atan2 = importfunc('', 'atan2', f64, f64, f64)
+local exp = importfunc('', 'exp', f64, f64)
+local log = importfunc('', 'log', f64, f64)
 
-setluastack = export('setluastack', func(i32, void, function(f, x)
+local setluastack = func(i32, void, function(f, x)
 	f:load(x)
 	f:storeg(oluastack)
-end))
-getluastack = export('getluastack', func(i32, function(f)
+end)
+local getluastack = func(i32, function(f)
 	f:loadg(oluastack)
-end))
+end)
 
-echodrop = func(i32, void, function(f, x)
+local echodrop = func(i32, void, function(f, x)
 	f:load(x)
 	f:call(echo)
 	f:drop()
 end)
 
-echodrop2 = func(i32, i32, i32, function(f, x, y)
+local echodrop2 = func(i32, i32, i32, function(f, x, y)
 	f:load(x)
 	f:load(y)
 	f:call(echodrop)
 	f:call(echo)
 end)
+
+return {
+	memory = memory,
+	image = image,
+	igcfix = igcfix,
+	igcmark = igcmark,
+	echo = echo,
+	echoptr = echoptr,
+	sin = sin,
+	cos = cos,
+	asin = asin,
+	acos = acos,
+	atan = atan,
+	atan2 = atan2,
+	exp = exp,
+	log = log,
+	setluastack = setluastack,
+	getluastack = getluastack,
+	echodrop = echodrop,
+	echodrop2 = echodrop2,
+}

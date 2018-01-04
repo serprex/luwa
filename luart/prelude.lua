@@ -94,6 +94,22 @@ end
 function math.rad(x)
 	return x * (0x1.921fb54442d18p1/180.)
 end
+local randomseed = 1
+function math.random()
+	-- xorshift* from wikipedia
+	randomseed = randomseed ~ (randomseed>>12)
+	randomseed = randomseed ~ (randomseed<<25)
+	randomseed = randomseed ~ (randomseed>>27)
+	return randomseed * 0x2545f4914f6cdd1d
+end
+function math.randomseed(x)
+	x = tonumber(x)
+	if x then
+		randomseed = x
+	else
+		error("bad argument #1 to 'randomseed' (number expected)")
+	end
+end
 function math.sqrt(x)
 	return x ^ .5
 end
@@ -321,7 +337,7 @@ end
 local _luwa = ...
 local fakereqtbl = {
 	ast = _luwa.ast0,
-	bc = _lwua.bc0,
+	bc = _luwa.bc0,
 	lex =  _luwa.lex0,
 	astgen = _luwa.astgen0,
 	bcgen = _luwa.bcgen0,

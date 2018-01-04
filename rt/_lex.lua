@@ -1,5 +1,23 @@
-local tokens = require'../luart/lex'
+local M = require 'make'
+local func = M.func
+
+local tokens = require './luart/lex'
 local srcslot, lexslot, rmapslot, frmapslot, constslot = 20, 16, 12, 8, 4
+
+local rt = require 'rt'
+
+local alloc = require 'alloc'
+local types, obj, num, float, str, buf = alloc.types, alloc.obj, alloc.num, alloc.float, alloc.str, alloc.buf
+local newi64, newf64, newtbl, newstr, newstrbuf, newvecbuf = alloc.newi64, alloc.newf64, alloc.newtbl, alloc.newstr, alloc.newstrbuf, alloc.newvecbuf
+local allocsizef = alloc.allocsizef
+
+local stack = require 'stack'
+local tmppush, tmppop, nthtmp, setnthtmp = stack.tmppush, stack.tmppop, stack.nthtmp, stack.setnthtmp
+
+local util = require 'util'
+
+local tbl = require './rt/table'
+local tblget, tblset = tbl.tblget, tbl.tblset
 
 local lxaddval = func(i32, i32, function(f, o)
 	local boxlen, buflen, rmslot = f:locals(i32, 3)
@@ -7,7 +25,7 @@ local lxaddval = func(i32, i32, function(f, o)
 	f:i32(rmapslot)
 	f:load(o)
 	f:i32load8u(obj.type)
-	f:i32(1)
+	f:i32(types.float)
 	f:eq()
 	f:select()
 	f:tee(rmslot)
@@ -60,7 +78,7 @@ end)
 
 local CHZERO = string.byte('0')
 
-lex = export('lex', func(i32, void, function(f, src)
+local lex = func(i32, void, function(f, src)
 	local i, ch, j, k, srclen, tlen = f:locals(i32, 6)
 	local temp64, temp642 = f:locals(i64, 2)
 	local double, flt10 = f:locals(f64, 2)
@@ -1864,4 +1882,8 @@ lex = export('lex', func(i32, void, function(f, src)
 	f:call(setnthtmp)
 	f:i32(8)
 	f:call(setnthtmp)
-end))
+end)
+
+return {
+	lex = lex,
+}

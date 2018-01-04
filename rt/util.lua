@@ -1,3 +1,10 @@
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, obj, buf, vec, str = alloc.types, alloc.obj, alloc.buf, alloc.vec, alloc.str
+local allocsize, newvec, newstr = alloc.allocsize, alloc.newvec, alloc.newstr
+
 chex = func(i32, i32, function(f, ch)
 	f:load(ch)
 	f:i32(48)
@@ -307,7 +314,7 @@ local mkhole = func(i32, i32, void, function(f, start, len)
 	f:band()
 	f:iff(function()
 		f:load(start)
-		f:i32(types['nil'])
+		f:i32(types.nul)
 		f:i32store8(obj.type)
 		f:load(start)
 		f:i32(8)

@@ -1,42 +1,46 @@
-#!/usr/bin/lua
-
 local push, pop = table.insert, table.remove
+i32, i64, f32, f64, anyfunc, functy, void = 0x7f, 0x7e, 0x7d, 0x7c, 0x70, 0x60, 0x40
+local i32, i64, f32, f64, anyfunc, functy, void = 0x7f, 0x7e, 0x7d, 0x7c, 0x70, 0x60, 0x40
+local imptypes = { [0] = 'fid', [1] = 'tid', [2] = 'mid', [3] = 'gid' }
+local modmeth = {}
+local modmt = { __index = modmeth }
 
-i32 = 0x7f
-i64 = 0x7e
-f32 = 0x7d
-f64 = 0x7c
-anyfunc = 0x70
-functy = 0x60
-void = 0x40
+local function mod()
+	return setmetatable({
+		_type = {},
+		_import = {},
+		_func = {},
+		_table = {},
+		_memory = {},
+		_global = {},
+		_export = {},
+		_start = nil,
+		_code = {},
+		_data = {},
+		fcache = {},
+		ids = {},
+		fid = 0,
+		tid = 0,
+		mid = 0,
+		gid = 0,
+		tymap = {},
+	}, modmt)
+end
+local function pushid(a, v)
+	if a[v] then
+		return a[v]
+	else
+		local id = #a
+		a[v] = id
+		a[id+1] = v
+		return id
+	end
+end
 
-Mod = {
-	type = {},
-	import = {},
-	func = {},
-	table = {},
-	memory = {},
-	global = {},
-	export = {},
-	start = nil,
-	element = {},
-	code = {},
-	data = {},
-	impfid = 0,
-	imptid = 0,
-	impmid = 0,
-	impgid = 0,
-	fid = 0,
-	tid = 0,
-	mid = 0,
-	gid = 0,
-	tymap = {},
-}
-
-function encode_varint(dst, val)
+local function encode_varint(dst, val)
 	local negmask = 0
 	if val < 0 then
-		negmask = ~0 << 57
+		negmask = -1 << 57
 	end
 	while true do
 		local b = val & 0x7f
@@ -49,7 +53,7 @@ function encode_varint(dst, val)
 		end
 	end
 end
-function encode_varuint(dst, val)
+local function encode_varuint(dst, val)
 	assert(val >= 0)
 	while true do
 		local b = val & 0x7f
@@ -62,25 +66,25 @@ function encode_varuint(dst, val)
 		end
 	end
 end
-function encode_f32(dst, val)
+local function encode_f32(dst, val)
 	local repr = ('<f'):pack(val)
 	for i = 1, 4 do
 		dst[#dst+1] = repr:byte(i)
 	end
 end
-function encode_f64(dst, val)
+local function encode_f64(dst, val)
 	local repr = ('<d'):pack(val)
 	for i = 1, 8 do
 		dst[#dst+1] = repr:byte(i)
 	end
 end
-function encode_string(dst, str)
+local function encode_string(dst, str)
 	encode_varuint(dst, #str)
 	for i = 1, #str do
 		dst[#dst+1] = str:byte(i)
 	end
 end
-function encode_limits(bc, sz, mxsz)
+local function encode_limits(bc, sz, mxsz)
 	if mxsz then
 		bc[#bc+1] = 1
 		encode_varuint(bc, sz)
@@ -91,16 +95,8 @@ function encode_limits(bc, sz, mxsz)
 	end
 end
 
-function assert_isvty(ty)
-	assert(ty == i32 or ty == i64 or ty == f32 or ty == f64, ty)
-end
-
-function globalid(x)
-	if x.init then
-		return x.id + Mod.impgid
-	else
-		return x.id
-	end
+local function assert_isvty(ty)
+	return assert(ty == i32 or ty == i64 or ty == f32 or ty == f64, ty)
 end
 
 local function remove_from(tbl, n)
@@ -109,60 +105,48 @@ local function remove_from(tbl, n)
 	end
 end
 
-function allocsizef(x)
-	return x+(-x&7)
-end
-
 -- Type
-function Mod:decltype(types)
+function modmeth:type(types)
 	if types[1] == void then
 		assert(#types == 1)
 		types = {}
 	end
-	local sig = table.concat(types)
+	local sig = string.char(table.unpack(types))
 	local t = self.tymap[sig]
 	if not t then
-		t = #self.type+1
+		t = #self._type+1
 		self.tymap[sig] = t
-		self.type[t] = types
+		self._type[t] = types
 	end
 	return t-1
 end
 
 -- Import
-function importfunc(m, f, ...)
-	assert(utf8.len(m) and utf8.len(f), "Non utf8 function import")
-	local sig = {...}
-	local impf = { m = m, f = f, ty = 0, type = sig, tid = Mod:decltype(sig), id = Mod.impfid }
-	Mod.impfid = Mod.impfid + 1
-	push(Mod.import, impf)
-	return impf
-end
-function importtable(m, f, elety, sz, mxsz)
-	assert(utf8.len(m) and utf8.len(f), "Non utf8 table import")
-	local impt = { m = m, f = f, ty = 1, id = Mod.imptid, elety = elety, sz = sz, mxsz = mxsz }
-	Mod.imptid = Mod.imptid + 1
-	push(Mod.import, impt)
-	return impt
-end
-function importmemory(m, f, sz, mxsz)
-	assert(utf8.len(m) and utf8.len(f), "Non utf8 memory import")
-	local impm = { m = m, f = f, ty = 2, sz = sz, mxsz = mxsz, id = Mod.impmid }
-	Mod.impmid = Mod.impmid + 1
-	push(Mod.import, impm)
-	return impm
-end
-function importglobal(m, f, ty, mut)
-	assert(utf8.len(m) and utf8.len(f), "Non utf8 global import")
-	if not mut then
-		mut = 0
-	elseif mut ~= 0 then
-		mut = 1
+function modmeth:import(imp)
+	if not self.ids[imp] then
+		local impty = imptypes[imp.ty]
+		local id = self[impty]
+		self.ids[imp] = id
+		self[impty] = id + 1
+		push(self._import, imp)
 	end
-	local impg = { m = m, f = f, ty = 3, type = ty, mut = mut, id = Mod.impgid }
-	Mod.impgid = Mod.impgid + 1
-	push(Mod.import, impg)
-	return impg
+	return self.ids[imp]
+end
+local function importfunc(m, f, ...)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 function import")
+	return { m = m, f = f, ty = 0, ... }
+end
+local function importtable(m, f, elety, sz, mxsz)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 table import")
+	return { m = m, f = f, ty = 1, elety = elety, sz = sz, mxsz = mxsz }
+end
+local function importmemory(m, f, sz, mxsz)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 memory import")
+	return { m = m, f = f, ty = 2, sz = sz, mxsz = mxsz }
+end
+local function importglobal(m, f, ty, mut)
+	assert(utf8.len(m) and utf8.len(f), "Non utf8 global import")
+	return { m = m, f = f, ty = 3, type = ty, mut = nztrue(mut) }
 end
 
 -- Function
@@ -322,13 +306,13 @@ function funcmeta:tee(x)
 end
 function funcmeta:loadg(x)
 	self:emit(0x23)
-	self:emituint(globalid(x))
+	self:emituint(self.mod:global(x))
 	self:push(x.type)
 end
 function funcmeta:storeg(x)
 	assert(x.mut)
 	self:emit(0x24)
-	self:emituint(globalid(x))
+	self:emituint(self.mod:global(x))
 	assert(self:pop() == x.type)
 end
 function funcmeta:drop()
@@ -393,7 +377,7 @@ function funcmeta:brtable(...)
 	end
 end
 function funcmeta:ret()
-	assert(not self.rety or self.rety == 0x40 or self:peek() == self.rety)
+	assert(not self.fn.rety or self.fn.rety == 0x40 or self:peek() == self.fn.rety)
 	self.polystack[self.scope] = true
 	self:emit(0x0f)
 end
@@ -418,8 +402,7 @@ function funcmeta:switch(expr, ...)
 		while #scopes > 1 and scopes[#scopes] == scopes[#scopes-1] do
 			scopes[#scopes] = nil
 		end
-		assert(scopes[0])
-		return self:brtable(scopes[0], table.unpack(scopes))
+		return self:brtable(assert(scopes[0]), table.unpack(scopes))
 	end
 	for idx=1,select('#', ...) do
 		local x = assert(select(idx, ...), idx)
@@ -600,27 +583,56 @@ mkstoreop('i64store32', 0x3e, i64)
 
 function funcmeta:call(f)
 	self:emit(0x10)
-	if getmetatable(f) == funcmt then
-		self:emituint(Mod.impfid + f.id)
-		for i = 1, f.pcount do
-			assert(self:pop() == f.localty[f.pcount-i+1])
-		end
-		if f.rety and f.rety ~= 0x40 then
-			self:push(f.rety)
-		end
+	local pcount, ret, params
+	if f.isfunc then
+		params, pcount, ret = f.params, #f.params, f.rety
+		self:emituint(self.mod:func(f))
 	else
-		self:emituint(f.id)
-		local pcount, ret = #f.type-1, f.type[#f.type]
-		for i = 1, pcount do
-			assert(self:pop() == f.type[pcount-i+1])
-		end
-		if ret and ret ~= 0x40 then
-			self:push(ret)
-		end
+		params, pcount, ret = f, #f-1, f[#f]
+		self:emituint(self.mod:import(f))
+	end
+	for i = 1, pcount do
+		assert(self:pop() == params[pcount-i+1])
+	end
+	if ret and ret ~= 0x40 then
+		self:push(ret)
 	end
 end
 
-function func(...)
+function modmeth:func(f)
+	if self.fcache[f] then
+		return self.fcache[f]
+	end
+	local params = {table.unpack(f.params)}
+	local fb = setmetatable({
+		mod = self,
+		fn = f,
+		localty = params,
+		localbc = {},
+		localbcn = 0,
+		pcount = #params,
+		bcode = {},
+		stack = {},
+		scope = 0,
+		scopety = {},
+		stackmin = {},
+		polystack = {},
+		blockty = {},
+	}, funcmt)
+	local id = pushid(self._func, fb) + self.fid
+	self.fcache[f] = id
+	self:type(f.fty)
+	local ps = {}
+	for i=1, #params do
+		ps[i] = i
+	end
+	fb:pushscope(f.rety, true)
+	f.bgen(fb, table.unpack(ps))
+	fb:popscope()
+	return id
+end
+
+local function func(...)
 	local rety
 	local params, fty = {}, {}
 	local n = select('#', ...)
@@ -640,66 +652,57 @@ function func(...)
 		rety = void
 	end
 	fty[#fty+1] = rety
-	local f = setmetatable({
+	return {
+		isfunc = true,
 		rety = rety,
-		localty = params,
-		localbc = {},
-		localbcn = 0,
-		pcount = #params,
-		bcode = {},
-		stack = {},
-		scope = 0,
-		scopety = {},
-		stackmin = {},
-		polystack = {},
-		blockty = {},
+		fty = fty,
+		params = params,
 		bgen = bgen,
-		id = Mod.fid,
-		tid = Mod:decltype(fty),
-	}, funcmt)
-	Mod.fid = Mod.fid + 1
-	push(Mod.func, f)
-	return f
+	}
 end
 
 -- Table
 
-function tbl(elems)
-	Mod.table[#Mod.table+1] = elems
+function modmeth:table(elems)
+	pushid(self._table, elems)
 end
 
 -- Memory
 
-function memory(sz, mxsz)
-	Mod.memory[#Mod.memory+1] = { sz = sz, mxsz = mxsz }
+function modmeth:memory(mem)
+	return pushid(self._memory, mem) + self.mid
+end
+
+local function memory(sz, mxsz)
+	return { sz = sz, mxsz = mxsz }
 end
 
 -- Global
 
-function global(ty, mut, func)
-	fty = type(func)
+function modmeth:global(globe)
+	return pushid(self._global, globe) + self.gid
+end
+
+local function nztrue(x)
+	if not x or x == 0 then
+		return 0
+	else
+		return 1
+	end
+end
+
+local function global(ty, mut, func)
 	assert_isvty(ty)
-	if not mut then
-		mut = 0
-	elseif mut ~= 0 then
-		mut = 1
-	end
-	if not func then
-		func = 0
-	end
-	local globe = { type = ty, mut = mut, init = func, id = Mod.gid }
-	push(Mod.global, globe)
-	Mod.gid = Mod.gid + 1
-	return globe
+	return { type = ty, mut = nztrue(mut), init = func or 0 }
 end
 
 -- Export
 
-function export(name, obj)
+function modmeth:export(name, obj)
 	assert(type(name) == 'string')
 	assert(utf8.len(name), "Non utf8 export")
 	local kind
-	if obj.bcode then
+	if obj.isfunc then
 		kind = 0
 	elseif obj.istable then
 		kind = 1
@@ -708,32 +711,31 @@ function export(name, obj)
 	else
 		kind = 3
 	end
-	push(Mod.export, { f = name, obj = obj, kind = kind })
+	push(self._export, { f = name, obj = obj, kind = kind })
 	return obj
 end
 
 -- Start
 
-function start(fu)
-	assert(not Mod.start and fu.pcount == 0 and (not fu.rety or fu.rety == void))
-	Mod.start = fu
+function modmeth:start(fu)
+	assert(not mod._start and fu.pcount == 0 and (not fu.rety or fu.rety == void))
+	mod._start = fu
 	return fu
 end
 
 -- Data
 
-function data(mem, offexpr, data)
-	Mod.data[#Mod.data+1] = { memid = mem.id, offexpr = offexpr, data = data }
+function modmeth:data(data)
+	push(self._data, data)
+end
+
+local function data(mem, offexpr, data)
+	return { mem = mem, offexpr = offexpr, data = data }
 end
 
 -- Main
 
-local files, chunks = {...}, {}
-for f = 2, #files do
-	dofile(files[f])
-end
-
-local function writeSection(id, bc)
+local function writeSection(chunks, id, bc)
 	local header = {id}
 	encode_varuint(header, #bc)
 	chunks[#chunks+1] = string.char(table.unpack(header))
@@ -747,169 +749,189 @@ local function writeSection(id, bc)
 		nn = nn + 4096
 	end
 end
-local function loopSection(id, elems, bcfu)
+local function loopSection(chunks, id, elems, bcfu)
 	if #elems then
 		local bc = {}
 		encode_varuint(bc, #elems)
 		for i = 1, #elems do
 			bcfu(bc, elems[i])
 		end
-		writeSection(id, bc)
+		writeSection(chunks, id, bc)
 	end
 end
 
-loopSection(1, Mod.type, function(bc, ty)
-	bc[#bc+1] = 0x60
-	if #ty == 0 then
-		bc[#bc+1] = 0
-		bc[#bc+1] = 0
-	else
-		local ret = ty[#ty]
-		local pcount = #ty-1
-		encode_varuint(bc, pcount)
-		for j = 1, pcount do
-			bc[#bc+1] = ty[j]
+function modmeth:compile()
+	local chunks = {"\0asm\1\0\0\0"}
+
+	local impty = {}
+	for i=1, #self._import do
+		local imp = self._import[i]
+		if imp.ty == 0 then
+			impty[imp] = self:type(imp)
 		end
-		if ret == 0x40 then
+	end
+	for i=1, #self._export do
+		local exp = self._export[i]
+		if exp.kind == 0 then
+			self:func(exp.obj)
+		end
+	end
+	if self._start then
+		self:func(self._start)
+	end
+
+	loopSection(chunks, 1, self._type, function(bc, ty)
+		bc[#bc+1] = 0x60
+		if #ty == 0 then
+			bc[#bc+1] = 0
 			bc[#bc+1] = 0
 		else
-			bc[#bc+1] = 1
-			bc[#bc+1] = ret
+			local ret = ty[#ty]
+			local pcount = #ty-1
+			encode_varuint(bc, pcount)
+			for j = 1, pcount do
+				bc[#bc+1] = ty[j]
+			end
+			if ret == 0x40 then
+				bc[#bc+1] = 0
+			else
+				bc[#bc+1] = 1
+				bc[#bc+1] = ret
+			end
 		end
-	end
-end)
+	end)
 
-loopSection(2, Mod.import, function(bc, imp)
-	encode_string(bc, imp.m)
-	encode_string(bc, imp.f)
-	bc[#bc+1] = imp.ty
-	if imp.ty == 0 then
-		encode_varuint(bc, imp.tid)
-	elseif imp.ty == 1 then
-		encode_varuint(bc, imp.elety)
-		encode_varuint(bc, imp.sz, imp.mxsz)
-	elseif imp.ty == 2 then
-		encode_limits(bc, imp.sz, imp.mxsz)
-	elseif imp.ty == 3 then
-		encode_varuint(imp.type)
-		encode_varuint(imp.mut)
-	else
-		error("Unknown import type: " .. imp.ty)
-	end
-end)
-
-loopSection(3, Mod.func, function(bc, fu)
-	encode_varuint(bc, fu.tid)
-end)
-
-loopSection(4, Mod.table, function(bc, tbl)
-	error("NYI tables")
-end)
-
-loopSection(5, Mod.memory, function(bc, mem)
-	encode_limits(mem.sz, mem.mxsz)
-end)
-
-loopSection(6, Mod.global, function(bc, globe)
-	local ty, init = globe.type, globe.init
-	bc[#bc+1] = ty
-	bc[#bc+1] = globe.mut
-	if type(init) == 'number' then
-		if ty == i32 then
-			bc[#bc+1] = 0x41
-			encode_varint(bc, init)
-		elseif ty == i64 then
-			bc[#bc+1] = 0x42
-			encode_varint(bc, init)
-		elseif ty == f32 then
-			bc[#bc+1] = 0x43
-			encode_f32(bc, init)
+	loopSection(chunks, 2, self._import, function(bc, imp)
+		encode_string(bc, imp.m)
+		encode_string(bc, imp.f)
+		bc[#bc+1] = imp.ty
+		if imp.ty == 0 then
+			encode_varuint(bc, impty[imp])
+		elseif imp.ty == 1 then
+			encode_varuint(bc, imp.elety)
+			encode_limits(bc, imp.sz, imp.mxsz)
+		elseif imp.ty == 2 then
+			encode_limits(bc, imp.sz, imp.mxsz)
+		elseif imp.ty == 3 then
+			encode_varuint(imp.type)
+			encode_varuint(imp.mut)
 		else
-			bc[#bc+1] = 0x44
-			encode_f64(bc, init)
+			error("Unknown import type: " .. imp.ty)
 		end
-	else
-		assert(not init.mut)
-		assert(init.type == ty)
-		bc[#bc+1] = 0x23
-		encode_varuint(bc, globalid(x))
-	end
-	bc[#bc+1] = 0x0b
-end)
+	end)
 
-loopSection(7, Mod.export, function(bc, expo)
-	encode_string(bc, expo.f)
-	bc[#bc+1] = expo.kind
-	if expo.kind == 0 then
-		encode_varuint(bc, Mod.impfid + expo.obj.id)
-	elseif expo.kind == 1 then
-		encode_varuint(bc, Mod.imptid + expo.obj.id)
-	elseif expo.kind == 2 then
-		encode_varuint(bc, Mod.impmid + expo.obj.id)
-	else
-		encode_varuint(bc, Mod.impgid + expo.obj.id)
-	end
-end)
+	loopSection(chunks, 3, self._func, function(bc, fu)
+		encode_varuint(bc, self:type(fu.fn.fty))
+	end)
 
-if Mod.start then
-	local bc = {}
-	encode_varuint(bc, Mod.impfid + Mod.start.id)
-	writeSection(8, bc)
+	loopSection(chunks, 4, self._table, function(bc, tbl)
+		error("NYI tables")
+	end)
+
+	loopSection(chunks, 5, self._memory, function(bc, mem)
+		encode_limits(mem.sz, mem.mxsz)
+	end)
+
+	loopSection(chunks, 6, self._global, function(bc, globe)
+		local ty, init = globe.type, globe.init
+		bc[#bc+1] = ty
+		bc[#bc+1] = globe.mut
+		if type(init) == 'number' then
+			if ty == i32 then
+				bc[#bc+1] = 0x41
+				encode_varint(bc, init)
+			elseif ty == i64 then
+				bc[#bc+1] = 0x42
+				encode_varint(bc, init)
+			elseif ty == f32 then
+				bc[#bc+1] = 0x43
+				encode_f32(bc, init)
+			else
+				bc[#bc+1] = 0x44
+				encode_f64(bc, init)
+			end
+		else
+			assert(not init.mut)
+			assert(init.type == ty)
+			bc[#bc+1] = 0x23
+			encode_varuint(bc, self:global(x))
+		end
+		bc[#bc+1] = 0x0b
+	end)
+
+	loopSection(chunks, 7, self._export, function(bc, expo)
+		encode_string(bc, expo.f)
+		bc[#bc+1] = expo.kind
+		if expo.kind == 0 then
+			encode_varuint(bc, self:func(expo.obj))
+		elseif expo.kind == 1 then
+			encode_varuint(bc, self:table(expo.obj))
+		elseif expo.kind == 2 then
+			encode_varuint(bc, self:memory(expo.obj))
+		else
+			encode_varuint(bc, self:global(expo.obj))
+		end
+	end)
+
+	if self._start then
+		local bc = {}
+		encode_varuint(bc, self:func(self._start))
+		writeSection(chunks, 8, bc)
+	end
+
+	loopSection(chunks, 10, self._func, function(bc, fu)
+		local fc = {}
+		encode_varuint(fc, fu.localbcn)
+		for j=1, #fu.localbc do
+			fc[#fc+1] = fu.localbc[j]
+		end
+		for j = 1, #fu.bcode do
+			fc[#fc+1] = fu.bcode[j]
+		end
+		fc[#fc+1] = 0x0b
+
+		encode_varuint(bc, #fc)
+		for j = 1, #fc do
+			bc[#bc+1] = fc[j]
+		end
+	end)
+
+	loopSection(chunks, 11, self._data, function(bc, data)
+		encode_varuint(bc, self.ids[data.mem])
+		if type(data.offexpr) == 'number' then
+			bc[#bc+1] = 0x41
+			encode_varint(bc, data.offexpr)
+		else
+			local gdata = data.offexpr
+			assert(not gdata.mut)
+			assert(gdata.type == i32)
+			bc[#bc+1] = 0x23
+			encode_varuint(bc, self:global(gdata))
+		end
+		bc[#bc+1] = 0x0b
+		encode_varuint(bc, #data.data)
+		for j = 1, #data.data do
+			bc[#bc+1] = data.data[j]
+		end
+	end)
+
+	return chunks
 end
 
-loopSection(10, Mod.func, function(bc, fu)
-	local params = {}
-	for i=1, fu.pcount do
-		params[i] = i
-	end
-	fu:pushscope(fu.rety, true)
-	--for k,v in pairs(_ENV) do
-	--	if v == fu then
-	--		print(k)
-	--	end
-	--end
-	fu:bgen(table.unpack(params))
-	fu:popscope()
-
-	local fc = {}
-	encode_varuint(fc, fu.localbcn)
-	for j=1, #fu.localbc do
-		fc[#fc+1] = fu.localbc[j]
-	end
-	for j = 1, #fu.bcode do
-		fc[#fc+1] = fu.bcode[j]
-	end
-	fc[#fc+1] = 0x0b
-
-	encode_varuint(bc, #fc)
-	for j = 1, #fc do
-		bc[#bc+1] = fc[j]
-	end
-	--print(Mod.impfid + fu.id, table.concat(fu.bcode, ':'))
-end)
-
-loopSection(11, Mod.data, function(bc, data)
-	encode_varuint(bc, data.memid)
-	if type(data.offexpr) == 'number' then
-		bc[#bc+1] = 0x41
-		encode_varint(bc, data.offexpr)
-	else
-		local gdata = data.offexpr
-		assert(not gdata.mut)
-		assert(gdata.type == i32)
-		bc[#bc+1] = 0x23
-		encode_varuint(bc, globalid(gdata))
-	end
-	bc[#bc+1] = 0x0b
-	encode_varuint(bc, #data.data)
-	for j = 1, #data.data do
-		bc[#bc+1] = data.data[j]
-	end
-end)
-
-local outf = io.open(files[1], 'w')
-outf:write("\0asm\1\0\0\0")
-for i=1, #chunks do
-	outf:write(chunks[i])
-end
-outf:close()
+return {
+	i32 = i32,
+	i64 = i64,
+	f32 = f32,
+	f64 = f64,
+	anyfunc = anyfunc,
+	functy = functy,
+	void = void,
+	mod = mod,
+	func = func,
+	global = global,
+	data = data,
+	importfunc = importfunc,
+	importtable = importtable,
+	importmemory = importmemory,
+	importglobal = importglobal,
+}

@@ -1,3 +1,9 @@
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, str, vec, functy, coro, allocsizef = alloc.types, alloc.str, alloc.vec, alloc.functy, alloc.coro, alloc.allocsizef
+
 local ops = require'../luart/bc'
 
 dataframe = {
@@ -29,7 +35,7 @@ calltypes = {
 	bool = 5, -- Cast result to bool
 }
 
-init = export('init', func(i32, void, function(f, fn)
+init = func(i32, void, function(f, fn)
 	-- Transition oluastack to having a stack frame from fn
 	-- Assumes stack was previously setup
 
@@ -146,7 +152,7 @@ init = export('init', func(i32, void, function(f, fn)
 	f:i32load(functy.frees)
 	f:i32(objframe.tmpfrees)
 	f:call(setnthtmp)
-end))
+end)
 
 loadframebase = func(i32, function(f)
 	local a = f:locals(i32)
@@ -170,7 +176,7 @@ param0 = func(i32, function(f)
 	f:add()
 end)
 
-eval = export('eval', func(i32, function(f)
+eval = func(i32, function(f)
 	local a, b, c, d, e,
 		meta_callty, meta_retb, meta_retc, meta_key, meta_off,
 		framebase, objbase, base, bc, pc = f:locals(i32, 5+5+5)
@@ -1974,4 +1980,4 @@ eval = export('eval', func(i32, function(f)
 	f:i32store(dataframe.pc)
 
 	f:i32(0)
-end))
+end)

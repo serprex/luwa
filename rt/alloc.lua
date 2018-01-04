@@ -1,4 +1,7 @@
-types = {
+local M = require 'make'
+local func = M.func
+
+local types = {
 	int = 0,
 	float = 1,
 	['nil'] = 2,
@@ -11,21 +14,19 @@ types = {
 	functy = 8,
 	coro = 9,
 }
-obj = {
+local obj = {
 	gc = 0,
 	type = 4,
 }
-bool = {
+local bool = {
 	val = 5,
 	sizeof = 8,
 }
-num = {
+local num = {
 	val = 5,
 	sizeof = 16,
 }
-int = num
-float = num
-tbl = {
+local tbl = {
 	id = 5,
 	len = 9,
 	hlen = 13,
@@ -34,21 +35,21 @@ tbl = {
 	meta = 25, -- tbl?
 	sizeof = 32,
 }
-str = {
+local str = {
 	len = 5,
 	hash = 9,
 	base = 13,
 }
-vec = {
+local vec = {
 	len = 5,
 	base = 9,
 }
-buf = {
+local buf = {
 	len = 5,
 	ptr = 9, -- vec|str
 	sizeof = 16,
 }
-functy = {
+local functy = {
 	id = 5,
 	isdotdotdot = 9,
 	bc = 10, -- str
@@ -58,13 +59,13 @@ functy = {
 	paramc = 26,
 	sizeof = 32,
 }
-corostate = {
+local corostate = {
 	dead = 0,
 	norm = 1,
 	live = 2,
 	wait = 3,
 }
-coro = {
+local coro = {
 	id = 5,
 	state = 9,
 	caller = 10, -- coro?
@@ -73,7 +74,11 @@ coro = {
 	sizeof = 24,
 }
 
-allocsize = func(i32, i32, function(f, sz)
+local function allocsizef(x)
+	return x+(-x&7)
+end
+
+local allocsize = func(i32, i32, function(f, sz)
 	f:i32(0)
 	f:load(sz)
 	f:sub()
@@ -83,7 +88,7 @@ allocsize = func(i32, i32, function(f, sz)
 	f:add()
 end)
 
-nextid = func(i32, function(f)
+local nextid = func(i32, function(f)
 	f:loadg(idcount)
 	f:loadg(idcount)
 	f:i32(1)
@@ -91,7 +96,7 @@ nextid = func(i32, function(f)
 	f:storeg(idcount)
 end)
 
-newobj = func(i32, i32, i32, function(f, sz, t)
+local newobj = func(i32, i32, i32, function(f, sz, t)
 	local p, ht = f:locals(i32, 2)
 	f:loadg(heaptip)
 	f:tee(p)
@@ -139,29 +144,91 @@ newobj = func(i32, i32, i32, function(f, sz, t)
 	f:load(p)
 end)
 
-newi64 = export('newi64', func(i64, i32, function(f, x)
+local newi64 = func(i64, i32, function(f, x)
 	local p = f:locals(i32)
 	f:i32(16)
 	f:i32(types.int)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
-	f:i64store(int.val)
+	f:i64store(num.val)
 	f:load(p)
-end))
+end)
 
-newf64 = export('newf64', func(f64, i32, function(f, x)
+local newf64 = func(f64, i32, function(f, x)
 	local p = f:locals(i32)
 	f:i32(16)
 	f:i32(types.float)
 	f:call(newobj)
 	f:tee(p)
 	f:load(x)
-	f:f64store(int.val)
+	f:f64store(num.val)
 	f:load(p)
-end))
+end)
 
-newtbl = export('newtbl', func(i32, function(f)
+local newvec = func(i32, i32, function(f, sz)
+	local p, n = f:locals(i32, 2)
+	f:i32(9)
+	f:load(sz)
+	f:add()
+	f:call(allocsize)
+	f:i32(types.vec)
+	f:call(newobj)
+	f:tee(p)
+	f:load(sz)
+	f:i32store(vec.len)
+
+	-- need to start with (sz - n)%8 == 0
+	f:load(sz)
+	f:i32(4)
+	f:band()
+	f:iff(function()
+		f:load(p)
+		f:i32(NIL)
+		f:i32store(vec.base)
+		f:i32(4)
+		f:store(n)
+	end)
+
+	f:loop(i32, function(loop) -- fill vec with references to nil
+		f:load(p)
+		f:load(n)
+		f:load(sz)
+		f:eq()
+		f:brif(f)
+		f:load(n)
+		f:add()
+		f:i64(0)
+		f:i64store(vec.base)
+
+		f:load(n)
+		f:i32(8)
+		f:add()
+		f:store(n)
+		f:br(loop)
+	end)
+end)
+
+local newvec1 = func(i32, i32, function(f, val)
+	local p, n = f:locals(i32, 2)
+	f:load(val)
+	f:storeg(otmp)
+
+	f:i32(16)
+	f:i32(types.vec)
+	f:call(newobj)
+	f:tee(p)
+	f:i32(4)
+	f:i32store(vec.len)
+
+	f:load(p)
+	f:loadg(otmp)
+	f:i32store(vec.base)
+
+	f:load(p)
+end)
+
+local newtbl = func(i32, function(f)
 	local p = f:locals(i32)
 	f:i32(32)
 	f:i32(types.tbl)
@@ -198,9 +265,9 @@ newtbl = export('newtbl', func(i32, function(f)
 	f:i32store(tbl.hash)
 
 	f:loadg(otmp)
-end))
+end)
 
-newstr = export('newstr', func(i32, i32, function(f, sz)
+local newstr = func(i32, i32, function(f, sz)
 	local p = f:locals(i32)
 	f:i32(13)
 	f:load(sz)
@@ -273,71 +340,9 @@ newstr = export('newstr', func(i32, i32, function(f, sz)
 		f:i32store8(str.base)
 	end, 8-str.base&7, 'sb7')
 	f:load(p)
-end))
+end)
 
-newvec = export('newvec', func(i32, i32, function(f, sz)
-	local p, n = f:locals(i32, 2)
-	f:i32(9)
-	f:load(sz)
-	f:add()
-	f:call(allocsize)
-	f:i32(types.vec)
-	f:call(newobj)
-	f:tee(p)
-	f:load(sz)
-	f:i32store(vec.len)
-
-	-- need to start with (sz - n)%8 == 0
-	f:load(sz)
-	f:i32(4)
-	f:band()
-	f:iff(function()
-		f:load(p)
-		f:i32(NIL)
-		f:i32store(vec.base)
-		f:i32(4)
-		f:store(n)
-	end)
-
-	f:loop(i32, function(loop) -- fill vec with references to nil
-		f:load(p)
-		f:load(n)
-		f:load(sz)
-		f:eq()
-		f:brif(f)
-		f:load(n)
-		f:add()
-		f:i64(0)
-		f:i64store(vec.base)
-
-		f:load(n)
-		f:i32(8)
-		f:add()
-		f:store(n)
-		f:br(loop)
-	end)
-end))
-
-newvec1 = export('newvec1', func(i32, i32, function(f, val)
-	local p, n = f:locals(i32, 2)
-	f:load(val)
-	f:storeg(otmp)
-
-	f:i32(16)
-	f:i32(types.vec)
-	f:call(newobj)
-	f:tee(p)
-	f:i32(4)
-	f:i32store(vec.len)
-
-	f:load(p)
-	f:loadg(otmp)
-	f:i32store(vec.base)
-
-	f:load(p)
-end))
-
-newbuf = func(i32, function(f)
+local newbuf = func(i32, function(f)
 	local p = f:locals(i32)
 	f:i32(buf.sizeof)
 	f:i32(types.buf)
@@ -353,21 +358,21 @@ newbuf = func(i32, function(f)
 	f:load(p)
 end)
 
-newstrbuf = export('newstrbuf', func(i32, i32, function(f, sz)
+local newstrbuf = func(i32, i32, function(f, sz)
 	f:load(sz)
 	f:call(newstr)
 	f:storeg(otmp)
 	f:call(newbuf)
-end))
+end)
 
-newvecbuf = export('newvecbuf', func(i32, i32, function(f, sz)
+local newvecbuf = func(i32, i32, function(f, sz)
 	f:load(sz)
 	f:call(newvec)
 	f:storeg(otmp)
 	f:call(newbuf)
-end))
+end)
 
-newfunc = export('newfunc', func(i32, function(f)
+local newfunc = func(i32, function(f)
 	local a = f:locals(i32)
 
 	f:i32(functy.sizeof)
@@ -392,9 +397,9 @@ newfunc = export('newfunc', func(i32, function(f)
 	f:i32store(functy.paramc)
 
 	f:load(a)
-end))
+end)
 
-newcoro = export('newcoro', func(i32, function(f)
+local newcoro = func(i32, function(f)
 	local a = f:locals(i32)
 
 	f:i32(coro.sizeof)
@@ -418,4 +423,34 @@ newcoro = export('newcoro', func(i32, function(f)
 	f:i64store(coro.stack)
 
 	f:load(a)
-end))
+end)
+
+return {
+	types = types,
+	obj = obj,
+	bool = bool,
+	num = num,
+	int = num,
+	float = num,
+	tbl = tbl,
+	str = str,
+	vec = vec,
+	buf = buf,
+	functy = functy,
+	corotstate = corostate,
+	coro = coro,
+	allocsizef = allocsizef,
+	allocsize = allocsize,
+	nextid = nextid,
+	newobj = newobj,
+	newi64 = newi64,
+	newf64 = newf64,
+	newtbl = newtbl,
+	newstr = newstr,
+	newvec = newvec,
+	newvec1 = newvec1,
+	newstrbuf = newstrbuf,
+	newvecbuf = newvecbuf,
+	newfunc = newfunc,
+	newcoro = newcoro,
+}

@@ -1,4 +1,14 @@
-tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local tbl, vec = alloc.tbl, alloc.vec
+local newvec = alloc.newvec
+
+local _obj = require 'obj'
+local hash = _obj.hash
+
+tblset = func(i32, i32, i32, void, function(f, tab, key, val)
 	local kv, mx = f:locals(i32, 2)
 
 	-- H <- (hash(key) % tab.hash.len) & -8
@@ -145,9 +155,9 @@ tblset = export('tblset', func(i32, i32, i32, void, function(f, tab, key, val)
 		end)
 		f:br(loop)
 	end)
-end))
+end)
 
-tblget = export('tblget', func(i32, i32, i32, function(f, tab, key)
+tblget = func(i32, i32, i32, function(f, tab, key)
 	local kv, mx = f:locals(i32, 2)
 	
 	-- H <- (hash(key) % tab.hash.len) & -8
@@ -208,4 +218,9 @@ tblget = export('tblget', func(i32, i32, i32, function(f, tab, key)
 
 		f:br(loop)
 	end)
-end))
+end)
+
+return {
+	tblget = tblget,
+	tblset = tblset,
+}

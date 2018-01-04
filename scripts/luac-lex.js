@@ -24,7 +24,7 @@ function readint(mem, idx) {
 		rtsrc.buffer.slice(rtsrc.byteOffset, rtsrc.byteOffset + rtsrc.byteLength),
 		{'':{
 			m: mem,
-			echo: x => x,
+			echo: x => {console.error(x);return x},
 			echoptr: x => x,
 			sin: Math.sin,
 			cos: Math.cos,

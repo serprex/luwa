@@ -1,3 +1,10 @@
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, obj, num, int, float, vec, tbl, str, functy, coro = alloc.types, alloc.obj, alloc.num, alloc.int, alloc.float, alloc.vec, alloc.tbl, alloc.str, alloc.functy, alloc.coro
+local allocsize = alloc.allocsize
+
 eq = func(i32, i32, i32, function(f, a, b)
 	local i, j = f:locals(i32, 2)
 	f:load(a)
@@ -272,3 +279,9 @@ sizeof = func(i32, i32, function(f, o)
 	f:add()
 	f:call(allocsize)
 end)
+
+return {
+	eq = eq,
+	hash = hash,
+	sizeof = sizeof,
+}

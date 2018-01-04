@@ -1,3 +1,17 @@
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, obj, tbl, vec, str, buf, functy, coro = alloc.types, alloc.obj, alloc.tbl, alloc.vec, alloc.str, alloc.buf, alloc.functy, alloc.coro
+
+local _obj = require 'obj'
+local sizeof = _obj.sizeof
+
+local rt = require 'rt'
+local igcmark = rt.igcmark
+local igcfix = rt.igcfix
+
+
 gccollect = func(function(f)
 	local freetip, livetip, sz, n, m = f:locals(i32, 5)
 	f:loadg(markbit)
@@ -203,17 +217,17 @@ gccollect = func(function(f)
 		f:loop(function(loop)
 			f:load(livetip)
 			f:call(sizeof)
-			f:store(sz)
+			f:tee(sz)
 
 			f:load(livetip)
 			f:i32load(obj.gc)
+			f:tee(n)
 			f:i32(1)
 			f:band()
 			f:loadg(markbit)
 			f:eq()
 			f:iff(function()
-				f:load(livetip)
-				f:i32load(obj.gc)
+				f:load(n)
 				f:i32(-8)
 				f:band()
 				f:load(livetip)
@@ -222,7 +236,6 @@ gccollect = func(function(f)
 			end)
 
 			f:load(livetip)
-			f:load(sz)
 			f:add()
 			f:tee(livetip)
 			f:loadg(heaptip)
@@ -237,7 +250,7 @@ gccollect = func(function(f)
 	f:storeg(heaptip)
 end)
 
-gcmark = export('gcmark', func(i32, void, function(f, o)
+gcmark = func(i32, void, function(f, o)
 	local m = f:locals(i32)
 
 	local function markptr(offset)
@@ -265,7 +278,7 @@ gcmark = export('gcmark', func(i32, void, function(f, o)
 	f:switch(function()
 		f:load(o)
 		f:i32load8u(obj.type)
-	end, { types.int, types.float, types.nul, types.bool, types.str, gcmark}, types.tbl, function()
+	end, { types.int, types.float, types.nul, types.bool, types.str, f }, types.tbl, function()
 		markptr(tbl.arr)
 		markptr(tbl.hash)
 		markptr(tbl.meta)
@@ -304,4 +317,9 @@ gcmark = export('gcmark', func(i32, void, function(f, o)
 	markptr(coro.caller)
 	markptr(coro.stack)
 	markptr(coro.data)
-end))
+end)
+
+return {
+	gcmark = gcmark,
+	gccollect = gccollect,
+}
