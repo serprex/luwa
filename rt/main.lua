@@ -3,7 +3,7 @@ package.path = 'rt/?.lua;luart/?.lua;' .. package.path
 local make = require 'make'
 
 local _stack = require 'stack'
-local _table = require 'table'
+local _table = require '_table'
 local _rt = require 'rt'
 local _vm = require 'vm'
 local _alloc = require 'alloc'

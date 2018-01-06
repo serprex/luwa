@@ -16,11 +16,12 @@ local tmppush, tmppop, nthtmp, setnthtmp = stack.tmppush, stack.tmppop, stack.nt
 
 local util = require 'util'
 
-local tbl = require './rt/table'
-local tblget, tblset = tbl.tblget, tbl.tblset
+local _table = require '_table'
+local tblget, tblset = _table.tblget, _table.tblset
 
 local lxaddval = func(i32, i32, function(f, o)
 	local boxlen, buflen, rmslot = f:locals(i32, 3)
+
 	f:i32(frmapslot)
 	f:i32(rmapslot)
 	f:load(o)

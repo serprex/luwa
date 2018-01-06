@@ -11,7 +11,6 @@ local rt = require 'rt'
 local igcmark = rt.igcmark
 local igcfix = rt.igcfix
 
-
 gccollect = func(function(f)
 	local freetip, livetip, sz, n, m = f:locals(i32, 5)
 	f:loadg(markbit)

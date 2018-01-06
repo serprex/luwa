@@ -2,9 +2,17 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
-local types, str, vec, functy, coro, allocsizef = alloc.types, alloc.str, alloc.vec, alloc.functy, alloc.coro, alloc.allocsizef
+local types, str, vec, tbl, functy, coro, allocsizef =
+	alloc.types, alloc.str, alloc.vec, alloc.tbl, alloc.functy, alloc.coro, alloc.allocsizef
 
-local ops = require'../luart/bc'
+local _table = require '_table'
+local tblget, tblset = _table.tblget, _table.tblset
+
+local stack = require 'stack'
+local tmppush, tmppop, nthtmp, setnthtmp, extendtmp =
+	stack.tmppush, stack.tmppop, stack.nthtmp, stack.setnthtmp, stack.extendtmp
+
+local ops = require 'bc'
 
 dataframe = {
 	type = str.base + 0,
