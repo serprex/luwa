@@ -8,9 +8,6 @@ const fs = require('fs'),
 function int2buf(x) {
 	return Buffer.from([x, x>>8, x>>16, x>>24]);
 }
-function readint(mem, idx) {
-	return mem[idx]|mem[idx+1]<<8|mem[idx+2]<<16|mem[idx+3]<<24;
-}
 (async function() {
 	const rtsrc = await readFile(__dirname + '/lex.wasm');
 	const mem = new WebAssembly.Memory({initial:1});
@@ -53,10 +50,7 @@ function readint(mem, idx) {
 	mod.setluastack(luastack.val);
 	const newvec = mkref(mod.newvecbuf(32));
 	let mem8 = new Uint8Array(mem.buffer);
-	mem8[luastack.val+14] = newvec.val;
-	mem8[luastack.val+15] = newvec.val >> 8;
-	mem8[luastack.val+16] = newvec.val >> 16;
-	mem8[luastack.val+17] = newvec.val >> 24;
+	util.writeuint32(mem8, luastack.val+14, newvec.val);
 
 	const srcbuf = await readFile(process.argv[2]);
 	const src = mkref(mod.newstr(srcbuf.length));
@@ -66,18 +60,18 @@ function readint(mem, idx) {
 	const tokens = mkref(mod.nthtmp(8));
 	const values = mkref(mod.nthtmp(4));
 	mem8 = new Uint8Array(mem.buffer);
-	const tokenlen = readint(mem8, tokens.val + 5);
+	const tokenlen = util.readuint32(mem8, tokens.val + 5);
 	const tokenstart = tokens.val + 13;
 	process.stdout.write(int2buf(tokenlen));
 	process.stdout.write(Buffer.from(mem.buffer, tokenstart, tokenlen));
-	const valuelen = readint(mem8, values.val + 5)>>2;
+	const valuelen = util.readuint32(mem8, values.val + 5)>>2;
 	process.stdout.write(int2buf(valuelen));
 	for (let i=0; i<valuelen; i++) {
-		const ptr = readint(mem8, values.val + 9 + i*4);
+		const ptr = util.readuint32(mem8, values.val + 9 + i*4);
 		const ptrtype = Buffer.from(mem.buffer, ptr+4, 1);
 		process.stdout.write(ptrtype);
 		if (ptrtype[0] == 5) {
-			const slen = readint(mem8, ptr + 5);
+			const slen = util.readuint32(mem8, ptr + 5);
 			process.stdout.write(int2buf(slen));
 			process.stdout.write(Buffer.from(mem.buffer, ptr+13, slen));
 		} else {

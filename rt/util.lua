@@ -307,41 +307,38 @@ function loadstrminus(f, x, meth)
 end
 
 local mkhole = func(i32, i32, void, function(f, start, len)
+	-- assumes (start&7) == 0, (len&7) == 0
+
 	f:load(len)
 	f:eqz()
 	f:brif(f)
 
+	f:load(start)
+	f:loadg(markbit)
+	f:i32store8(obj.gc)
+
 	f:load(len)
-	f:i32(15)
-	f:band()
+	f:i32(8)
+	f:eq()
 	f:iff(function()
 		f:load(start)
 		f:i32(types.nul)
 		f:i32store8(obj.type)
+	end, function()
 		f:load(start)
-		f:i32(8)
-		f:add()
-		f:store(start)
+		f:i32(types.str)
+		f:i32store8(obj.type)
+		f:load(start)
 		f:load(len)
-		f:i32(8)
+		f:i32(str.base)
 		f:sub()
-		f:tee(len)
-		f:eqz()
-		f:brif(f)
+		f:i32store(str.len)
 	end)
-	f:load(start)
-	f:i32(types.str)
-	f:i32store8(str.type)
-	f:load(start)
-	f:load(len)
-	f:i32(str.base)
-	f:sub()
-	f:i32store(str.len)
 end)
 
 local function gentrunc(ty)
 	return func(i32, i32, void, function(f, x, len)
-		local oldsz, newsz = f:locals(i32, 2)
+		local oldsz = f:locals(i32, 1)
 		f:load(x)
 		f:call(sizeof)
 		f:store(oldsz)
@@ -355,10 +352,10 @@ local function gentrunc(ty)
 		f:i32(ty.base)
 		f:add()
 		f:call(allocsize)
-		f:tee(newsz)
+		f:tee(len)
 		f:add()
 		f:load(oldsz)
-		f:load(newsz)
+		f:load(len)
 		f:sub()
 		f:call(mkhole)
 	end)
@@ -566,3 +563,25 @@ toint = func(i32, i32, function(f, x)
 		f:load(x)
 	end)
 end)
+
+return {
+	chex = chex,
+	pushstr = pushstr,
+	pushvec = pushvec,
+	extendstr = extendstr,
+	extendvec = extendvec,
+	popvec = popvec,
+	peekvec = peekvec,
+	truncvec = truncvec,
+	truncstr = truncstr,
+	unbufstr = unbufstr,
+	unbufvec = unbufvec,
+	memcpy1rl = memcpy1rl,
+	memcpy4 = memcpy4,
+	memcpy8 = memcpy8,
+	frexp = frexp,
+	tonum = tonum,
+	toint = toint,
+	loadvecminus = loadvecminus,
+	loadstrminus = loadstrminus,
+}
