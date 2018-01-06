@@ -1,13 +1,4 @@
-function readarg(stack, i) {
-	return i < stack.length ? stack[i] : null;
-}
-exports.readarg = readarg;
-
-exports.readargor = function readargor(stack, i, or) {
-	let a = readarg(stack, i);
-	return a === null ? or : a;
-}
-
+'use strict';
 exports.varint = varint;
 exports.varuint = varuint;
 exports.pushString = pushString;
@@ -44,9 +35,9 @@ function varuint(v, value) {
 }
 
 if (typeof TextEncoder === 'undefined') {
-	TextEncoder = function() {
+	(typeof window === 'undefined' ? global : window).TextEncoder = function() {
 	};
-	TextEncoder.prototype.encode = function (s) {
+	TextEncoder.prototype.encode = function(s) {
 		let u8 = unescape(encodeURIComponent(s));
 		let ret = new Uint8Array(u8.length);
 		for (let i=0; i<ret.length; i++) {
@@ -56,7 +47,7 @@ if (typeof TextEncoder === 'undefined') {
 	}
 }
 if (typeof TextDecoder === 'undefined') {
-	TextDecoder = function() {
+	(typeof window === 'undefined' ? global : window).TextDecoder = function() {
 	};
 	TextDecoder.prototype.decode = function(utf8) {
 		return decodeURIComponent(escape(String.fromCharCode.apply(null, utf8)));
@@ -78,9 +69,8 @@ function fromUtf8(utf8) {
 
 function readvarint(v, idx) {
 	let ret = 0, shift = 0;
-	let byte;
 	while (true) {
-		byte = v[idx++];
+		let byte = v[idx++];
 		ret |= (byte & 127) << shift;
 		shift += 7;
 		if (!(byte & 128)) {
