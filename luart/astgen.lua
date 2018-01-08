@@ -148,9 +148,30 @@ return function(lx, vals)
 			end
 		end
 	end
+	local function ofs(o, r)
+		rules[o] = function(x, p)
+			local p = x:spawn(o, p):next()
+			local rv = r[p:val()]
+			if rv then
+				p.type = p.type + rv * 32
+				return iterone, p
+			else
+				return iternone
+			end
+		end
+	end
 	local Explist = seq(o(ast.ExpOr), many(seq(s(lex._comma), o(ast.ExpOr))))
 	local Namelist = seq(name, many(seq(s(lex._comma), name)))
 	local Varlist = seq(o(ast.Var), many(seq(s(lex._comma), o(ast.Var))))
+	local function Fieldsep(x, p)
+		local xn = x:next()
+		local xv = xn:val()
+		if xv == lex._comma or xv == lex._semi then
+			return iterone, xn
+		else
+			return iternone
+		end
+	end
 	local Fieldsep = oof(s(lex._comma), s(lex._semi))
 	local Call = seq(maybe(seq(s(lex._colon), name)), o(ast.Args))
 	local Funccall = seq(o(ast.Prefix), many(o(ast.Suffix)), Call)
@@ -187,11 +208,33 @@ return function(lx, vals)
 		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr), s(lex._set), o(ast.ExpOr)),
 		seq(name, s(lex._set), o(ast.ExpOr)),
 		o(ast.ExpOr))
-	of(ast.Binop,
-		s(lex._plus), s(lex._minus), s(lex._mul), s(lex._div), s(lex._idiv), s(lex._pow), s(lex._mod),
-		s(lex._band), s(lex._bnot), s(lex._bor), s(lex._rsh), s(lex._lsh), s(lex._dotdot),
-		s(lex._lt), s(lex._lte), s(lex._gt), s(lex._gte), s(lex._eq), s(lex._neq))
-	of(ast.Unop, s(lex._minus), s(lex._not), s(lex._hash), s(lex._bnot))
+	ofs(ast.Binop, {
+		[lex._plus] = 1,
+		[lex._minus] = 2,
+		[lex._mul] = 3,
+		[lex._div] = 4,
+		[lex._idiv] = 5,
+		[lex._pow] = 6,
+		[lex._mod] = 7,
+		[lex._band] = 8,
+		[lex._bnot] = 9,
+		[lex._bor] = 10,
+		[lex._rsh] = 11,
+		[lex._lsh] = 12,
+		[lex._dotdot] = 13,
+		[lex._lt] = 14,
+		[lex._lte] = 15,
+		[lex._gt] = 16,
+		[lex._gte] = 17,
+		[lex._eq] = 18,
+		[lex._neq] = 19,
+	})
+	ofs(ast.Unop, {
+		[lex._minus] = 1,
+		[lex._not] = 2,
+		[lex._hash] = 3,
+		[lex._bnot] = 4,
+	})
 	of(ast.Value,
 		s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
 		seq(s(lex._function), o(ast.Funcbody)), o(ast.Table), Funccall, o(ast.Var),
