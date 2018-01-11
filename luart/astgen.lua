@@ -17,34 +17,30 @@ return function(lx, vals)
 	local rules = {}
 
 	local function name(x, p)
-		local t = x:next(p)
-		if t:val() == lex._ident then
-			return iterone, t:skipint()
+		if x:nextval() == lex._ident then
+			return iterone, x:nextint(p)
 		else
 			return iternone
 		end
 	end
 	local function number(x, p)
-		local t = x:next(p)
-		if t:val() == lex._number then
-			return iterone, t:skipint()
+		if x:nextval() == lex._number then
+			return iterone, x:nextint(p)
 		else
 			return iternone
 		end
 	end
 	local function slit(x, p)
-		local t = x:next(p)
-		if t:val() == lex._string then
-			return iterone, t:skipint()
+		if x:nextval() == lex._string then
+			return iterone, x:nextint(p)
 		else
 			return iternone
 		end
 	end
 	local function s(r)
 		return function(x, p)
-			local t = x:next(p)
-			if t:val() == r then
-				return iterone, t
+			if x:nextval() == r then
+				return iterone, x:next(p)
 			else
 				return iternone
 			end
@@ -150,7 +146,7 @@ return function(lx, vals)
 	end
 	local function ofs(o, r)
 		rules[o] = function(x, p)
-			local xn = x:next()
+			local xn = x:next(p)
 			local rv = r[xn:val()]
 			if rv then
 				local p = xn:spawn(o + rv * 32, p)
@@ -164,7 +160,7 @@ return function(lx, vals)
 	local Namelist = seq(name, many(seq(s(lex._comma), name)))
 	local Varlist = seq(o(ast.Var), many(seq(s(lex._comma), o(ast.Var))))
 	local function Fieldsep(x, p)
-		local xn = x:next()
+		local xn = x:next(p)
 		local xv = xn:val()
 		if xv == lex._comma or xv == lex._semi then
 			return iterone, xn
@@ -172,7 +168,6 @@ return function(lx, vals)
 			return iternone
 		end
 	end
-	local Fieldsep = oof(s(lex._comma), s(lex._semi))
 	local Call = seq(maybe(seq(s(lex._colon), name)), o(ast.Args))
 	local Funccall = seq(o(ast.Prefix), many(o(ast.Suffix)), Call)
 	sf(ast.Block, many(o(ast.Stat)), maybe(seq(s(lex._return), maybe(Explist), maybe(s(lex._semi)))))
@@ -194,8 +189,8 @@ return function(lx, vals)
 		seq(s(lex._local), Namelist, maybe(seq(s(lex._set), Explist)))
 	)
 	of(ast.Var, name, seq(o(ast.Prefix), many(o(ast.Suffix)), o(ast.Index)))
-	of(ast.ExpOr, seq(o(ast.ExpAnd), many(seq(s(lex._or), o(ast.ExpAnd)))))
-	of(ast.ExpAnd, seq(o(ast.Exp), many(seq(s(lex._and), o(ast.Exp)))))
+	sf(ast.ExpOr, o(ast.ExpAnd), many(seq(s(lex._or), o(ast.ExpAnd))))
+	sf(ast.ExpAnd, o(ast.Exp), many(seq(s(lex._and), o(ast.Exp))))
 	of(ast.Exp, seq(o(ast.Unop), o(ast.Exp)), seq(o(ast.Value), maybe(seq(o(ast.Binop), o(ast.Exp)))))
 	of(ast.Prefix, name, seq(s(lex._pl), o(ast.ExpOr), s(lex._pr)))
 	of(ast.Args,
@@ -259,15 +254,17 @@ return function(lx, vals)
 	function BuilderMeta:val()
 		return string.byte(lx, self.li)
 	end
-	function BuilderMeta:skipint()
-		self.nx = self.nx+4
-		return self
-	end
 	function BuilderMeta:arg()
 		return vals[string.unpack('<i4', lx, self.li+1)+1]
 	end
+	function BuilderMeta:nextval()
+		return string.byte(lx, self.nx)
+	end
 	function BuilderMeta:next(p)
 		return Builder(self.nx, self.nx+1, self, p, -1)
+	end
+	function BuilderMeta:nextint()
+		return Builder(self.nx, self.nx+5, self, p, -1)
 	end
 	function BuilderMeta:spawn(ty, p)
 		return Builder(self.li, self.nx, self, p, ty)

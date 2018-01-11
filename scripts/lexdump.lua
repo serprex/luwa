@@ -25,7 +25,7 @@ for i=1,select('#', ...) do
 	end
 	local i = 1
 	while i < #lx do
-		local lxi = string.byte(lx, i)
+		local lxi = lx:byte(i)
 		local args = {i, rlex[lxi]}
 		if lxi&192 ~= 0 then
 			args[3] = vals[string.unpack('<i4', lx, i+1)+1]
