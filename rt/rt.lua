@@ -187,6 +187,7 @@ local echo = importfunc('', 'echo', i32, i32)
 local echoptr = importfunc('', 'echoptr', i32, i32)
 local sin = importfunc('', 'sin', f64, f64)
 local cos = importfunc('', 'cos', f64, f64)
+local tan = importfunc('', 'tan', f64, f64)
 local asin = importfunc('', 'asin', f64, f64)
 local acos = importfunc('', 'acos', f64, f64)
 local atan = importfunc('', 'atan', f64, f64)
@@ -224,6 +225,7 @@ return {
 	echoptr = echoptr,
 	sin = sin,
 	cos = cos,
+	tan = tan,
 	asin = asin,
 	acos = acos,
 	atan = atan,

@@ -35,7 +35,5 @@ import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos',
 M:data(_rt.image)
 local chunks = M:compile()
 
-local outf = io.open('scripts/lex.wasm', 'w')
-outf:write(table.unpack(chunks))
-outf:close()
+io.open('scripts/lex.wasm', 'w'):write(table.unpack(chunks)):close()
 

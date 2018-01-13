@@ -1,3 +1,12 @@
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, obj, vec, buf, coro, corostate, newcoro = alloc.types, alloc.obj, alloc.vec, alloc.buf, alloc.coro, alloc.corostate, alloc.newcoro
+
+local stack = require 'stack'
+local tmppush = stack.tmppush
+
 coro_create = func(function(f)
 	--[[
 	-- expects oluastack to've been in stack-only mode
@@ -156,3 +165,10 @@ coro_status = func(function(f)
 	f:call(tmppush)
 end)
 
+return {
+	coro_create = coro_create,
+	coro_resume = coro_resume,
+	coro_yield = coro_yield,
+	coro_running = coro_running,
+	coro_status = coro_status,
+}

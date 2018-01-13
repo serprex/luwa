@@ -1,3 +1,14 @@
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, obj, num, vec, newi64, newf64 = alloc.types, alloc.obj, alloc.num, alloc.vec, alloc.newi64, alloc.newf64
+
+local stack = require 'stack'
+local tmppush, nthtmp, setnthtmp = stack.tmppush, stack.nthtmp, stack.setnthtmp
+
+local rt = require 'rt'
+
 math_abs = func(function(f)
 	local a = f:locals(i32)
 	local a64 = f:locals(i64)
@@ -98,11 +109,12 @@ local function genmathmath(fn)
 	end)
 end
 
-math_sin = genmathmath(sin)
-math_cos = genmathmath(sin)
-math_asin = genmathmath(sin)
-math_acos = genmathmath(sin)
-math_exp = genmathmath(sin)
+math_sin = genmathmath(rt.sin)
+math_cos = genmathmath(rt.cos)
+math_tan = genmathmath(rt.tan)
+math_asin = genmathmath(rt.asin)
+math_acos = genmathmath(rt.acos)
+math_exp = genmathmath(rt.exp)
 
 math_log = func(function(f)
 	local a, b = f:locals(i32, 2)
@@ -235,12 +247,7 @@ math_type = func(function(f)
 	f:block(i32, function(res)
 		assert(types.int == 0 and types.float == 1)
 		f:switch(function()
-			f:call(loadframebase)
-			f:i32load(dataframe.base)
-			f:loadg(oluastack)
-			f:i32load(coro.stack)
-			f:i32load(buf.ptr)
-			f:add()
+			f:call(param0)
 			f:i32load(vec.base)
 			f:i32load8u(obj.type)
 		end, types.int, function()
@@ -255,3 +262,18 @@ math_type = func(function(f)
 	f:call(tmppush)
 end)
 
+return {
+	math_abs = math_abs,
+	math_asin = math_asin,
+	math_acos = math_acos,
+	math_atan = math_atan,
+	math_exp = math_exp,
+	math_frexp = math_frexp,
+	math_sin = math_sin,
+	math_cos = math_cos,
+	math_tan = math_tan,
+	math_log = math_log,
+	math_floor = math_floor,
+	math_ceil = math_ceil,
+	math_type = math_type,
+}

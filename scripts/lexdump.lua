@@ -28,9 +28,11 @@ for i=1,select('#', ...) do
 		local lxi = lx:byte(i)
 		local args = {i, rlex[lxi]}
 		if lxi&192 ~= 0 then
-			args[3] = vals[string.unpack('<i4', lx, i+1)+1]
+			args[3], args[4], args[5], args[6], args[7] = string.byte(lx, i, i+5)
+			args[8] = vals[string.unpack('<i4', lx, i+1)+1]
 			i = i + 5
 		else
+			args[3] = string.byte(lx, i)
 			i = i + 1
 		end
 		print(table.unpack(args))

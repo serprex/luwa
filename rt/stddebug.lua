@@ -1,4 +1,13 @@
-debug_getmetatable = func(function(f)
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, obj, vec, tbl, buf, coro = alloc.types, alloc.obj, alloc.vec, alloc.tbl, alloc.buf, alloc.coro
+
+local stack = require 'stack'
+local tmppush = stack.tmppush
+
+local debug_getmetatable = func(function(f)
 	local a, b = f:locals(i32, 2)
 
 	f:call(loadframebase)
@@ -28,7 +37,7 @@ debug_getmetatable = func(function(f)
 	f:call(tmppush)
 end)
 
-debug_setmetatable = func(function(f)
+local debug_setmetatable = func(function(f)
 	local a, b, c, base = f:locals(i32, 4)
 
 	f:call(loadframebase)
@@ -80,3 +89,7 @@ debug_setmetatable = func(function(f)
 	f:unreachable()
 end)
 
+return {
+	debug_getmetatable = debug_getmetatable,
+	debug_setmetatable = debug_setmetatable,
+}

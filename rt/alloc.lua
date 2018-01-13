@@ -437,7 +437,7 @@ return {
 	vec = vec,
 	buf = buf,
 	functy = functy,
-	corotstate = corostate,
+	corostate = corostate,
 	coro = coro,
 	allocsizef = allocsizef,
 	allocsize = allocsize,

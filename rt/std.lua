@@ -1,4 +1,13 @@
-std_pcall = func(function(f)
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local types, obj, num, str, vec, buf, coro, newi64 = alloc.types, alloc.obj, alloc.num, alloc.str, alloc.vec, alloc.buf, alloc.coro, alloc.newi64
+
+local stack = require 'stack'
+local tmppush, extendtmp = stack.tmppush, stack.extendtmp
+
+local std_pcall = func(function(f)
 	-- > func, p1, p2, ...
 	-- < true, p1, p2, ...
 	-- modify datastack: 2, 0, framesz, retc, base+1
@@ -41,7 +50,7 @@ std_pcall = func(function(f)
 	f:i32store(dataframe.retb)
 end)
 
-std_select = func(function(f)
+local std_select = func(function(f)
 	-- L.stack[base] == '#' ? L.stack.len - base - 1 : L.stack[base + L.stack[base]:]
 	local framebase, base, dotdotdot, p0, stack = f:locals(i32, 5)
 	local dddlen, p0v = f:locals(i64, 2)
@@ -146,7 +155,7 @@ std_select = func(function(f)
 	f:unreachable()
 end)
 
-std_type = func(function(f)
+local std_type = func(function(f)
 	f:block(i32, function(res)
 		f:switch(function()
 			f:call(loadframebase)
@@ -184,5 +193,12 @@ std_type = func(function(f)
 	f:call(tmppush)
 end)
 
-std_error = func(function(f)
+local std_error = func(function(f)
 end)
+
+return {
+	std_pcall = std_pcall,
+	std_select = std_select,
+	std_type = std_type,
+	std_error = std_error,
+}

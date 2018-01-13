@@ -20,9 +20,8 @@ return function(lx, vals)
 		return function(x, p)
 			if x:nextval() == r then
 				return iterone, x:nextint(p)
-			else
-				return iternone
 			end
+			return iternone
 		end
 	end
 	local name = tag(lex._ident)
@@ -33,9 +32,8 @@ return function(lx, vals)
 		return function(x, p)
 			if x:nextval() == r then
 				return iterone, x:next(p)
-			else
-				return iternone
 			end
+			return iternone
 		end
 	end
 	local function o(n)
@@ -255,7 +253,7 @@ return function(lx, vals)
 	function BuilderMeta:next(p)
 		return Builder(self.nx, self.nx+1, self, p, -1)
 	end
-	function BuilderMeta:nextint()
+	function BuilderMeta:nextint(p)
 		return Builder(self.nx, self.nx+5, self, p, -1)
 	end
 	function BuilderMeta:spawn(ty, p)

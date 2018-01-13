@@ -2,8 +2,8 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
-local types, obj, buf, vec, str = alloc.types, alloc.obj, alloc.buf, alloc.vec, alloc.str
-local allocsize, newvec, newstr = alloc.allocsize, alloc.newvec, alloc.newstr
+local types, obj, num, buf, vec, str = alloc.types, alloc.obj, alloc.num, alloc.buf, alloc.vec, alloc.str
+local allocsize, newi64, newvec, newstr = alloc.allocsize, alloc.newi64, alloc.newvec, alloc.newstr
 
 chex = func(i32, i32, function(f, ch)
 	f:load(ch)
@@ -71,8 +71,6 @@ pushstr = func(i32, i32, i32, function(f, dst, ch)
 		f:load(len)
 		f:i32(str.base)
 		f:add()
-		f:i32(1)
-		f:sub()
 		f:call(memcpy8)
 
 		f:load(s)

@@ -1,5 +1,8 @@
 local M = require 'make'
 
+local alloc = require 'alloc'
+local str = alloc.str
+
 local strcmp = M.func(i32, i32, i32, function(f, a, b)
 	local idx, len, c, eqlenv = f:locals(i32, 4)
 	-- len = min(a.len, b.len); eqlenv = a.len - b.len

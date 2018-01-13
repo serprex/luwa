@@ -30,7 +30,5 @@ M:import(_rt.memory)
 M:data(_rt.image)
 local chunks = M:compile()
 
-local outf = io.open('rt.wasm', 'w')
-outf:write(table.unpack(chunks))
-outf:close()
+io.open('rt.wasm', 'w'):write(table.unpack(chunks)):close()
 

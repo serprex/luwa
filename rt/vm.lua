@@ -2,8 +2,9 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
-local types, str, vec, tbl, functy, coro, allocsizef =
-	alloc.types, alloc.str, alloc.vec, alloc.tbl, alloc.functy, alloc.coro, alloc.allocsizef
+local types, obj, num, str, vec, buf, tbl, functy, coro, allocsizef, nextid, newobj, newi64, newf64, newstrbuf, newvec, newvec1, newtbl =
+	alloc.types, alloc.obj, alloc.num, alloc.str, alloc.vec, alloc.buf, alloc.tbl, alloc.functy, alloc.coro,
+	alloc.allocsizef, alloc.nextid, alloc.newobj, alloc.newi64, alloc.newf64, alloc.newstrbuf, alloc.newvec, alloc.newvec1, alloc.newtbl
 
 local _table = require '_table'
 local tblget, tblset = _table.tblget, _table.tblset
@@ -12,7 +13,11 @@ local stack = require 'stack'
 local tmppush, tmppop, nthtmp, setnthtmp, extendtmp =
 	stack.tmppush, stack.tmppop, stack.nthtmp, stack.setnthtmp, stack.extendtmp
 
+local _string = require '_string'
+
 local ops = require 'bc'
+
+local rt = require 'rt'
 
 dataframe = {
 	type = str.base + 0,
@@ -234,13 +239,13 @@ eval = func(i32, function(f)
 		f:i32load(objframe.bc)
 		f:tee(bc)
 		f:load(pc)
-		f:call(echo)
+		f:call(rt.echo)
 		f:i32(1)
 		f:add()
 		f:tee(pc)
 		f:add()
 		f:i32load8u(str.base - 1)
-		f:call(echo)
+		f:call(rt.echo)
 	end, ops.LoadNil, function(scopes)
 		f:i32(NIL)
 		f:call(tmppush)
@@ -1209,7 +1214,7 @@ eval = func(i32, function(f)
 					f:i32(FALSE)
 					f:load(a)
 					f:load(b)
-					f:call(strcmp)
+					f:call(_string.strcmp)
 					f:i32(-1)
 					f:eq()
 					f:select()
@@ -1301,7 +1306,7 @@ eval = func(i32, function(f)
 					f:i32(FALSE)
 					f:load(a)
 					f:load(b)
-					f:call(strcmp)
+					f:call(_string.strcmp)
 					f:i32(-1)
 					f:eq()
 					f:select()
@@ -1377,6 +1382,10 @@ eval = func(i32, function(f)
 			f:br(loop)
 		end)
 	end, ops.Syscall, function(scopes)
+		local std = require 'std'
+		local stdcoro = require 'stdcoro'
+		local stddebug = require 'stddebug'
+		local stdmath = require 'stdmath'
 		f:switch(function()
 			f:load(bc)
 			f:load(pc)
@@ -1386,40 +1395,40 @@ eval = func(i32, function(f)
 			f:add()
 			f:i32load8u(str.base - 1)
 		end, 0, function()
-			f:call(std_pcall)
+			f:call(std.std_pcall)
 			f:br(scopes.nop)
 		end, 1, function()
-			f:call(std_select)
+			f:call(std.std_select)
 			f:br(scopes.nop)
 		end, 2, function()
-			f:call(coro_status)
+			f:call(stdcoro.coro_status)
 			f:br(scopes.nop)
 		end, 3, function()
-			f:call(coro_running)
+			f:call(stdcoro.coro_running)
 			f:br(scopes.nop)
 		end, 4, function()
-			f:call(debug_getmetatable)
+			f:call(stddebug.debug_getmetatable)
 			f:br(scopes.nop)
 		end, 5, function()
-			f:call(debug_setmetatable)
+			f:call(stddebug.debug_setmetatable)
 			f:br(scopes.nop)
 		end, 6, function()
-			f:call(math_type)
+			f:call(stdmath.math_type)
 			f:br(scopes.nop)
 		end, 7, function()
-			f:call(std_error)
+			f:call(std.std_error)
 			f:br(scopes.nop)
 		end, 8, function()
-			f:call(coro_create)
+			f:call(stdcoro.coro_create)
 			f:br(scopes.nop)
 		end, 9, function()
-			f:call(coro_resume)
+			f:call(stdcoro.coro_resume)
 			f:br(scopes.nop)
 		end, 10, function()
-			f:call(coro_yield)
+			f:call(stdcoro.coro_yield)
 			f:br(scopes.nop)
 		end, 11, function()
-			f:call(std_type)
+			f:call(std.std_type)
 			f:br(scopes.nop)
 		end)
 		f:unreachable()
@@ -1989,3 +1998,8 @@ eval = func(i32, function(f)
 
 	f:i32(0)
 end)
+
+return {
+	init = init,
+	eval = eval,
+}
