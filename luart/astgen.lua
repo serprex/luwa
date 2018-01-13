@@ -16,27 +16,19 @@ end
 return function(lx, vals)
 	local rules = {}
 
-	local function name(x, p)
-		if x:nextval() == lex._ident then
-			return iterone, x:nextint(p)
-		else
-			return iternone
+	local function tag(r)
+		return function(x, p)
+			if x:nextval() == r then
+				return iterone, x:nextint(p)
+			else
+				return iternone
+			end
 		end
 	end
-	local function number(x, p)
-		if x:nextval() == lex._number then
-			return iterone, x:nextint(p)
-		else
-			return iternone
-		end
-	end
-	local function slit(x, p)
-		if x:nextval() == lex._string then
-			return iterone, x:nextint(p)
-		else
-			return iternone
-		end
-	end
+	local name = tag(lex._ident)
+	local number = tag(lex._number)
+	local slit = tag(lex._string)
+
 	local function s(r)
 		return function(x, p)
 			if x:nextval() == r then
