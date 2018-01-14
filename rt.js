@@ -5,7 +5,7 @@ const rtwa = typeof fetch !== 'undefined' ?
 			(err, data) => err ? reject(err) : resolve(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)))
 	);
 function rtwathen(ab) {
-	const mem = new WebAssembly.Memory({initial:1}), ffi = new FFI(mem);
+	const mem = new WebAssembly.Memory({initial:16}), ffi = new FFI(mem);
 	return WebAssembly.instantiate(ab, {'':{
 		m: mem,
 		echoptr: x => {

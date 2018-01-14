@@ -10,7 +10,7 @@ function int2buf(x) {
 }
 (async function() {
 	const rtsrc = await readFile(__dirname + '/lex.wasm');
-	const mem = new WebAssembly.Memory({initial:1});
+	const mem = new WebAssembly.Memory({initial:16});
 	const handles = new Set();
 	function mkref(x) {
 		const h = {val:x}

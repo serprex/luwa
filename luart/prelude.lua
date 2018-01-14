@@ -25,7 +25,7 @@ local _error, _next, _select, _tostring, _pcall = error, next, select, tostring,
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local table_unpack = table.unpack
 local string_char = string.char
-local io_input, io_write, io_open = io.input, io.write, io.open -- io.read created/bound later
+local io_open = io.open
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
 debug_setmetatable('', { __index = string })
@@ -225,10 +225,43 @@ function table.sort(list, comp)
 	end
 end
 
+local io_in = _luwa.stdin
+local io_out = _luwa.stdout
+local function io_input(file)
+	if file == nil then
+		return io_in
+	elseif type(file) == 'string' then
+		io_in = io_open(file)
+	elseif _luwa.is_file(file) then
+		io_in = file
+	else
+		error('Unexpected argument #1 to io.input')
+	end
+end
+io.input = io_input
+local function io_output(file)
+	if file == nil then
+		return io_out
+	elseif type(file) == 'string' then
+		io_out = io_open(file, 'w')
+	elseif _luwa.is_file(file) then
+		io_out = file
+	else
+		error('Unexpected argument #1 to io.output')
+	end
+end
+io.output = io_output
 local function io_read(...)
-	return io_input():read(...)
+	return _luwa.ioread(io_in, ...)
 end
 io.read = io_read
+local function io_write(...)
+	return _luwa.iowrite(io_out, ...)
+end
+io.write = io_write
+function io.flush()
+	_luwa.ioflush(io_out)
+end
 
 function os.difftime(t2, t1)
 	return t2 - t1
@@ -376,7 +409,7 @@ local fakereq = {
 local astgen = fakereq('astgen')
 local bcgen = fakereq('bcgen')
 
-function loadstring(src, name, mode)
+local function _loadstring(src, name, mode)
 	-- TODO function names
 	local lx, vals = _luwa.lex(src)
 	if not lx then
@@ -400,4 +433,21 @@ function loadstring(src, name, mode)
 	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
 	return fn
 end
+loadstring = _loadstring
 
+function debug.debug()
+	local stdin = _luwa.stdin
+	local stdout = _luwa.stdout
+	local iowrite = _luwa.iowrite
+	while true do
+		iowrite(stdout, 'lua_debug> ')
+		local line = stdin:read()
+		if line == 'cont' then return end
+		local f, err = _pcall(_loadstring(line))
+		if err then
+			iowrite(stdout, _tostring(err))
+		else
+			f()
+		end
+	end
+end
