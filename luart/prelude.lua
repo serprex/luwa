@@ -25,7 +25,7 @@ local _error, _next, _select, _tostring, _pcall = error, next, select, tostring,
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local table_unpack = table.unpack
 local string_char = string.char
-local io_open = io.open
+local io_open, io_type = io.open, io.type
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
 debug_setmetatable('', { __index = string })
@@ -232,7 +232,7 @@ local function io_input(file)
 		return io_in
 	elseif type(file) == 'string' then
 		io_in = io_open(file)
-	elseif _luwa.is_file(file) then
+	elseif io_type(file) then
 		io_in = file
 	else
 		error('Unexpected argument #1 to io.input')
@@ -244,7 +244,7 @@ local function io_output(file)
 		return io_out
 	elseif type(file) == 'string' then
 		io_out = io_open(file, 'w')
-	elseif _luwa.is_file(file) then
+	elseif io_type(file) then
 		io_out = file
 	else
 		error('Unexpected argument #1 to io.output')
@@ -262,13 +262,25 @@ io.write = io_write
 function io.flush()
 	_luwa.ioflush(io_out)
 end
+function io.lines(file)
+	if file == nil then
+		file = io_in
+	elseif type(file) == 'string' then
+		file = io_open(file)
+	elseif not io_type(file) then
+		error('Unexpected argument #1 of io.lines')
+	end
+	return function()
+		return _luwa.ioread(file)
+	end
+end
 
 function os.difftime(t2, t1)
 	return t2 - t1
 end
 function os.setlocal(locale)
-	if not locale or locale == "" then
-		return "C"
+	if not locale or locale == '' then
+		return 'C'
 	else
 		return nil
 	end
@@ -340,8 +352,8 @@ function loadfile(s, m, e)
 		if err then
 			return nil, err
 		end
-		err = f:read('a')
-		f:close()
+		err = _luwa.ioread(f, 'a')
+		_luwa.ioclose(f)
 	else
 		s = 'stdin'
 		err = io_read('a')
@@ -439,15 +451,19 @@ function debug.debug()
 	local stdin = _luwa.stdin
 	local stdout = _luwa.stdout
 	local iowrite = _luwa.iowrite
+	local ioread = _luwa.ioread
 	while true do
 		iowrite(stdout, 'lua_debug> ')
-		local line = stdin:read()
+		local line = ioread(stdin)
 		if line == 'cont' then return end
-		local f, err = _pcall(_loadstring(line))
-		if err then
-			iowrite(stdout, _tostring(err))
+		local succ, f = _pcall(_loadstring(line))
+		if succ then
+			local succ, msg = _pcall(f)
+			if not succ then
+				iowrite(stdout, _tostring(msg))
+			end
 		else
-			f()
+			iowrite(stdout, _tostring(f))
 		end
 	end
 end
