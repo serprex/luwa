@@ -25,6 +25,7 @@ function int2buf(x) {
 			echoptr: x => x,
 			sin: Math.sin,
 			cos: Math.cos,
+			tan: Math.tan,
 			asin: Math.asin,
 			acos: Math.acos,
 			atan: Math.atan,

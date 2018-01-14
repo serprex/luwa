@@ -18,6 +18,11 @@ local function export(obj, ...)
 		M:export(name, obj[name])
 	end
 end
+local function import(obj, ...)
+	for i=1, select('#', ...) do
+		M:import(obj[select(i, ...)])
+	end
+end
 export(_stack, 'tmppush', 'tmppop', 'nthtmp', 'setnthtmp')
 export(_table, 'tblget', 'tblset')
 export(_rt, 'getluastack', 'setluastack')
@@ -26,7 +31,8 @@ export(_alloc, 'newi64', 'newf64', 'newtbl', 'newstr', 'newvec', 'newvec1',
 	'newstrbuf', 'newvecbuf', 'newfunc', 'newcoro')
 export(_gc, 'gcmark')
 export(_lex, 'lex')
-M:import(_rt.memory)
+import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos', 'tan',
+	'asin', 'acos', 'atan', 'atan2', 'exp', 'log')
 M:data(_rt.image)
 local chunks = M:compile()
 

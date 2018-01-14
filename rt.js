@@ -24,6 +24,7 @@ function rtwathen(ab) {
 		},
 		sin: Math.sin,
 		cos: Math.cos,
+		tan: Math.tan,
 		asin: Math.asin,
 		acos: Math.acos,
 		atan: Math.atan,
