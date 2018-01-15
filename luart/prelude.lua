@@ -25,7 +25,7 @@ local _error, _next, _select, _tostring, _pcall = error, next, select, tostring,
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local table_unpack = table.unpack
 local string_char = string.char
-local io_open, io_type = io.open, io.type
+local io_type = io.type
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
 debug_setmetatable('', { __index = string })
@@ -225,6 +225,19 @@ function table.sort(list, comp)
 	end
 end
 
+local iometa = {}
+local function io_open(filename, mode)
+	assert(type(filename) == 'string', 'Unexpected argument #1 to io.open')
+	if mode == nil then
+		mode = 'r'
+	end
+	filename, mode = _luwa.ioopen(filename, mode)
+	if filename then
+		return debug_setmetatable(filename, iometa)
+	end
+	return nil, mode
+end
+io.open = io_open
 local io_in = _luwa.stdin
 local io_out = _luwa.stdout
 local function io_input(file)
@@ -232,11 +245,12 @@ local function io_input(file)
 		return io_in
 	elseif type(file) == 'string' then
 		io_in = io_open(file)
+		return io_in
 	elseif io_type(file) then
 		io_in = file
-	else
-		error('Unexpected argument #1 to io.input')
+		return file
 	end
+	error('Unexpected argument #1 to io.input')
 end
 io.input = io_input
 local function io_output(file)
@@ -244,11 +258,12 @@ local function io_output(file)
 		return io_out
 	elseif type(file) == 'string' then
 		io_out = io_open(file, 'w')
+		return io_in
 	elseif io_type(file) then
 		io_out = file
-	else
-		error('Unexpected argument #1 to io.output')
+		return file
 	end
+	error('Unexpected argument #1 to io.output')
 end
 io.output = io_output
 local function io_read(...)
@@ -259,20 +274,67 @@ local function io_write(...)
 	return _luwa.iowrite(io_out, ...)
 end
 io.write = io_write
-function io.flush()
-	_luwa.ioflush(io_out)
+local function io_flush()
+	return _luwa.ioflush(io_out)
 end
-function io.lines(file)
+io.flush = io_flush
+local function io_lines(file)
 	if file == nil then
 		file = io_in
 	elseif type(file) == 'string' then
 		file = io_open(file)
 	elseif not io_type(file) then
-		error('Unexpected argument #1 of io.lines')
+		error('Unexpected argument #1 to io.lines')
 	end
 	return function()
 		return _luwa.ioread(file)
 	end
+end
+io.lines = io_lines
+local function io_close(file)
+	if file == nil then
+		return _luwa.ioclose(io_out)
+	else
+		return _luwa.ioclose(file)
+	end
+end
+io.close = io_close
+
+iometa.__index = iometa
+iometa.__name = 'FILE*'
+iometa.__gc = _luwa.iogc
+iometa.lines = io_lines
+iometa.flush = io_flush
+iometa.read = io_read
+iometa.write = io_write
+iometa.close = io_close
+iometa.setvbuf = _luwa.iosetvbuf
+
+function iometa:__tostring()
+	assert(io_type(self))
+	return 'file (' .. _luwa.ioid(self) .. ')'
+end
+function iometa:seek(whence, offset)
+	assert(io_type(self), "bad argument #1 to 'seek'")
+	if not _luwa.ioseekable(self) then
+		return nil, 'Invalid seek'
+	end
+	if offset == nil then
+		offset = 0
+	end
+	if whence == 'cur' then
+		offset = offset + _luwa.iopos(self)
+	elseif whence == 'end' then
+		offset = offset + _luwa.iolen(self)
+	elseif whence ~= 'set' then
+		error('Unexpected argument #1 to file:seek')
+	end
+	offset = tointeger(offset)
+	if offset < 0 then
+		return nil, 'Invalid argument'
+	end
+	_luwa.ioseek(self, offset)
+	return offset
 end
 
 function os.difftime(t2, t1)
