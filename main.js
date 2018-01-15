@@ -1,9 +1,11 @@
 #!/bin/node
-const fs = require("fs"),
-	rt = require('./rt');
+'use strict';
+const fs = require('fs'),
+	rt = require('./rt'),
+	pjson = require('./package.json');
 
 function readline() {
-	var ret = "";
+	var ret = '';
 	const buf = new Buffer(1);
 	while (true) {
 		try {
@@ -16,14 +18,25 @@ function readline() {
 
 rt().then(runt => {
 	if (process.argv.length < 3) {
-		while (true) {
-			process.stdout.write("> ");
-			const line = readline().replace(/^\s*=/, "return ");
-			try {
-				console.log(...lua.eval(runt, line));
-			} catch (e) {
-				console.log("Error:", e);
+		if (process.stdin.isTTY) {
+			console.log(`Luwa ${pjson.version} https://github.com/serprex/luwa`);
+			while (true) {
+				process.stdout.write('> ');
+				const line = readline().replace(/^\s*=/, 'return ');
+				try {
+					console.log(...runt.eval(line));
+				} catch (e) {
+					console.log('Error:', e);
+				}
 			}
+		} else {
+			const result = [];
+			process.stdin.resume();
+			process.stdin.on('data', buf => result.push(buf));
+			process.stdin.on('end', () => {
+				const src = Buffer.concat(result);
+				return runt.eval(src.toString());
+			});
 		}
 	} else {
 		const lex = require('./lex');
@@ -35,8 +48,8 @@ rt().then(runt => {
 			console.timeEnd('lex');
 
 			/*
-			lua.runSource(src, { "": {
-				p: x => process.stdout.write(x + " "),
+			lua.runSource(src, { '': {
+				p: x => process.stdout.write(x + ' '),
 				q: x => process.stdout.write(String.fromCharCode(x)),
 				i: () => readline()|0,
 				c: () => readline().charCodeAt(0)|0,

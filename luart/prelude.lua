@@ -509,6 +509,11 @@ local function _loadstring(src, name, mode)
 end
 loadstring = _loadstring
 
+local registry = {}
+function debug.getregistry()
+	return registry
+end
+
 function debug.debug()
 	local stdin = _luwa.stdin
 	local stdout = _luwa.stdout
