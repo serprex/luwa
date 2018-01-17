@@ -8,11 +8,6 @@ local function iterone(x, y)
 		return x
 	end
 end
-local function yieldall(...)
-	for yi in ... do
-		coroutine.yield(yi)
-	end
-end
 return function(lx, vals)
 	local rules = {}
 
@@ -41,21 +36,35 @@ return function(lx, vals)
 			return rules[n](x, p)
 		end
 	end
-	local function seqcore(x, p, xs, i)
-		if i == #xs then
-			return yieldall(xs[i](x, p))
-		else
-			for ax in xs[i](x, p) do
-				seqcore(ax, p, xs, i+1)
-			end
-		end
-	end
 	local function seq(...)
 		local xs = {...}
 		return function(x, p)
-			return coroutine.wrap(function()
-				return seqcore(x, p, xs, 1)
-			end)
+			local st = {}
+			local i = 1
+			local f, s, x = xs[i](x, p)
+			return function()
+				while true do
+					x = f(s, x)
+					if x then
+						if i == #xs then
+							return x
+						else
+							st[#st+1] = { x = x, i = i, f = f, s = s }
+							i = i+1
+							f, s, x = xs[i](x, p)
+						end
+					elseif #st == 0 then
+						return
+					else
+						local z = st[#st]
+						st[#st] = nil
+						x = z.x
+						i = z.i
+						f = z.f
+						s = z.s
+					end
+				end
+			end
 		end
 	end
 	local function sf(o, ...)

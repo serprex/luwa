@@ -246,11 +246,11 @@ local function io_input(file)
 	elseif type(file) == 'string' then
 		io_in = io_open(file)
 		return io_in
-	elseif io_type(file) then
-		io_in = file
+	else
+		assert(io_type(file), "bad argument #1 to 'io.input'")
+		io_out = file
 		return file
 	end
-	error('Unexpected argument #1 to io.input')
 end
 io.input = io_input
 local function io_output(file)
@@ -259,11 +259,11 @@ local function io_output(file)
 	elseif type(file) == 'string' then
 		io_out = io_open(file, 'w')
 		return io_in
-	elseif io_type(file) then
+	else
+		assert(io_type(file), "bad argument #1 to 'io.output'")
 		io_out = file
 		return file
 	end
-	error('Unexpected argument #1 to io.output')
 end
 io.output = io_output
 local function io_read(...)
@@ -274,7 +274,7 @@ local function io_write(...)
 	return _luwa.iowrite(io_out, ...)
 end
 io.write = io_write
-local function io_flush()
+local function io_flush(file)
 	return _luwa.ioflush(io_out)
 end
 io.flush = io_flush
@@ -283,8 +283,8 @@ local function io_lines(file)
 		file = io_in
 	elseif type(file) == 'string' then
 		file = io_open(file)
-	elseif not io_type(file) then
-		error('Unexpected argument #1 to io.lines')
+	else
+		assert(io_type(file), "bad argument #1 to 'io.lines'")
 	end
 	return function()
 		return _luwa.ioread(file)
@@ -295,6 +295,7 @@ local function io_close(file)
 	if file == nil then
 		return _luwa.ioclose(io_out)
 	else
+		assert(io_type(file), "bad argument #1 to 'io.close'")
 		return _luwa.ioclose(file)
 	end
 end
@@ -311,7 +312,7 @@ iometa.close = io_close
 iometa.setvbuf = _luwa.iosetvbuf
 
 function iometa:__tostring()
-	assert(io_type(self))
+	assert(io_type(self), "bad argument #1 to '__tostring'")
 	return 'file (' .. _luwa.ioid(self) .. ')'
 end
 function iometa:seek(whence, offset)
