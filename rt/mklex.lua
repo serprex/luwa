@@ -1,5 +1,5 @@
 #!/usr/bin/lua
-package.path = 'rt/?.lua;luart/?.lua;' .. package.path
+package.path = 'rt/?.lua;' .. package.path
 local make = require 'make'
 
 BOOTRT = function() end

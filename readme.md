@@ -12,4 +12,4 @@ The GC is a LISP2 compacting GC. GC performance is a low priority given the WASM
 
 The VM needs to be reentrant. The currently running coroutine is oluastack. Builtins which call functions work by returning after setting up a necessary callstack. See [`rt/vm.lua`](rt/vm.lua)
 
-Supporting lua code is in `luart/`. [`luart/prelude.lua`](luart/prelude.lua) implements builtins which do not require hand written wasm
+[`rt/prelude.lua`](rt/prelude.lua) implements builtins which do not require hand written wasm

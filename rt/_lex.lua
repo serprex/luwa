@@ -1,7 +1,7 @@
 local M = require 'make'
 local func = M.func
 
-local tokens = require './luart/lex'
+local tokens = require 'lex'
 local srcslot, lexslot, rmapslot, frmapslot, constslot = 20, 16, 12, 8, 4
 
 local rt = require 'rt'
