@@ -1,3 +1,18 @@
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local vec, coro, newtbl, newcoro, newvecbuf = alloc.vec, alloc.coro, alloc.newtbl, alloc.newcoro, alloc.newvecbuf
+
+local stack = require 'stack'
+local nthtmp, tmppush, tmppop = stack.nthtmp, stack.tmppush, stack.tmppop
+
+local _table = require '_table'
+local tblget, tblset = _table.tblget, _table.tblset
+
+local vm = require 'vm'
+local init = vm.init
+
 local addkv2env = func(i32, i32, void, function(f, k, v)
 	f:call(param0)
 	f:i32load(vec.base)
@@ -22,7 +37,20 @@ local addkv2top = func(i32, i32, void, function(f, k, v)
 	f:call(tblset)
 end)
 
-mkenv = func(function(f)
+local genesis = func(function(f)
+	local a = f:locals(i32, 1)
+
+	f:call(newcoro)
+	f:storeg(oluastack)
+	f:i32(32)
+	f:call(newvecbuf)
+	f:store(a)
+	f:loadg(oluastack)
+	f:load(a)
+	f:i32store(coro.stack)
+end)
+
+local mkenv0 = func(i32, function(f)
 	local a = f:locals(i32)
 
 	local function addfun(fn, ...)
@@ -71,16 +99,26 @@ mkenv = func(function(f)
 		GS.error, GF.error,
 		GS.type, GF.type)
 	addfun(addkv2luwa,
-		GS.lex, GF.lex,
-		GS.astgen, GF.lastgen0,
-		GS.bcgen, GF.lbcgen0,
-		GS.fn_set_localc, GF.fn_set_localc,
-		GS.fn_set_paramc, GF.fn_set_paramc,
-		GS.fn_set_isdotdotdot, GF.fn_set_isdotdotdot,
-		GS.fn_set_bc, GF.fn_set_bc,
-		GS.fn_set_frees, GF.fn_set_frees,
-		GS.fn_set_consts, GF.fn_set_consts,
-		GS.vec_new, GF.vec_new)
+		GS.lexgen, GF._lex,
+		GS.astgen, GF.astgen0,
+		GS.bcgen, GF.bcgen0,
+		GS.lex, GF.lex0,
+		GS.ast, GF.ast0,
+		GS.bc, GF.bc0,
+		GS.stdin, GF._stdin,
+		GS.stdout, GF._stdout,
+		GS.ioread, GF._ioread,
+		GS.iowrite, GF._iowrite,
+		GS.ioflush, GF._ioflush,
+		GS.ioclose, GF._ioclose,
+		GS.iosetvbuf, GF._iosetvbuf,
+		GS.fn_set_localc, GF._fn_set_localc,
+		GS.fn_set_paramc, GF._fn_set_paramc,
+		GS.fn_set_isdotdotdot, GF._fn_set_isdotdotdot,
+		GS.fn_set_bc, GF._fn_set_bc,
+		GS.fn_set_frees, GF._fn_set_frees,
+		GS.fn_set_consts, GF._fn_set_consts,
+		GS.vec_new, GF._vec_new)
 
 	addmod(GS.coroutine,
 		GS.create, GF.coro_create,
@@ -100,9 +138,20 @@ mkenv = func(function(f)
 	addmod(GS.table)
 	addmod(GS.utf8)
 
+	f:call(param0)
+	f:i32load(vec.base)
+end)
+
+local mkenv1 = func(function(f)
 	f:loop(function(loop)
 		f:call(eval)
 		f:eqz()
 		f:brif(loop)
 	end)
 end)
+
+return {
+	genesis = genesis,
+	mkenv0 = mkenv0,
+	mkenv1 = mkenv1,
+}

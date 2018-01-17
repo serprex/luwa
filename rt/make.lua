@@ -718,8 +718,8 @@ end
 -- Start
 
 function modmeth:start(fu)
-	assert(not mod._start and fu.pcount == 0 and (not fu.rety or fu.rety == void))
-	mod._start = fu
+	assert(not self._start and fu.pcount == 0 and (not fu.rety or fu.rety == void))
+	self._start = fu
 	return fu
 end
 

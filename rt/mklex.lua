@@ -11,6 +11,7 @@ local _vm = require 'vm'
 local _alloc = require 'alloc'
 local _gc = require 'gc'
 local _lex = require '_lex'
+local _env = require 'env'
 
 local M = make.mod()
 local function export(obj, ...)
@@ -30,6 +31,7 @@ export(_alloc, 'newi64', 'newf64', 'newtbl', 'newstr', 'newvec', 'newvec1',
 	'newstrbuf', 'newvecbuf', 'newfunc', 'newcoro')
 export(_gc, 'gcmark')
 export(_lex, 'lex')
+export(_env, 'genesis')
 import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos', 'tan',
 	'asin', 'acos', 'atan', 'atan2', 'exp', 'log')
 M:data(_rt.image)

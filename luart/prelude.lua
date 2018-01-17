@@ -238,8 +238,8 @@ local function io_open(filename, mode)
 	return nil, mode
 end
 io.open = io_open
-local io_in = _luwa.stdin
-local io_out = _luwa.stdout
+local io_in = _luwa.stdin()
+local io_out = _luwa.stdout()
 local function io_input(file)
 	if file == nil then
 		return io_in

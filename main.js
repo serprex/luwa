@@ -16,18 +16,22 @@ function readline() {
 	}
 }
 
-rt().then(runt => {
+rt().then(async runt => {
+	runt.mod.genesis();
+	const env = runt.mkref(runt.mod.mkenv0());
+	runt.mod.mkenv1();
 	if (process.argv.length < 3) {
 		if (process.stdin.isTTY) {
 			console.log(`Luwa ${pjson.version} https://github.com/serprex/luwa`);
 			while (true) {
 				process.stdout.write('> ');
-				const line = readline().replace(/^\s*=/, 'return ');
+				const line = runt.newstr(readline().replace(/^\s*=/, 'return '));
 				try {
-					console.log(...runt.eval(line));
+					console.log(await runt.eval(env, line));
 				} catch (e) {
-					console.log('Error:', e);
+					console.log(e);
 				}
+				runt.free(line);
 			}
 		} else {
 			const result = [];
@@ -35,27 +39,9 @@ rt().then(runt => {
 			process.stdin.on('data', buf => result.push(buf));
 			process.stdin.on('end', () => {
 				const src = Buffer.concat(result);
-				return runt.eval(src.toString());
+				runt.eval(env, src.toString());
 			});
 		}
 	} else {
-		const lex = require('./lex');
-		fs.readFile(process.argv[process.argv.length-1], 'utf8', (err, src) => {
-			console.time('lex');
-			const l = new lex.Lex2(runt, src);
-			console.log(l.lex);
-			l.free();
-			console.timeEnd('lex');
-
-			/*
-			lua.runSource(src, { '': {
-				p: x => process.stdout.write(x + ' '),
-				q: x => process.stdout.write(String.fromCharCode(x)),
-				i: () => readline()|0,
-				c: () => readline().charCodeAt(0)|0,
-				m: new WebAssembly.Memory({ initial: 1 }),
-			}});
-			*/
-		});
 	}
 }).catch(e => setImmediate(() => { throw e; }));

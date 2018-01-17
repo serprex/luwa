@@ -47,15 +47,11 @@ function int2buf(x) {
 		}}
 	);
 	const mod = module.instance.exports;
-	const luastack = mkref(mod.newcoro());
-	mod.setluastack(luastack.val);
-	const newvec = mkref(mod.newvecbuf(32));
-	let mem8 = new Uint8Array(mem.buffer);
-	util.writeuint32(mem8, luastack.val+14, newvec.val);
+	mod.genesis();
 
 	const srcbuf = await readFile(process.argv[2]);
 	const src = mkref(mod.newstr(srcbuf.length));
-	mem8 = new Uint8Array(mem.buffer);
+	let mem8 = new Uint8Array(mem.buffer);
 	srcbuf.copy(mem8, src.val+13);
 	mod.lex(src.val);
 	const tokens = mkref(mod.nthtmp(8));
