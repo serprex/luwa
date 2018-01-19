@@ -1,3 +1,4 @@
+local _luwa = ...
 _VERSION = "Luwa 0.1"
 _G = _ENV
 
@@ -442,13 +443,12 @@ function xpcall(f, msgh, ...)
 	return xpcallcore(msgh, _pcall(f, ...))
 end
 
-local _luwa = ...
 local fakereqtbl = {
-	ast = _luwa.ast0,
-	bc = _luwa.bc0,
-	lex =  _luwa.lex0,
-	astgen = _luwa.astgen0,
-	bcgen = _luwa.bcgen0,
+	ast = _luwa.ast,
+	bc = _luwa.bc,
+	lex =  _luwa.lex,
+	astgen = _luwa.astgen,
+	bcgen = _luwa.bcgen,
 }
 local fakereqcache = {}
 local fakereq = {
@@ -481,8 +481,8 @@ local fakereq = {
 		sort = table.sort,
 	},
 }
-local astgen = fakereq('astgen')
-local bcgen = fakereq('bcgen')
+local astgen = fakereq.require('astgen')
+local bcgen = fakereq.require('bcgen')
 
 local function _loadstring(src, name, mode)
 	-- TODO function names

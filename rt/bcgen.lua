@@ -540,69 +540,55 @@ emitStatSwitch = {
 		end
 	end,
 }
-local function emit0(self, node, outputs, fn)
-	if outputs == 0 then
-		return 0
-	else
-		return fn(self, node, outputs)
+local function emit0(fn)
+	return function(self, node, outputs)
+		if outputs == 0 then
+			return 0
+		else
+			return fn(self, node, outputs)
+		end
 	end
 end
 emitValueSwitch = {
-	function(self, node, outputs) -- 1 nil
-		return emit0(self, node, outputs, function(self, node)
-			self:push(bc.LoadNil)
-			return 1
-		end)
-	end,
-	function(self, node, outputs) -- 2 false
-		return emit0(self, node, outputs, function(self, node)
-			self:push(bc.LoadFalse)
-			return 1
-		end)
-	end,
-	function(self, node, outputs) -- 3 true
-		return emit0(self, node, outputs, function(self, node)
-			self:push(bc.LoadTrue)
-			return 1
-		end)
-	end,
-	function(self, node, outputs) -- 4 num
-		return emit0(self, node, outputs, function(self, node)
-			local i, val = nextNumber(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(val:arg()))
-			return 1
-		end)
-	end,
-	function(self, node, outputs) -- 5 str
-		return emit0(self, node, outputs, function(self, node)
-			local i, val = nextString(node, #node.fathered)
-			self:push(bc.LoadConst, self:const(val:arg()))
-			return 1
-		end)
-	end,
-	function(self, node, outputs) -- 6 ...
-		return emit0(self, node, outputs, function(self, node)
-			if outputs == -1 then
-				return { varg = true }
-			else
-				self:push(bc.LoadVarg, outputs)
-				return outputs
-			end
-		end)
-	end,
-	function(self, node, outputs) -- 7 Funcbody
-		return emit0(self, node, outputs, function(self, node)
-			emitNode(self, node, ast.Funcbody)
-			return 1
-		end)
-	end,
+	emit0(function(self, node, outputs) -- 1 nil
+		self:push(bc.LoadNil)
+		return 1
+	end),
+	emit0(function(self, node, outputs) -- 2 false
+		self:push(bc.LoadFalse)
+		return 1
+	end),
+	emit0(function(self, node, outputs) -- 3 true
+		self:push(bc.LoadTrue)
+		return 1
+	end),
+	emit0(function(self, node, outputs) -- 4 num
+		local i, val = nextNumber(node, #node.fathered)
+		self:push(bc.LoadConst, self:const(val:arg()))
+		return 1
+	end),
+	emit0(function(self, node, outputs) -- 5 str
+		local i, val = nextString(node, #node.fathered)
+		self:push(bc.LoadConst, self:const(val:arg()))
+		return 1
+	end),
+	emit0(function(self, node, outputs) -- 6 ...
+		if outputs == -1 then
+			return { varg = true }
+		else
+			self:push(bc.LoadVarg, outputs)
+			return outputs
+		end
+	end),
+	emit0(function(self, node, outputs) -- 7 Funcbody
+		emitNode(self, node, ast.Funcbody)
+		return 1
+	end),
 	function(self, node, outputs) -- 8 Table
 		emitNode(self, node, ast.Table)
 		return 1
 	end,
-	function(self, node, outputs) -- 9 Call
-		return emitFunccall(self, node, outputs)
-	end,
+	emitFunccall, -- 9 Call
 	function(self, node, outputs) -- 10 Var load
 		emitNode(self, node, ast.Var, true)
 		return 1
