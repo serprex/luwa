@@ -28,20 +28,6 @@ end
 local function pprint(x)
 	return pprintcore(x, 0, {})
 end
-local function sanitize_func(c)
-	if c == "'" then
-		return "\\'"
-	elseif c == '\\' then
-		return "\\\\"
-	end
-	local b = c:byte()
-	if b < 32 or b > 126 then
-		return string.format('\\x%.2x', b)
-	end
-end
-local function sanitize(s)
-	return "'" .. s:gsub('.', sanitize_func) .. "'"
-end
 
 local result = {}
 local prevsult = {
@@ -68,14 +54,14 @@ local function func2lua(func, toplevel)
 	else
 		constlit = 'nil'
 	end
-	result[#result+1] = "{'" .. name .. "'," .. #func.params .. "," .. tostring(func.isdotdotdot) .. "," .. sanitize(string.char(table.unpack(func.bc))) .. "," .. constlit .. "," .. #func.locals .. "}"
+	result[#result+1] = "{'" .. name .. "'," .. #func.params .. "," .. tostring(func.isdotdotdot) .. "," .. string.format('%q', string.char(table.unpack(func.bc))) .. "," .. constlit .. "," .. #func.locals .. "}"
 	return name
 end
 function strconst.integer(c)
 	if prevsult.integer[c] then
 		return prevsult.integer[c]
 	else
-		local pack = sanitize(string.pack('<i8', c))
+		local pack = string.format('%q', string.pack('<i8', c))
 		result[#result+1] = "string.unpack('<i8'," .. pack .. ")"
 		prevsult.integer[c] = 'function() return GN.integer[' .. pack .. '] end'
 		return prevsult.integer[c]
@@ -85,7 +71,7 @@ function strconst.float(c)
 	if prevsult.float[c] then
 		return prevsult.float[c]
 	else
-		local pack = sanitize(string.pack('<d', c))
+		local pack = string.format('%q', string.pack('<d', c))
 		result[#result+1] = "string.unpack('<d'," .. pack .. ")"
 		prevsult.float[c] = 'function() return GN.float[' .. pack .. '] end'
 		return prevsult.float[c]
@@ -95,7 +81,7 @@ function strconst.string(c)
 	if prevsult.string[c] then
 		return prevsult.string[c]
 	else
-		local pack = sanitize(c)
+		local pack = string.format('%q', c)
 		result[#result+1] = pack
 		prevsult.string[c] = 'function() return GS[' .. pack .. '] end'
 		return prevsult.string[c]
