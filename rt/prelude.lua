@@ -475,7 +475,6 @@ local fakereq = {
 		pack = string.pack,
 	},
 	table = {
-		pack = table.pack,
 		unpack = table.unpack,
 		insert = table.insert,
 		sort = table.sort,
@@ -484,7 +483,7 @@ local fakereq = {
 local astgen = fakereq.require('astgen')
 local bcgen = fakereq.require('bcgen')
 
-local function _loadstring(src, name, mode)
+local function _loadstring(src, name, mode, env)
 	-- TODO function names
 	local lx, vals = _luwa.lex(src)
 	if not lx then
@@ -504,11 +503,66 @@ local function _loadstring(src, name, mode)
 	_luwa.fn_set_paramc(fn, #bcg.params)
 	_luwa.fn_set_isdotdotdot(fn, true)
 	_luwa.fn_set_bc(fn, string_char(table_unpack(bcg.bc)))
-	_luwa.fn_set_frees(fn, _luwa.vec_new(_ENV))
+	_luwa.fn_set_frees(fn, _luwa.vec_new(env or _ENV))
 	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
 	return fn
 end
 loadstring = _loadstring
+load = _loadstring
+local function _loadfile(fname)
+	local file
+	if not fname then
+		file = io_in
+	elseif type(file) == 'string' then
+		file = assert(_luwa.ioopen(fname, 'r'))
+	else
+		return error('bad argument #1 to loadfile')
+	end
+	return _loadstring(_luwa.ioread(file, 'a'), fname or 'stdin', mode, env)
+end
+
+local loaded = {}
+local preload = {}
+local searchers = {
+	function(name)
+		local pre = preload[name]
+		if pre then
+			return pre
+		end
+	end,
+	function(name)
+		local fname, err = package.searchpath(name)
+		if fname then
+			return _loadfile(fname)
+		else
+			return nil, err
+		end
+	end
+}
+package.preload = preload
+package.searchers = searchers
+local function _require(modname)
+	modname = _tostring(modname)
+	assert(type(modname) == 'string', 'bad argument #1 to require')
+	local lded = loaded[modname]
+	if lded then
+		return lded
+	else
+		for i=1,#searchers do
+			local f, p = searchers[i](modname)
+			if f then
+				local ret = f(p)
+				if ret == nil then
+					ret = true
+				end
+				loaded[modname] = ret
+				return ret
+			end
+		end
+		return error('module \'' .. modname .. '\' not found')
+	end
+end
+require = _require
 
 local registry = {}
 function debug.getregistry()
