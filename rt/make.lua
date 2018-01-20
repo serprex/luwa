@@ -816,7 +816,7 @@ function modmeth:compile()
 			encode_varuint(imp.type)
 			encode_varuint(imp.mut)
 		else
-			error("Unknown import type: " .. imp.ty)
+			error("Unknown import type: " .. tostring(imp.ty))
 		end
 	end)
 
@@ -846,9 +846,11 @@ function modmeth:compile()
 			elseif ty == f32 then
 				bc[#bc+1] = 0x43
 				encode_f32(bc, init)
-			else
+			elseif ty == f64 then
 				bc[#bc+1] = 0x44
 				encode_f64(bc, init)
+			else
+				error('Unknown type: ' .. tostring(ty))
 			end
 		else
 			assert(not init.mut)
