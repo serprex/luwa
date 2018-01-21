@@ -430,11 +430,11 @@ emitStatSwitch = {
 		local namei = name:arg()
 		local gotosc = self.gotoscope[node]
 		local labelsc = self.labelscope[namei]
-		while gotosc and gotosc ~= labelsc do
+		while gotosc ~= labelsc do
 			gotosc = gotosc.prev
-		end
-		if not gotosc then
-			error('Jmp out of scope', nami)
+			if not gotosc then
+				error('Jmp out of scope', nami)
+			end
 		end
 		self.gotos[#self.bc+1] = namei
 		self:push(bc.Jmp, 0)
@@ -463,15 +463,15 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 10 if
 		local eob, condbr = {}
-		for i=#node.fathered, 1, -1 do
+		for i=#node.fathered-1, 2, -1 do
 			local child = node.fathered[i]
 			local ty = child.type&31
 			if ty == ast.ExpOr then
-				emitNode(self, node, ast.ExpOr, 1)
+				visitEmit[ast.ExpOr](self, child, 1)
 				condbr = #self.bc+1
 				self:push(bc.JifNot, 0)
 			elseif ty == ast.Block then
-				emitNode(self, node, ast.Block)
+				visitEmit[ast.Block](self, child)
 				if i > 2 then
 					eob[#eob+1] = #self.bc+1
 					self:push(bc.Jmp, 0)
