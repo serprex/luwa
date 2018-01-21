@@ -19,7 +19,7 @@ local ops = require 'bc'
 
 local rt = require 'rt'
 
-dataframe = {
+local dataframe = {
 	type = str.base + 0,
 	pc = str.base + 1,
 	base = str.base + 5, -- Base. params here
@@ -30,7 +30,7 @@ dataframe = {
 	frame = str.base + 17, -- base+frame = objframe here
 	sizeof = 19,
 }
-objframe = {
+local objframe = {
 	bc = vec.base + 0,
 	consts = vec.base + 4,
 	frees = vec.base + 8,
@@ -39,7 +39,7 @@ objframe = {
 	tmpfrees = 4,
 	sizeof = 12,
 }
-calltypes = {
+local calltypes = {
 	norm = 0, -- Reload locals
 	init = 1, -- Return stack to coro src, src nil for main
 	prot = 2, -- Reload locals
@@ -48,7 +48,7 @@ calltypes = {
 	bool = 5, -- Cast result to bool
 }
 
-init = func(i32, void, function(f, fn)
+local init = func(i32, void, function(f, fn)
 	-- Transition oluastack to having a stack frame from fn
 	-- Assumes stack was previously setup
 
@@ -189,7 +189,7 @@ param0 = func(i32, function(f)
 	f:add()
 end)
 
-eval = func(i32, function(f)
+local eval = func(i32, function(f)
 	local a, b, c, d, e,
 		meta_callty, meta_retb, meta_retc, meta_key, meta_off,
 		framebase, objbase, base, bc, pc = f:locals(i32, 5+5+5)
@@ -325,7 +325,6 @@ eval = func(i32, function(f)
 			f:i32(8)
 			f:call(nthtmp)
 			f:tee(a)
-			f:call(rt.echoptr)
 			f:i32load8u(obj.type)
 			f:tee(b)
 			f:i32(types.tbl)
@@ -944,6 +943,7 @@ eval = func(i32, function(f)
 		readArg4()
 		f:add()
 		f:i32load(vec.base)
+		f:call(rt.echoptr)
 		f:call(tmppush)
 		f:br(scopes.nop)
 	end, ops.LoadLocal, function(scopes)
@@ -1426,6 +1426,16 @@ eval = func(i32, function(f)
 		end, 11, function()
 			f:call(std.std_type)
 			f:br(scopes.nop)
+		end, 12, function()
+			-- _stdin
+			f:i32(NIL)
+			f:call(tmppush)
+			f:br(scopes.nop)
+		end, 13, function()
+			-- _stdout
+			f:i32(NIL)
+			f:call(tmppush)
+			f:br(scopes.nop)
 		end)
 		f:unreachable()
 	end, ops.Jmp, function(scopes)
@@ -1743,13 +1753,12 @@ eval = func(i32, function(f)
 		f:i32(functy.sizeof)
 		f:i32(types.functy)
 		f:call(newobj)
-		f:tee(b)
-		f:loadg(otmp)
-		f:i64load(0)
-		f:i64store(0)
-
-		for offs=8,functy.sizeof-8 do
-			f:load(b)
+		for offs=0,functy.sizeof-8 do
+			if offs == 0 then
+				f:tee(b)
+			else
+				f:load(b)
+			end
 			f:loadg(otmp)
 			f:i64load(offs)
 			f:i64store(offs)
@@ -1766,34 +1775,30 @@ eval = func(i32, function(f)
 
 			f:load(a)
 			f:call(newvec)
-			f:store(b)
-
-			f:loadg(otmp)
-			f:load(b)
-			f:i32store(functy.frees)
-
+			f:tee(b)
+			f:i32(vec.base)
+			f:add()
 			f:loadg(oluastack)
 			f:i32load(coro.stack)
 			f:tee(c)
 			f:i32load(buf.ptr)
 			f:load(c)
 			f:i32load(buf.len)
-			f:tee(d)
-			f:add()
 			f:load(a)
 			f:sub()
-			f:i32(vec.base)
+			f:tee(d)
 			f:add()
-			f:load(b)
 			f:i32(vec.base)
 			f:add()
 			f:load(a)
 			f:call(memcpy4)
 
+			f:loadg(otmp)
+			f:load(b)
+			f:i32store(functy.frees)
+
 			f:load(c)
 			f:load(d)
-			f:load(a)
-			f:sub()
 			f:i32store(buf.len)
 
 			f:loadg(otmp)
@@ -1996,6 +2001,9 @@ eval = func(i32, function(f)
 end)
 
 return {
+	dataframe = dataframe,
+	objframe = objframe,
+	calltypes = calltypes,
 	init = init,
 	eval = eval,
 }

@@ -11,7 +11,6 @@ local _table = require '_table'
 local tblget, tblset = _table.tblget, _table.tblset
 
 local vm = require 'vm'
-local init = vm.init
 
 local addkv2env = func(i32, i32, void, function(f, k, v)
 	f:call(param0)
@@ -91,7 +90,7 @@ local mkenv0 = func(i32, function(f)
 	f:call(tmppush)
 
 	f:i32(GF.prelude0)
-	f:call(init)
+	f:call(vm.init)
 
 	addfun(addkv2env,
 		GS.select, GF.select,
@@ -144,7 +143,7 @@ end)
 
 local mkenv1 = func(function(f)
 	f:loop(function(loop)
-		f:call(eval)
+		f:call(vm.eval)
 		f:eqz()
 		f:brif(loop)
 	end)

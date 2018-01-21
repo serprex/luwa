@@ -182,7 +182,7 @@ local image = M.data(memory, addStatics(4, {
 	{'debug_getmetatable', 1, false, '\x1f\x04\x0c'},
 	{'debug_setmetatable', 1, false, '\x1f\x05\x0c'},
 	{'math_type', 1, false, '\x1f\x06\x0c'},
-	{'io_type', 1, false, '\x1f\x0b\x0c'},
+	{'io_type', 1, false, '\x1f\x1b\x0c'},
 	{'_stdin', 0, false, '\x1f\x0c\x0c'},
 	{'_stdout', 0, false, '\x1f\x0d\x0c'},
 	{'_ioread', 2, false, '\x1f\x0e\x0c'},

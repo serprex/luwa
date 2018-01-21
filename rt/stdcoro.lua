@@ -7,6 +7,9 @@ local types, obj, vec, buf, coro, corostate, newcoro = alloc.types, alloc.obj, a
 local stack = require 'stack'
 local tmppush = stack.tmppush
 
+local vm = require 'vm'
+local dataframe, calltypes = vm.dataframe, vm.calltypes
+
 coro_create = func(function(f)
 	--[[
 	-- expects oluastack to've been in stack-only mode

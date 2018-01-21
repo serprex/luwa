@@ -7,6 +7,9 @@ local types, obj, vec, tbl, buf, coro = alloc.types, alloc.obj, alloc.vec, alloc
 local stack = require 'stack'
 local tmppush = stack.tmppush
 
+local vm = require 'vm'
+local dataframe = vm.dataframe
+
 local debug_getmetatable = func(function(f)
 	local a, b = f:locals(i32, 2)
 

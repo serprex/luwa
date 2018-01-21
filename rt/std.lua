@@ -7,6 +7,9 @@ local types, obj, num, str, vec, buf, coro, newi64 = alloc.types, alloc.obj, all
 local stack = require 'stack'
 local tmppush, extendtmp = stack.tmppush, stack.extendtmp
 
+local vm = require 'vm'
+local dataframe, calltypes = vm.dataframe, vm.calltypes
+
 local std_pcall = func(function(f)
 	-- > func, p1, p2, ...
 	-- < true, p1, p2, ...

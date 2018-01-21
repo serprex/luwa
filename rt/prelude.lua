@@ -24,9 +24,10 @@ package.loaded = {
 local _rawget, _type = rawget, type
 local _error, _next, _select, _tostring, _pcall = error, next, select, tostring, pcall
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
-local table_unpack = table.unpack
-local string_char = string.char
 local io_type = io.type
+local tointeger, math_type = math.tointeger, math.type
+local string_char = string.char
+local table_unpack = table.unpack
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 
 debug_setmetatable('', { __index = string })
@@ -34,7 +35,7 @@ debug_setmetatable('', { __index = string })
 local function _assert(v, ...)
 	if v then
 		return v, ...
-	elseif select('#', ...) == 0 then
+	elseif _select('#', ...) == 0 then
 		return _error('assertion failed!', 2)
 	else
 		return _error(..., 2)
@@ -108,17 +109,17 @@ function math.randomseed(x)
 	if x then
 		randomseed = x
 	else
-		error("bad argument #1 to 'randomseed' (number expected)")
+		_error("bad argument #1 to 'randomseed' (number expected)")
 	end
 end
 function math.sqrt(x)
 	return x ^ .5
 end
 function math.ult(m, n)
-	m = math.tointeger(m)
-	assert(m, "bad argument #1 to 'ult'")
-	n = math.tointeger(n)
-	assert(n, "bad argument #2 to 'ult'")
+	m = tointeger(m)
+	_assert(m, "bad argument #1 to 'ult'")
+	n = tointeger(n)
+	_assert(n, "bad argument #2 to 'ult'")
 	if m >= 0 then
 		return n < 0 or m < n
 	else
@@ -127,7 +128,7 @@ function math.ult(m, n)
 end
 
 function string:len()
-	assert(type(self) == "string", "bad argument #1 to 'len' (string expected)")
+	_assert(_type(self) == "string", "bad argument #1 to 'len' (string expected)")
 	return #self
 end
 
@@ -228,7 +229,7 @@ end
 
 local iometa = {}
 local function io_open(filename, mode)
-	assert(type(filename) == 'string', 'Unexpected argument #1 to io.open')
+	_assert(_type(filename) == 'string', 'Unexpected argument #1 to io.open')
 	if mode == nil then
 		mode = 'r'
 	end
@@ -244,11 +245,11 @@ local io_out = _luwa.stdout()
 local function io_input(file)
 	if file == nil then
 		return io_in
-	elseif type(file) == 'string' then
+	elseif _type(file) == 'string' then
 		io_in = io_open(file)
 		return io_in
 	else
-		assert(io_type(file), "bad argument #1 to 'io.input'")
+		_assert(io_type(file), "bad argument #1 to 'io.input'")
 		io_out = file
 		return file
 	end
@@ -257,11 +258,11 @@ io.input = io_input
 local function io_output(file)
 	if file == nil then
 		return io_out
-	elseif type(file) == 'string' then
+	elseif _type(file) == 'string' then
 		io_out = io_open(file, 'w')
 		return io_in
 	else
-		assert(io_type(file), "bad argument #1 to 'io.output'")
+		_assert(io_type(file), "bad argument #1 to 'io.output'")
 		io_out = file
 		return file
 	end
@@ -282,10 +283,10 @@ io.flush = io_flush
 local function io_lines(file)
 	if file == nil then
 		file = io_in
-	elseif type(file) == 'string' then
+	elseif _type(file) == 'string' then
 		file = io_open(file)
 	else
-		assert(io_type(file), "bad argument #1 to 'io.lines'")
+		_assert(io_type(file), "bad argument #1 to 'io.lines'")
 	end
 	return function()
 		return _luwa.ioread(file)
@@ -296,7 +297,7 @@ local function io_close(file)
 	if file == nil then
 		return _luwa.ioclose(io_out)
 	else
-		assert(io_type(file), "bad argument #1 to 'io.close'")
+		_assert(io_type(file), "bad argument #1 to 'io.close'")
 		return _luwa.ioclose(file)
 	end
 end
@@ -313,11 +314,11 @@ iometa.close = io_close
 iometa.setvbuf = _luwa.iosetvbuf
 
 function iometa:__tostring()
-	assert(io_type(self), "bad argument #1 to '__tostring'")
+	_assert(io_type(self), "bad argument #1 to '__tostring'")
 	return 'file (' .. _luwa.ioid(self) .. ')'
 end
 function iometa:seek(whence, offset)
-	assert(io_type(self), "bad argument #1 to 'seek'")
+	_assert(io_type(self), "bad argument #1 to 'seek'")
 	if not _luwa.ioseekable(self) then
 		return nil, 'Invalid seek'
 	end
@@ -329,7 +330,7 @@ function iometa:seek(whence, offset)
 	elseif whence == 'end' then
 		offset = offset + _luwa.iolen(self)
 	elseif whence ~= 'set' then
-		error('Unexpected argument #1 to file:seek')
+		_error('Unexpected argument #1 to file:seek')
 	end
 	offset = tointeger(offset)
 	if offset < 0 then
@@ -343,7 +344,7 @@ function os.difftime(t2, t1)
 	return t2 - t1
 end
 function os.setlocal(locale)
-	if not locale or locale == '' then
+	if not locale or locale == '' or locale == 'C' then
 		return 'C'
 	else
 		return nil
@@ -383,7 +384,8 @@ function pairs(t)
 	if not mt then
 		local __pairs = mt.__pairs
 		if __pairs then
-			return __pairs(t)
+			local a, b, c = __pairs(t)
+			return a, b, c
 		end
 	end
 	return _next, t, nil
@@ -407,22 +409,6 @@ function ipairs(t)
 		end
 	end
 	return inext, t, 0
-end
-
-function loadfile(s, m, e)
-	local f, err
-	if s then
-		f, err = io_open(s)
-		if err then
-			return nil, err
-		end
-		err = _luwa.ioread(f, 'a')
-		_luwa.ioclose(f)
-	else
-		s = 'stdin'
-		err = io_read('a')
-	end
-	return load(err, s, m, e)
 end
 
 local function xpcallguard(res, ...)
@@ -451,24 +437,29 @@ local fakereqtbl = {
 	bcgen = _luwa.bcgen,
 }
 local fakereqcache = {}
-local fakereq = {
+local fakereqenv
+local function fakereq(s)
+	if not fakereqcache[s] then
+		fakereqcache[s] = fakereqtbl[s](fakereqenv)
+	end
+	return fakereqcache[s]
+end
+fakereqenv = {
 	assert = assert,
 	error = error,
+	require = fakereq,
 	select = select,
 	setmetatable = setmetatable,
 	type = type,
 	pairs = pairs,
 	print = print,
-	require = function(s)
-		if not fakereqcache[s] then
-			fakereqcache[s] = fakereqtbl[s](fakereq)
-		end
-		return fakereqcache[s]
-	end,
 	coroutine = {
 		create = co_create,
 		wrap = coroutine.wrap,
 		yield = coroutine.yield,
+	},
+	math = {
+		type = math_type
 	},
 	string = {
 		byte = string.byte,
@@ -480,8 +471,8 @@ local fakereq = {
 		sort = table.sort,
 	},
 }
-local astgen = fakereq.require('astgen')
-local bcgen = fakereq.require('bcgen')
+local astgen = fakereq('astgen')
+local bcgen = fakereq('bcgen')
 
 local function _loadstring(src, name, mode, env)
 	-- TODO function names
@@ -513,12 +504,14 @@ local function _loadfile(fname)
 	local file
 	if not fname then
 		file = io_in
-	elseif type(file) == 'string' then
-		file = assert(_luwa.ioopen(fname, 'r'))
+	elseif _type(file) == 'string' then
+		file = _assert(_luwa.ioopen(fname, 'r'))
 	else
-		return error('bad argument #1 to loadfile')
+		return _error('bad argument #1 to loadfile')
 	end
-	return _loadstring(_luwa.ioread(file, 'a'), fname or 'stdin', mode, env)
+	local src = _luwa.ioread(file, 'a')
+	_luwa.ioclose(file)
+	return _loadstring(src, fname or 'stdin', mode, env)
 end
 
 local loaded = {}
@@ -543,7 +536,7 @@ package.preload = preload
 package.searchers = searchers
 local function _require(modname)
 	modname = _tostring(modname)
-	assert(type(modname) == 'string', 'bad argument #1 to require')
+	_assert(_type(modname) == 'string', 'bad argument #1 to require')
 	local lded = loaded[modname]
 	if lded then
 		return lded
@@ -559,7 +552,7 @@ local function _require(modname)
 				return ret
 			end
 		end
-		return error('module \'' .. modname .. '\' not found')
+		return _error('module \'' .. modname .. '\' not found')
 	end
 end
 require = _require
