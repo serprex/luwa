@@ -422,7 +422,7 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 5 break
 		assert(self.breaks, "break outside of loop")
-		self.breaks[#self.breaks+1] = #self.bc+1
+		self.breaks[#self.breaks+1] = #self.bc+2
 		self:push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 6 goto
@@ -436,7 +436,7 @@ emitStatSwitch = {
 				error('Jmp out of scope', nami)
 			end
 		end
-		self.gotos[#self.bc+1] = namei
+		self.gotos[#self.bc+2] = namei
 		self:push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 7 do-end
@@ -446,7 +446,7 @@ emitStatSwitch = {
 		self:breakscope(function()
 			local soc = #self.bc
 			emitNode(self, node, ast.ExpOr, 1)
-			local jmp = #self.bc+1
+			local jmp = #self.bc+2
 			self:push(bc.JifNot, 0)
 			emitNode(self, node, ast.Block)
 			self:push(bc.Jmp, soc)
@@ -468,12 +468,12 @@ emitStatSwitch = {
 			local ty = child.type&31
 			if ty == ast.ExpOr then
 				visitEmit[ast.ExpOr](self, child, 1)
-				condbr = #self.bc+1
+				condbr = #self.bc+2
 				self:push(bc.JifNot, 0)
 			elseif ty == ast.Block then
 				visitEmit[ast.Block](self, child)
 				if i > 2 then
-					eob[#eob+1] = #self.bc+1
+					eob[#eob+1] = #self.bc+2
 					self:push(bc.Jmp, 0)
 				end
 				if condbr then
@@ -744,7 +744,7 @@ local function emitShortCircuitFactory(ty, opcode)
 					self:patch(lab, #self.bc)
 				end
 				if i > 1 then
-					lab = #self.bc+1
+					lab = #self.bc+2
 					self:push(opcode, 0)
 				end
 			end
