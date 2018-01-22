@@ -1,4 +1,4 @@
-#!/usr/bin/lua
+#!/usr/bin/env lua
 package.path = 'rt/?.lua;' .. package.path
 local M = require 'make'
 
