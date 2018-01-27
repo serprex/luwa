@@ -6,7 +6,7 @@ I'll try avoid my usual stream of consciousness here, instead that's at [my devl
 
 [`main.js`](main.js) is the nodejs entrypoint
 
-WASM runtime is in `rt/`. [`rt/make.lua`](rt/make.lua) is the entry point for the assmembler. This produces an `rt.wasm` which [`rt.js`](rt.js) contains glue code for
+WASM runtime is in `rt/`. [`rt/make.lua`](rt/make.lua) is the luwa-agnostic macro-assembler logic. [`mkrt.lua`](rt/mkrt.lua) produces an `rt.wasm` which [`rt.js`](rt.js) interfaces
 
 The GC is a LISP2 compacting GC. GC performance is a low priority given the WASM GC RFC. See [`rt/gc.lua`](rt/gc.lua)
 
