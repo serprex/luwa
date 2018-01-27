@@ -156,7 +156,7 @@ local image = M.data(memory, addStatics(4, {
 	'b', 't', 'bt', 'n', 'a', 'l', 'L', 'r', 'w', 'r+', 'w+', 'a+',
 	'set', 'cur', 'end', 'no', 'full', 'line', 'exit', 'signal',
 	'collect', 'stop', 'restart', 'count', 'step', 'setpause', 'setstepmul', 'isrunning',
-	'__eq', '__lt', '__le', '__gt', '__ge', '__len', '__tostring',
+	'__eq', '__lt', '__le', '__gt', '__ge', '__len',
 	'__index', '__newindex', '__mode', '__call', '__unm', '__concat',
 	'__add', '__sub', '__mul', '__div', '__idiv', '__mod', '__pow',
 	'__bnot', '__band', '__bor', '__bxor', '__bshl', '__bshr',

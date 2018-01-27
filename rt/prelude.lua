@@ -22,7 +22,7 @@ package.loaded = {
 
 -- capture globals so that behavior doesn't change if rebound
 local _rawget, _type = rawget, type
-local _error, _next, _select, _tostring, _pcall = error, next, select, tostring, pcall
+local _error, _next, _select, _pcall = error, next, select, pcall
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local io_type = io.type
 local tointeger, math_type = math.tointeger, math.type
@@ -58,6 +58,32 @@ function setmetatable(table, metatable)
 	end
 	return debug_setmetatable(table, metatable)
 end
+
+local function _tostring(v)
+	local ty = _type(v)
+	if ty == 'string' then
+		return v
+	elseif ty == 'number' then
+		return v .. ''
+	else
+		local mt = _getmetatable(v)
+		local __tostring = mt.__tostring
+		if __tostring then
+			local s = __tostring(v)
+			local sty = _type(s)
+			if sty == 'string' then
+				return s
+			elseif sty == 'number' then
+				return s .. ''
+			else
+				_error("'__tostring' must return a string")
+			end
+		else
+			return ty .. ': ' .. _luwa.hexid(v)
+		end
+	end
+end
+tostring = _tostring
 
 math.atan2 = math.atan
 function math.deg(x)
@@ -315,7 +341,7 @@ iometa.setvbuf = _luwa.iosetvbuf
 
 function iometa:__tostring()
 	_assert(io_type(self), "bad argument #1 to '__tostring'")
-	return 'file (' .. _luwa.ioid(self) .. ')'
+	return 'file (' .. _luwa.hexid(self) .. ')'
 end
 function iometa:seek(whence, offset)
 	_assert(io_type(self), "bad argument #1 to 'seek'")
