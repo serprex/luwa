@@ -370,7 +370,12 @@ scopeStatSwitch = {
 local function emitCall(self, node, outputs)
 	local methname = selectIdent(node)
 	if methname then
-		self:push(bc.GetMeth, self:const(methname:arg()))
+		local temp = idxtbl(self.locals, methname)
+		self:push(bc.StoreLocal, temp)
+		self:push(bc.LoadLocal, temp)
+		self:push(bc.LoadConst, self:const(methname:arg()))
+		self:push(bc.Idx)
+		self:push(bc.LoadLocal, temp)
 	end
 	return emitNode(self, node, ast.Args, outputs)
 end
