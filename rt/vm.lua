@@ -731,7 +731,7 @@ local eval = func(i32, function(f)
 		f:i32load16u(dataframe.frame)
 		f:add()
 
-		-- Setup to find current data frame after extendstr
+		-- Setup to find current dataframe after extendstr
 		f:loadg(oluastack)
 		f:i32load(coro.data)
 		f:i32load(buf.len)
@@ -763,6 +763,8 @@ local eval = func(i32, function(f)
 			f:load(pc)
 			f:add()
 			f:load(c)
+			f:i32(2)
+			f:shl()
 			f:add()
 			f:i32load(str.base)
 			f:load(d)
@@ -799,9 +801,9 @@ local eval = func(i32, function(f)
 
 		-- a numcalls
 		-- b retc
-		-- set c to current dataframe base
+		-- c current dataframe base
 		-- nthtmp(d) == last function of call chain
-		-- set e to coro.stack + coro.stack.len - d
+		-- e coro.stack
 
 		f:load(c)
 		f:i32(calltypes.norm)
@@ -1977,11 +1979,12 @@ local eval = func(i32, function(f)
 		f:i32store16(dataframe.frame)
 
 		f:br(scopes.nop)
-	end, 'pcp4', function()
+	end, 'pcp4', function(scopes)
 		f:load(pc)
 		f:i32(4)
 		f:add()
 		f:store(pc)
+		f:br(scopes.nop) -- TODO remove when Nop is reachable
 	end, ops.Nop, function() f:unreachable() end, 'nop')
 
 	-- check whether to yield (for now we'll yield after each instruction)
