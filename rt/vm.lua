@@ -789,8 +789,20 @@ local eval = func(i32, function(f)
 		f:add()
 		f:store(c)
 
+		f:load(d)
+		f:call(nthtmp)
+		f:i32load(functy.localc)
+		f:i32(2)
+		f:shl()
+		f:tee(e)
 		f:i32(objframe.sizeof)
+		f:add()
 		f:call(extendtmp)
+
+		f:load(d)
+		f:load(e)
+		f:add()
+		f:store(d)
 
 		f:loadg(oluastack)
 		f:i32load(coro.stack)
@@ -846,8 +858,8 @@ local eval = func(i32, function(f)
 		f:i32store16(dataframe.retc + dataframe.sizeof)
 
 		--for b=1;b<a;b++
-		--	c += dataframe.sizeof
-		--	base += readArg4()+4
+		---- c += dataframe.sizeof
+		---- base += readArg4()+4
 		f:i32(1)
 		f:tee(b)
 		f:load(a)
