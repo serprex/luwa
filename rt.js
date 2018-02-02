@@ -13,7 +13,7 @@ function rtwathen(ab) {
 			console.log(x, x&7, x+4 < memta.length && memta[x+4]);
 			if (x+4 < memta.length && memta[x+4] < 8) {
 				try{
-				console.log(ffi.rawobj2js(x));
+					console.log(ffi.rawobj2js(x));
 				}catch(e){console.log(e)}
 			}
 			return x;

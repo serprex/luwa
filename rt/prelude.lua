@@ -465,10 +465,12 @@ local fakereqtbl = {
 local fakereqcache = {}
 local fakereqenv
 local function fakereq(s)
-	if not fakereqcache[s] then
-		fakereqcache[s] = fakereqtbl[s](fakereqenv)
+	local fs = fakereqcache[s]
+	if not fs then
+		fs = fakereqtbl[s](fakereqenv)
+		fakereqcache[s] = fs
 	end
-	return fakereqcache[s]
+	return fs
 end
 fakereqenv = {
 	assert = assert,
