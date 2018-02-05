@@ -11,9 +11,9 @@ function rtwathen(ab) {
 		echoptr: x => {
 			const memta = new Uint8Array(mem.buffer);
 			console.log(x, x&7, x+4 < memta.length && memta[x+4]);
-			if (x+4 < memta.length && memta[x+4] < 8) {
+			if (!(x&7) && x+4 < memta.length && memta[x+4] < 8) {
 				try{
-					console.log(ffi.rawobj2js(x));
+					console.log(JSON.stringify(ffi.rawobj2js(x)));
 				}catch(e){console.log(e)}
 			}
 			return x;
@@ -146,6 +146,10 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 		}
 		case 7:
 			return this.rawobj2js(util.readuint32(memta, p + 9), memta, memo);
+		case 8:
+			return "[Function] @ " + p;
+		case 9:
+			return "[Coroutine] @ " + p;
 		default:
 			return "Unknown type: " + memta[p+4] + " @ " + p;
 	}
