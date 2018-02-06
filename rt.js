@@ -13,7 +13,7 @@ function rtwathen(ab) {
 			console.log(x, x&7, x+4 < memta.length && memta[x+4]);
 			if (!(x&7) && x+4 < memta.length && memta[x+4] < 8) {
 				try{
-					console.log(JSON.stringify(ffi.rawobj2js(x)));
+					console.log(ffi.rawobj2js(x));
 				}catch(e){console.log(e)}
 			}
 			return x;
@@ -132,7 +132,8 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 					}
 				}
 			}
-			return map;
+
+			return { hash: map, meta: this.rawobj2js(util.readuint32(memta, p+25), memta, memo) };
 		}
 		case 5:
 			return new Uint8Array(memta.buffer, p+13, util.readuint32(memta, p+5));
@@ -147,8 +148,23 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 		case 7:
 			return this.rawobj2js(util.readuint32(memta, p + 9), memta, memo);
 		case 8:
-			return "[Function] @ " + p;
+			return {
+				id: util.readuint32(memta, p + 5),
+				isdotdotdot: memta[p+9],
+				bc: this.rawobj2js(util.readuint32(memta, p + 10), memta, memo),
+				consts: this.rawobj2js(util.readuint32(memta, p + 14), memta, memo),
+				free: this.rawobj2js(util.readuint32(memta, p + 18), memta, memo),
+				localc: util.readuint32(memta, p + 22),
+				paramc: util.readuint32(memta, p + 26),
+			};
 		case 9:
+			return {
+				id: util.readuint32(memta, p + 5),
+				state: memta[p+9],
+				caller: this.rawobj2js(util.readuint32(memta, p + 10), memta, memo),
+				stack: this.rawobj2js(util.readuint32(memta, p + 14), memta, memo),
+				data: this.rawobj2js(util.readuint32(memta, p + 18), memta, memo),
+			}
 			return "[Coroutine] @ " + p;
 		default:
 			return "Unknown type: " + memta[p+4] + " @ " + p;
