@@ -45,7 +45,7 @@ assert = _assert
 
 local function _getmetatable(object)
 	object = debug_getmetatable(object)
-	return (_type(x) == 'table' and _rawget(object, '__metatable')) or x
+	return (_type(object) == 'table' and _rawget(object, '__metatable')) or object
 end
 getmetatable = _getmetatable
 

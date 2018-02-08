@@ -680,8 +680,10 @@ visitScope = {
 		emitNode(asm, node, ast.Block)
 		asm:synth()
 		local func = { func = asm }
+		local already = {}
 		for k, v in pairs(asm.namety) do
-			if v.free and v.free[asm] and not v.free[self] and v.func ~= asm then
+			if v.free and v.free[asm] and v.func ~= asm and not already[v] then
+				already[v] = true
 				v.free[self] = true
 				func[#func+1] = v
 			end
