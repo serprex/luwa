@@ -7,6 +7,8 @@ local types, obj, num, str, vec, buf, coro, newi64 = alloc.types, alloc.obj, all
 local stack = require 'stack'
 local tmppush, extendtmp = stack.tmppush, stack.extendtmp
 
+local _table = require '_table'
+
 local vm = require 'vm'
 local dataframe, calltypes = vm.dataframe, vm.calltypes
 
@@ -161,12 +163,7 @@ end)
 local std_type = func(function(f)
 	f:block(i32, function(res)
 		f:switch(function()
-			f:call(loadframebase)
-			f:i32load(dataframe.base)
-			f:loadg(oluastack)
-			f:i32load(coro.stack)
-			f:i32load(buf.ptr)
-			f:add()
+			f:call(param0)
 			f:i32load(vec.base)
 			f:i32load8u(obj.type)
 		end, types.int, types.float, function()
@@ -199,9 +196,30 @@ end)
 local std_error = func(function(f)
 end)
 
+local std_rawget = func(function(f)
+	f:call(param0)
+	f:i32load(vec.base)
+	f:call(param0)
+	f:i32load(vec.base + 4)
+	f:call(_table.tblget)
+	f:call(tmppush)
+end)
+
+local std_rawset = func(function(f)
+	f:call(param0)
+	f:i32load(vec.base)
+	f:call(param0)
+	f:i32load(vec.base + 4)
+	f:call(param0)
+	f:i32load(vec.base + 8)
+	f:call(_table.tblset)
+end)
+
 return {
-	std_pcall = std_pcall,
-	std_select = std_select,
-	std_type = std_type,
-	std_error = std_error,
+	pcall = std_pcall,
+	select = std_select,
+	type = std_type,
+	error = std_error,
+	rawget = std_rawget,
+	rawset = std_rawset,
 }

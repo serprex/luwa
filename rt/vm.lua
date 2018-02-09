@@ -1395,10 +1395,10 @@ local eval = func(i32, function(f)
 			f:add()
 			f:i32load8u(str.base - 1)
 		end, 0, function()
-			f:call(std.std_pcall)
+			f:call(std.pcall)
 			f:br(scopes.nop)
 		end, 1, function()
-			f:call(std.std_select)
+			f:call(std.select)
 			f:br(scopes.nop)
 		end, 2, function()
 			f:call(stdcoro.coro_status)
@@ -1416,7 +1416,7 @@ local eval = func(i32, function(f)
 			f:call(stdmath.math_type)
 			f:br(scopes.nop)
 		end, 7, function()
-			f:call(std.std_error)
+			f:call(std.error)
 			f:br(scopes.nop)
 		end, 8, function()
 			f:call(stdcoro.coro_create)
@@ -1428,7 +1428,7 @@ local eval = func(i32, function(f)
 			f:call(stdcoro.coro_yield)
 			f:br(scopes.nop)
 		end, 11, function()
-			f:call(std.std_type)
+			f:call(std.type)
 			f:br(scopes.nop)
 		end, 12, function()
 			-- _stdin
@@ -1439,6 +1439,52 @@ local eval = func(i32, function(f)
 			-- _stdout
 			f:i32(NIL)
 			f:call(tmppush)
+			f:br(scopes.nop)
+		end, 14, function()
+			-- _ioread
+			f:unreachable()
+		end, 15, function()
+			-- _iowrite
+			f:unreachable()
+		end, 16, function()
+			-- _ioflush
+			f:unreachable()
+		end, 17, function()
+			-- _ioclose
+			f:unreachable()
+		end, 18, function()
+			-- _iosetvbuf
+			f:unreachable()
+		end, 19, function()
+			-- _fn_set_localc
+			f:unreachable()
+		end, 20, function()
+			-- _fn_set_paramc
+			f:unreachable()
+		end, 21, function()
+			-- _fn_set_isdotdotdot
+			f:unreachable()
+		end, 22, function()
+			-- _fn_set_bc
+			f:unreachable()
+		end, 23, function()
+			-- _fn_set_frees
+			f:unreachable()
+		end, 24, function()
+			-- _fn_set_consts
+			f:unreachable()
+		end, 25, function()
+			-- _vec_new
+			f:unreachable()
+		end, 26, function()
+			-- _lex
+			f:unreachable()
+		end, 27, function()
+			f:call(std.rawget)
+			f:br(scopes.nop)
+		end, 28, function()
+			-- rawset
+			f:call(std.rawset)
 			f:br(scopes.nop)
 		end)
 		f:unreachable()

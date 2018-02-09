@@ -96,7 +96,9 @@ local mkenv0 = func(i32, function(f)
 		GS.select, GF.select,
 		GS.pcall, GF.pcall,
 		GS.error, GF.error,
-		GS.type, GF.type)
+		GS.type, GF.type,
+		GS.rawget, GF.rawget,
+		GS.rawset, GF.rawset)
 	addfun(addkv2luwa,
 		GS.lexgen, GF._lex,
 		GS.astgen, GF.astgen0,

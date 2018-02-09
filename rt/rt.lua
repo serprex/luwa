@@ -180,7 +180,7 @@ local image = M.data(memory, addStatics(4, {
 	{'coro_running', 0, false, '\x1f\x03\x0c'},
 	{'coro_status', 0, false, '\x1f\x02\x0c'},
 	{'debug_getmetatable', 1, false, '\x1f\x04\x0c'},
-	{'debug_setmetatable', 1, false, '\x1f\x05\x0c'},
+	{'debug_setmetatable', 1, false, '\x1f\x05\x20\0\0\0\0\x0c'},
 	{'math_type', 1, false, '\x1f\x06\x0c'},
 	{'io_type', 1, false, '\x1f\x1b\x0c'},
 	{'_stdin', 0, false, '\x1f\x0c\x0c'},
@@ -198,6 +198,8 @@ local image = M.data(memory, addStatics(4, {
 	{'_fn_set_consts', 2, false, '\x1f\x18\x0c'},
 	{'_vec_new', 1, false, '\x1f\x19\x0c'},
 	{'_lex', 1, false, '\x1f\x1a\x0c'},
+	{'rawget', 2, false, '\x1f\x1b\x0c'},
+	{'rawset', 3, false, '\x1f\x1c\x20\0\0\0\0\x0c'},
 	(BOOTRT or doboot)()
 ))
 
