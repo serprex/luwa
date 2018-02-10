@@ -145,11 +145,9 @@ return function(lx, vals)
 	end
 	local function ofs(o, r)
 		rules[o] = function(x, p)
-			local xn = x:next(p)
-			local rv = r[xn:val()]
+			local rv = r[x:nextval()]
 			if rv then
-				local p = xn:spawn(o + rv * 32, p)
-				return iterone, p
+				return iterone, x:next(x:spawn(o + rv * 32, p))
 			else
 				return iternone
 			end

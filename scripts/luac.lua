@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
-package.path = 'luart/?.lua;' .. package.path
+package.path = 'rt/?.lua;' .. package.path
 local astgen = require 'astgen'
 local bcgen = require 'bcgen'
 
@@ -26,7 +26,8 @@ local function pprintcore(x, dep, hist)
 	end
 end
 local function pprint(x)
-	return pprintcore(x, 0, {})
+	pprintcore(x, 0, {})
+	return x
 end
 
 local result = {}
