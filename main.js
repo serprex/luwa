@@ -1,20 +1,8 @@
 #!/bin/node
 'use strict';
-const fs = require('fs'),
+const readline = require('readline'),
 	rt = require('./rt'),
 	pjson = require('./package.json');
-
-function readline() {
-	var ret = '';
-	const buf = new Buffer(1);
-	while (true) {
-		try {
-			const bytesRead = fs.readSync(process.stdin.fd, buf, 0, 1);
-			if (!bytesRead || buf[0] == 10) return ret;
-			ret += String.fromCharCode(buf[0]);
-		} catch (e) {}
-	}
-}
 
 rt().then(async runt => {
 	runt.mod.genesis();
@@ -23,16 +11,22 @@ rt().then(async runt => {
 	if (process.argv.length < 3) {
 		if (process.stdin.isTTY) {
 			console.log(`Luwa ${pjson.version} https://github.com/serprex/luwa`);
-			while (true) {
-				process.stdout.write('> ');
-				const line = runt.newstr(readline().replace(/^\s*=/, 'return '));
+			const rl = readline.createInterface({
+				input: process.stdin,
+				output: process.stdout,
+				prompt: '> ',
+			});
+			rl.on('line', async ioline => {
+				const line = runt.newstr(ioline.replace(/^\s*=/, 'return '));
+				console.log(line, line.length);
 				try {
 					console.log(await runt.eval(env, line));
 				} catch (e) {
 					console.log(e);
 				}
 				runt.free(line);
-			}
+			}).on('close', () => process.exit(0));
+			rl.prompt();
 		} else {
 			const result = [];
 			process.stdin.resume();
