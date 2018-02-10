@@ -7,8 +7,8 @@ local alloc = require 'alloc'
 local types, str, functy, allocsizef = alloc.types, alloc.str, alloc.functy, alloc.allocsizef
 
 NIL = 0
-TRUE = 8
-FALSE = 16
+FALSE = 8
+TRUE = 16
 otmp = M.global(i32, true)
 oluastack = M.global(i32, true) -- default to NIL
 ostrmt = M.global(i32, true)

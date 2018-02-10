@@ -5,6 +5,8 @@ local alloc = require 'alloc'
 local types, obj, num, buf, vec, str = alloc.types, alloc.obj, alloc.num, alloc.buf, alloc.vec, alloc.str
 local allocsize, newi64, newvec, newstr = alloc.allocsize, alloc.newi64, alloc.newvec, alloc.newstr
 
+local _obj = require 'obj'
+
 chex = func(i32, i32, function(f, ch)
 	f:load(ch)
 	f:i32(48)
@@ -338,7 +340,7 @@ local function gentrunc(ty)
 	return func(i32, i32, void, function(f, x, len)
 		local oldsz = f:locals(i32, 1)
 		f:load(x)
-		f:call(sizeof)
+		f:call(_obj.sizeof)
 		f:store(oldsz)
 
 		f:load(x)

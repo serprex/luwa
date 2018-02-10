@@ -14,10 +14,12 @@ local tmppush, tmppop, nthtmp, setnthtmp, extendtmp =
 	stack.tmppush, stack.tmppop, stack.nthtmp, stack.setnthtmp, stack.extendtmp
 
 local _string = require '_string'
+local _obj = require 'obj'
 
 local ops = require 'bc'
 
 local rt = require 'rt'
+
 
 local dataframe = {
 	type = str.base + 0,
@@ -265,7 +267,7 @@ local eval = func(i32, function(f)
 		f:i32(4)
 		f:call(nthtmp)
 		f:tee(d)
-		f:call(eq)
+		f:call(_obj.eq)
 		f:iff(i32, function()
 			f:i32(TRUE)
 		end, function()
