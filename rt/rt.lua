@@ -170,9 +170,12 @@ local image = M.data(memory, addStatics(4, {
 	'iosetvbuf', 'vec_new',
 	'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
 	'fn_set_bc', 'fn_set_frees', 'fn_set_consts',
-	{'pcall', 1, true, '\x1f\x00'},
-	{'select', 1, true, '\x1f\x01'},
 	{'error', 2, false, '\x1f\x07'},
+	{'next', 2, false, '\x1f\x1d\x0c'},
+	{'pcall', 1, true, '\x1f\x00'},
+	{'rawget', 2, false, '\x1f\x1b\x0c'},
+	{'rawset', 3, false, '\x1f\x1c\x20\0\0\0\0\x0c'},
+	{'select', 1, true, '\x1f\x01'},
 	{'type', 1, false, '\x1f\x0b\x0c'},
 	{'coro_create', 1, false, '\x1f\x08\x0c'},
 	{'coro_resume', 1, true, '\x1f\x09'},
@@ -198,8 +201,6 @@ local image = M.data(memory, addStatics(4, {
 	{'_fn_set_consts', 2, false, '\x1f\x18\x0c'},
 	{'_vec_new', 1, false, '\x1f\x19\x0c'},
 	{'_lex', 1, false, '\x1f\x1a\x0c'},
-	{'rawget', 2, false, '\x1f\x1b\x0c'},
-	{'rawset', 3, false, '\x1f\x1c\x20\0\0\0\0\x0c'},
 	(BOOTRT or doboot)()
 ))
 

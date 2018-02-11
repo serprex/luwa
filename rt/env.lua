@@ -93,12 +93,13 @@ local mkenv0 = func(i32, function(f)
 	f:call(vm.init)
 
 	addfun(addkv2env,
-		GS.select, GF.select,
-		GS.pcall, GF.pcall,
 		GS.error, GF.error,
-		GS.type, GF.type,
+		GS.next, GF.next,
+		GS.pcall, GF.pcall,
 		GS.rawget, GF.rawget,
-		GS.rawset, GF.rawset)
+		GS.rawset, GF.rawset,
+		GS.select, GF.select,
+		GS.type, GF.type)
 	addfun(addkv2luwa,
 		GS.lexgen, GF._lex,
 		GS.astgen, GF.astgen0,

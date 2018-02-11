@@ -18,21 +18,22 @@ tblset = func(i32, i32, i32, void, function(f, tab, key, val)
 	f:i32load(tbl.hash)
 	f:tee(mx)
 	f:i32load(vec.len)
+	f:tee(kv)
 	f:remu()
 	f:i32(-8)
 	f:band()
 
 	-- kv <- tab.hash + H
 	f:load(mx)
-	f:add()
-	f:store(kv)
 
-	-- mx <- tab.hash + tab.hash.len
+	-- inject mx <- tab.hash + tab.hash.len
 	f:load(mx)
-	f:load(mx)
-	f:i32load(vec.len)
+	f:load(kv)
 	f:add()
 	f:store(mx)
+
+	f:add()
+	f:store(kv)
 
 	f:loop(function(loop)
 		-- if kv.key == nil, set
@@ -102,12 +103,11 @@ tblset = func(i32, i32, i32, void, function(f, tab, key, val)
 					f:load(val)
 					f:i32load(vec.base)
 					f:eqz()
-					f:eqz()
 					f:load(val)
 					f:i32load(vec.base + 4)
 					f:eqz()
+					f:bor()
 					f:eqz()
-					f:band()
 					f:iff(function()
 						f:load(tab)
 						f:load(val)
@@ -167,31 +167,31 @@ tblget = func(i32, i32, i32, function(f, tab, key)
 	f:i32load(tbl.hash)
 	f:tee(mx)
 	f:i32load(vec.len)
+	f:tee(kv)
 	f:remu()
 	f:i32(-8)
 	f:band()
 
-	-- kv = tab.hash + H
+	-- kv <- tab.hash + H
 	f:load(mx)
-	f:add()
-	f:store(kv)
 
-	-- mx = tab.hash + tab.hash.len
+	-- inject mx <- tab.hash + tab.hash.len
 	f:load(mx)
-	f:load(mx)
-	f:i32load(vec.len)
+	f:load(kv)
 	f:add()
 	f:store(mx)
 
+	f:add()
+	f:store(kv)
+
 	f:loop(i32, function(loop)
 		-- if kv.key == nil, ret nil
+		f:i32(NIL)
 		f:load(kv)
 		f:i32load(vec.base)
 		f:eqz()
-		f:iff(function()
-			f:i32(NIL)
-			f:ret()
-		end)
+		f:brif(f)
+		f:drop()
 
 		-- if kv.key == key, ret val
 		f:load(kv)

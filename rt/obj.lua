@@ -95,7 +95,7 @@ local eq = func(i32, i32, i32, function(f, a, b)
 		f:i32(3)
 		f:store(j)
 
-		f:loop(i32, function(loop)
+		f:loop(function(loop)
 			f:i32(1)
 			f:load(i)
 			f:load(j)
