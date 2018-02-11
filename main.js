@@ -6,8 +6,8 @@ const readline = require('readline'),
 
 rt().then(async runt => {
 	runt.mod.genesis();
-	const env = runt.mkref(runt.mod.mkenv0());
-	runt.mod.mkenv1();
+	const env = runt.mkref(runt.mod.initPrelude());
+	await runt.evalWait();
 	if (process.argv.length < 3) {
 		if (process.stdin.isTTY) {
 			console.log(`Luwa ${pjson.version} https://github.com/serprex/luwa`);
@@ -18,7 +18,6 @@ rt().then(async runt => {
 			});
 			rl.on('line', async ioline => {
 				const line = runt.newstr(ioline.replace(/^\s*=/, 'return '));
-				console.log(line, line.length);
 				try {
 					console.log(await runt.eval(env, line));
 				} catch (e) {

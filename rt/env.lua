@@ -49,7 +49,7 @@ local genesis = func(function(f)
 	f:i32store(coro.stack)
 end)
 
-local mkenv0 = func(i32, function(f)
+local initPrelude = func(i32, function(f)
 	local a = f:locals(i32)
 
 	local function addfun(fn, ...)
@@ -144,16 +144,7 @@ local mkenv0 = func(i32, function(f)
 	f:i32load(vec.base)
 end)
 
-local mkenv1 = func(function(f)
-	f:loop(function(loop)
-		f:call(vm.eval)
-		f:eqz()
-		f:brif(loop)
-	end)
-end)
-
 return {
 	genesis = genesis,
-	mkenv0 = mkenv0,
-	mkenv1 = mkenv1,
+	initPrelude = initPrelude,
 }

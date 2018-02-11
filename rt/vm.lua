@@ -2076,10 +2076,19 @@ local eval = func(i32, function(f)
 	f:i32(0)
 end)
 
+local evalSync = func(function(f)
+	f:loop(function(loop)
+		f:call(vm.eval)
+		f:eqz()
+		f:brif(loop)
+	end)
+end)
+
 return {
 	dataframe = dataframe,
 	objframe = objframe,
 	calltypes = calltypes,
 	init = init,
 	eval = eval,
+	evalSync = evalSync,
 }

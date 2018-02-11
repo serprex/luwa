@@ -7,7 +7,6 @@ BOOTRT = function() end
 local _stack = require 'stack'
 local _table = require '_table'
 local _rt = require 'rt'
-local _vm = require 'vm'
 local _alloc = require 'alloc'
 local _gc = require 'gc'
 local _lex = require '_lex'
@@ -26,7 +25,6 @@ local function import(obj, ...)
 	end
 end
 export(_stack, 'tmppush', 'tmppop', 'nthtmp', 'setnthtmp')
-export(_rt, 'getluastack', 'setluastack')
 export(_alloc, 'newi64', 'newf64', 'newtbl', 'newstr', 'newvec', 'newvec1',
 	'newstrbuf', 'newvecbuf', 'newfunc', 'newcoro')
 export(_gc, 'gcmark')

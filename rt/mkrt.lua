@@ -32,7 +32,7 @@ export(_alloc, 'newi64', 'newf64', 'newtbl', 'newstr', 'newvec', 'newvec1',
 	'newstrbuf', 'newvecbuf', 'newfunc', 'newcoro')
 export(_gc, 'gcmark')
 export(_lex, 'lex')
-export(_env, 'genesis', 'mkenv0', 'mkenv1')
+export(_env, 'genesis', 'initPrelude')
 import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos', 'tan',
 	'asin', 'acos', 'atan', 'atan2', 'exp', 'log')
 mod:data(_rt.image)

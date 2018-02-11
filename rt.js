@@ -173,32 +173,35 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 FFI.prototype.obj2js = function(h) {
 	return this.rawobj2js(h.val);
 }
-FFI.prototype.rawexec = function(fn, ...param) {
+FFI.prototype.evalWait = function() {
 	return new Promise(resolve => {
-		// TODO clear stack
-		// TODO have a flag for when mid computation?
-		for (const v of param) {
-			this.mod.tmppush(v);
-		}
-		this.mod.init(fn);
-		function core() {
-			if (this.mod.eval()) {
+		function core(mod) {
+			if (mod.eval()) {
 				resolve();
 			} else {
-				setTimeout(core, 0);
+				setTimeout(core, 0, mod);
 			}
 		}
-		core();
+		core(this.mod);
 	});
+}
+FFI.prototype.rawexec = function(fn, ...param) {
+	// TODO clear stack
+	// TODO have a flag for when mid computation?
+	for (const v of param) {
+		this.mod.tmppush(v);
+	}
+	this.mod.init(fn);
+	return this.evalWait();
 }
 FFI.prototype.exec = function(fn, ...param) {
 	return this.rawexec(fn.val, ...param.map(x => x.val))
 }
 FFI.prototype.compile = function(env, str) {
 	const loadstring = this.newstr('loadstring');
-	const loadstringfn = this.mkref(this.mod.tblget(env.val, loadstring.val));
-	loadstring.free();
-	return this.rawexec(loadstringfn.val, str.val);
+	const loadstringfn = this.mod.tblget(env.val, loadstring.val);
+	this.free(loadstring);
+	return this.rawexec(loadstringfn, str.val);
 }
 FFI.prototype.eval = async function(env, str, ...param) {
 	const fn = await this.compile(env, str);
