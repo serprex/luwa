@@ -198,10 +198,11 @@ FFI.prototype.exec = function(fn, ...param) {
 	return this.rawexec(fn.val, ...param.map(x => x.val))
 }
 FFI.prototype.compile = function(env, str) {
-	const loadstring = this.newstr('loadstring');
-	const loadstringfn = this.mod.tblget(env.val, loadstring.val);
-	this.free(loadstring);
-	return this.rawexec(loadstringfn, str.val);
+	const loadstr = this.newstr('load');
+	const loadfn = this.mod.tblget(env.val, loadstr.val);
+	this.free(loadstr);
+	if (!loadfn) throw new Error("_ENV missing 'load' function");
+	return this.rawexec(loadfn, str.val);
 }
 FFI.prototype.eval = async function(env, str, ...param) {
 	const fn = await this.compile(env, str);

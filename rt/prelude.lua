@@ -26,9 +26,10 @@ local _error, _next, _select, _pcall = error, next, select, pcall
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
 local io_type = io.type
 local tointeger, math_type = math.tointeger, math.type
-local string_char = string.char
+local string_byte, string_char = string.byte, string.char
 local table_unpack = table.unpack
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
+local math_floor, math_ceil = math.floor, math.ceil
 
 debug_setmetatable('', { __index = string })
 
@@ -85,6 +86,38 @@ local function _tostring(v)
 end
 tostring = _tostring
 
+local digits = {}
+for i=0,9 do
+	digits[48+i] = i
+end
+for i=10,35 do
+	digits[55+i] = i
+	digits[87+i] = i
+end
+function tonumber(num, base)
+	if base == nil then
+		return _luwa.tonumber(num)
+	else
+		base = assert(tointeger(base), "bad argument #2 to 'tonumber' (number expected, got string)")
+		assert(type(num) == 'string', "bad argument #1 to 'tonumber' (string expected, got number)")
+		assert(base > 1 and base < 37, "bad argument #2 to 'tonumber' (base out of range)")
+		if num == '' then
+			return nil
+		end
+		local ret = 0
+		local e = 1
+		for i=#num,1 do
+			local ch = digits[string_byte(num, i)]
+			if not ch or ch >= base then
+				return nil
+			end
+			ret = ret + ch * e
+			e = e * base
+		end
+		return ret
+	end
+end
+
 math.atan2 = math.atan
 function math.deg(x)
 	return x * (180./0x1.921fb54442d18p1)
@@ -109,10 +142,10 @@ function math.min(x, ...)
 end
 function math.modf(x)
 	if x > 0 then
-		local xi = math.floor(x)
+		local xi = math_floor(x)
 		return xi, x - xi
 	else
-		local xi = math.ceil(x)
+		local xi = math_ceil(x)
 		return -xi, x + xi
 	end
 end
@@ -131,12 +164,7 @@ function math.random()
 	return randomseed * 0x2545f4914f6cdd1d
 end
 function math.randomseed(x)
-	x = tonumber(x)
-	if x then
-		randomseed = x
-	else
-		_error("bad argument #1 to 'randomseed' (number expected)")
-	end
+	randomseed = math_floor(x)
 end
 function math.sqrt(x)
 	return x ^ .5
@@ -502,7 +530,7 @@ fakereqenv = {
 local astgen = fakereq('astgen')
 local bcgen = fakereq('bcgen')
 
-local function _loadstring(src, name, mode, env)
+local function _load(src, name, mode, env)
 	-- TODO function names
 	local lx, vals = _luwa.lex(src)
 	if not lx then
@@ -526,9 +554,9 @@ local function _loadstring(src, name, mode, env)
 	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
 	return fn
 end
-loadstring = _loadstring
-load = _loadstring
-local function _loadfile(fname)
+loadstring = _load
+load = _load
+local function _loadfile(fname, mode, env)
 	local file
 	if not fname then
 		file = io_in
@@ -539,7 +567,7 @@ local function _loadfile(fname)
 	end
 	local src = _luwa.ioread(file, 'a')
 	_luwa.ioclose(file)
-	return _loadstring(src, fname or 'stdin', mode, env)
+	return _load(src, fname or 'stdin', mode, env)
 end
 
 local loaded = {}
@@ -599,7 +627,7 @@ function debug.debug()
 		iowrite(stdout, 'lua_debug> ')
 		local line = ioread(stdin)
 		if line == 'cont' then return end
-		local succ, f = _pcall(_loadstring(line))
+		local succ, f = _pcall(_load(line))
 		if succ then
 			local succ, msg = _pcall(f)
 			if not succ then
