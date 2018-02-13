@@ -52,7 +52,7 @@ function asmmeta:breakscope(f)
 end
 function asmmeta:scope(f)
 	self.scopes = setmetatable({ prev = self.scopes }, { __index = self.scopes })
-	f(self)
+	f()
 	for i=1, #self.scopes do
 		local name = self.scopes[i]
 		self.names[name] = self.names[name].prev
@@ -335,19 +335,23 @@ scopeStatSwitch = {
 		end
 	end,
 	function(self, node) -- 11 for
-		scopeNodes(self, node, ast.ExpOr)
-		local name = selectIdent(node)
-		self:name(name:arg())
-		self:usename(name)
-		scopeNode(self, node, ast.Block)
-	end,
-	function(self, node) -- 12 generic for
-		scopeNodes(self, node, ast.ExpOr)
-		for i, name in selectIdents(node) do
+		self:scope(function()
+			scopeNodes(self, node, ast.ExpOr)
+			local name = selectIdent(node)
 			self:name(name:arg())
 			self:usename(name)
-		end
-		scopeNode(self, node, ast.Block)
+			scopeNode(self, node, ast.Block)
+		end)
+	end,
+	function(self, node) -- 12 generic for
+		self:scope(function()
+			scopeNodes(self, node, ast.ExpOr)
+			for i, name in selectIdents(node) do
+				self:name(name:arg())
+				self:usename(name)
+			end
+			scopeNode(self, node, ast.Block)
+		end)
 	end,
 	function(self, node) -- 13 func
 		self:usename(selectIdent(node))
@@ -492,6 +496,7 @@ emitStatSwitch = {
 		end
 	end,
 	function(self, node) -- 11 for
+		-- TODO float increment causes initial value to be a float
 		local exps=0
 		for i, n in selectNodes(node, ast.ExpOr) do
 			visitEmit[ast.ExpOr](self, n, 1)
@@ -500,13 +505,68 @@ emitStatSwitch = {
 		if exps == 2 then
 			self:push(bc.LoadConst, self:const(1))
 		end
-		-- TODO bind variables, loop
+		local tempi = idxtbl(self.locals, {})
+		local tempc = idxtbl(self.locals, {})
+		local temps = idxtbl(self.locals, {})
+		local temptemp = idxtbl(self.locals, {})
+		self:push(bc.StoreLocal, tempi)
+		self:push(bc.StoreLocal, tempc)
+		self:push(bc.StoreLocal, temps)
+		self:push(bc.LoadLocal, temps)
+		self:push(bc.LoadConst, self:const(0))
+		self:push(bc.CmpGe)
+		self:push(bc.StoreLocal, temptemp)
+		local incrdecr = #self.bc
+		self:push(bc.LoadLocal, tempi)
+		self:push(bc.LoadLocal, tempc)
+		self:push(bc.LoadLocal, temptemp)
+		local cmp0 = #self.bc+2
+		self:push(bc.Jif, 0)
+		self:push(bc.CmpLt)
+		local cmp1 = #self.bc+2
+		self:push(bc.Jmp, 0)
+		self:push(bc.CmpGt)
+		self:patch(cmp0, #self.bc)
+		self:patch(cmp1, #self.bc)
+		local forxit = #self.bc+2
+		self:push(bc.Jif, 0)
+		self:push(bc.LoadLocal, tempi)
+		self:storename(selectIdent(node))
 		emitNode(self, node, ast.Block)
+		self:push(bc.Jmp, incrdecr)
+		self:patch(forxit, #self.bc)
 	end,
 	function(self, node) -- 12 generic for
 		emitExplist(self, node, 3)
-		-- TODO bind variables, loop
+		local tempf = idxtbl(self.locals, {})
+		local temps = idxtbl(self.locals, {})
+		local tempv = idxtbl(self.locals, {})
+		self:push(bc.StoreLocal, tempf)
+		self:push(bc.StoreLocal, temps)
+		self:push(bc.StoreLocal, tempv)
+		local begfor = #self.bc
+		self:push(bc.LoadLocal, tempf)
+		self:push(bc.LoadLocal, temps)
+		self:push(bc.LoadLocal, tempv)
+		local vars = {}
+		for i, v in selectIdents(node) do
+			vars[#vars+1] = v
+		end
+		self:push(bc.Call, #vars, 1, 1)
+		for i=#vars,2,-1 do
+			self:storename(vars[i])
+		end
+		self:push(bc.StoreLocal, tempv)
+		self:push(bc.LoadLocal, tempv)
+		self:push(bc.LoadNil)
+		self:push(bc.CmpEq)
+		local forxit = #self.bc+2
+		self:push(bc.Jif, 0)
+		self:push(bc.LoadLocal, tempv)
+		self:storename(vars[1])
 		emitNode(self, node, ast.Block)
+		self:push(bc.Jmp, begfor)
+		self:patch(forxit, #self.bc)
 	end,
 	function(self, node) -- 13 func
 		emitNode(self, node, ast.Funcbody)
