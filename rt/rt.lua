@@ -144,6 +144,8 @@ local function addStatics(base, mem, ...)
 	return base, mem
 end
 
+local Version = 'Luwa ' .. io.open('package.json'):read('a'):gmatch('"version": "([%d.]*)"')()
+
 local image = M.data(memory, addStatics(4, {
 	-- nil
 	2, 0, 0, 0,
@@ -164,6 +166,7 @@ local image = M.data(memory, addStatics(4, {
 	'select', 'pcall', 'error', 'getmetatable', 'setmetatable', 'type',
 	'rawget', 'rawset', 'rawlen', 'rawequal', 'next',
 	'create', 'resume', 'yield', 'running', 'status',
+	'_VERSION', Version,
 	-- begin _luwa fields
 	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc',
 	'stdin', 'stdout', 'ioread', 'iowrite', 'ioflush', 'ioclose',
@@ -261,4 +264,5 @@ return {
 	getluastack = getluastack,
 	echodrop = echodrop,
 	echodrop2 = echodrop2,
+	Version = Version,
 }

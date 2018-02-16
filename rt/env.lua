@@ -11,6 +11,7 @@ local _table = require '_table'
 local tblget, tblset = _table.tblget, _table.tblset
 
 local vm = require 'vm'
+local rt = require 'rt'
 
 local addkv2env = func(i32, i32, void, function(f, k, v)
 	f:call(param0)
@@ -99,7 +100,8 @@ local initPrelude = func(i32, function(f)
 		GS.rawget, GF.rawget,
 		GS.rawset, GF.rawset,
 		GS.select, GF.select,
-		GS.type, GF.type)
+		GS.type, GF.type,
+		GS._VERSION, GS[rt.Version])
 	addfun(addkv2luwa,
 		GS.lexgen, GF._lex,
 		GS.astgen, GF.astgen0,

@@ -1,5 +1,4 @@
 local _luwa = ...
-_VERSION = "Luwa 0.1"
 _G = _ENV
 
 math.mininteger = -9223372036854775808
