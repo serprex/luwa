@@ -11,6 +11,7 @@ rt().then(async runt => {
 	if (process.argv.length < 3) {
 		if (process.stdin.isTTY) {
 			console.log(`Luwa ${pjson.version} https://github.com/serprex/luwa`);
+			return;
 			const rl = readline.createInterface({
 				input: process.stdin,
 				output: process.stdout,
