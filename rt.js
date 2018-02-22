@@ -206,5 +206,5 @@ FFI.prototype.compile = function(env, str) {
 }
 FFI.prototype.eval = async function(env, str, ...param) {
 	const fn = await this.compile(env, str);
-	return this.exec(fn, ...param);
+	return this.rawexec(fn, ...param.map(x => x.val));
 }

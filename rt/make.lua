@@ -368,12 +368,14 @@ function funcmeta:brtable(...)
 	self.polystack[self.scope] = true
 	assert(self:pop() == i32)
 	self:emit(0x0e)
-	local n = select('#', ...)
-	assert(n > 0)
-	self:emituint(n-1)
-	for i = 1, n do
-		local scp = assert(select(i, ...), i)
-		self:emitscope(scp)
+	local scopes = {...}
+	assert(#scopes > 0)
+	while #scopes > 1 and scopes[#scopes] == scopes[#scopes-1] do
+		scopes[#scopes] = nil
+	end
+	self:emituint(#scopes-1)
+	for i = 1, #scopes do
+		self:emitscope(assert(scopes[i], i))
 	end
 end
 function funcmeta:ret()
@@ -393,16 +395,31 @@ function funcmeta:growmemory()
 end
 
 function funcmeta:switch(expr, ...)
+	local scames = {}
 	local scopes = {}
+	local maxsc = 0
+	local function setscope(x, scp)
+		assert(not scames[x])
+		scames[x] = scp
+		if type(x) == 'number' and x >= 0 then
+			x = x+1
+			scopes[x] = scp
+			if x > maxsc then
+				maxsc = x
+			end
+		end
+	end
 	local function jmp()
-		expr(scopes)
-		if scopes[-1] then
-			scopes[#scopes+1] = scopes[-1]
+		expr(scames)
+		local scdef = scames[-1]
+		if scdef then
+			while #scopes < maxsc+1 do
+				scopes[#scopes+1] = scdef
+			end
+		else
+			assert(maxsc > 0 and #scopes == maxsc)
 		end
-		while #scopes > 1 and scopes[#scopes] == scopes[#scopes-1] do
-			scopes[#scopes] = nil
-		end
-		return self:brtable(assert(scopes[0]), table.unpack(scopes))
+		return self:brtable(table.unpack(scopes))
 	end
 	for idx=1,select('#', ...) do
 		local x = assert(select(idx, ...), idx)
@@ -410,21 +427,19 @@ function funcmeta:switch(expr, ...)
 		if xt == 'function' then
 			function jmp(scp)
 				self:block(oldj)
-				return x(scopes)
+				return x(scames)
 			end
 		elseif xt == 'table' then
 			function jmp(scp)
 				local lastx = assert(x[#x])
 				for i=1,#x-1 do
-					assert(not scopes[x[i]])
-					scopes[x[i]] = lastx
+					setscope(x[i], lastx)
 				end
 				return oldj(scp)
 			end
 		else
 			function jmp(scp)
-				assert(not scopes[x])
-				scopes[x] = assert(scp)
+				setscope(x, scp)
 				return oldj(scp)
 			end
 		end
