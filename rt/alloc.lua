@@ -4,21 +4,19 @@ local func = M.func
 local types = {
 	int = 0,
 	float = 1,
-	['nil'] = 2,
-	nul = 2,
-	bool = 3,
-	tbl = 4,
-	str = 5,
-	vec = 6,
-	buf = 7,
-	functy = 8,
-	coro = 9,
+	single = 2,
+	tbl = 3,
+	str = 4,
+	vec = 5,
+	buf = 6,
+	functy = 7,
+	coro = 8,
 }
 local obj = {
 	gc = 0,
 	type = 4,
 }
-local bool = {
+local single = {
 	val = 5,
 	sizeof = 8,
 }
@@ -428,7 +426,7 @@ end)
 return {
 	types = types,
 	obj = obj,
-	bool = bool,
+	single = single,
 	num = num,
 	int = num,
 	float = num,

@@ -413,8 +413,10 @@ function funcmeta:switch(expr, ...)
 		expr(scames)
 		local scdef = scames[-1]
 		if scdef then
-			while #scopes < maxsc+1 do
-				scopes[#scopes+1] = scdef
+			for i=1,maxsc-1 do
+				if not scopes[i] then
+					scopes[i] = scdef
+				end
 			end
 		else
 			assert(maxsc > 0 and #scopes == maxsc)

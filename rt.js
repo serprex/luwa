@@ -11,7 +11,7 @@ function rtwathen(ab) {
 		echoptr: x => {
 			const memta = new Uint8Array(mem.buffer);
 			console.log(x, x&7, x+4 < memta.length && memta[x+4]);
-			if (!(x&7) && x+4 < memta.length && memta[x+4] < 8) {
+			if (!(x&7) && x+4 < memta.length && memta[x+4] < 9) {
 				try{
 					console.log(ffi.rawobj2js(x));
 				}catch(e){console.log(e)}
@@ -94,9 +94,9 @@ FFI.prototype.gettypeid = function(h) {
 	let memta = new Uint8Array(this.mem.buffer);
 	return memta[h.val+4];
 }
-const tys = ["number", "number", "nil", "boolean", "table", "string", "vec", "buf", "function", "thread"];
+const tys = ["number", "number", null, "table", "string", "vec", "buf", "function", "thread"];
 FFI.prototype.gettype = function(h) {
-	return tys[this.gettypeid(h)];
+	return tys[this.gettypeid(h)] || (h.val ? 'boolean' : 'nil');
 }
 FFI.prototype.strbytes = function(h) {
 	const memta = new Uint8Array(this.mem.buffer);
@@ -115,10 +115,8 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 		case 1:
 			return new Float64Array(memta.slice(p+5, p+13).buffer)[0];
 		case 2:
-			return null;
-		case 3:
-			return memta[p+5] === 1;
-		case 4: {
+			return p ? !!memta[p+5] : null;
+		case 3: {
 			const hash = util.readuint32(memta, p+21),
 				hashlen = util.readuint32(memta, hash+5),
 				map = new Map();
@@ -135,9 +133,9 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 
 			return { hash: map, meta: this.rawobj2js(util.readuint32(memta, p+25), memta, memo) };
 		}
-		case 5:
+		case 4:
 			return new Uint8Array(memta.buffer, p+13, util.readuint32(memta, p+5));
-		case 6: {
+		case 5: {
 			const len = util.readuint32(memta, p+5), ret = [];
 			memo.set(p, ret);
 			for (let i=0; i<len; i+=4) {
@@ -145,9 +143,9 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 			}
 			return ret;
 		}
-		case 7:
+		case 6:
 			return this.rawobj2js(util.readuint32(memta, p + 9), memta, memo);
-		case 8:
+		case 7:
 			return {
 				id: util.readuint32(memta, p + 5),
 				isdotdotdot: memta[p+9],
@@ -157,7 +155,7 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 				localc: util.readuint32(memta, p + 22),
 				paramc: util.readuint32(memta, p + 26),
 			};
-		case 9:
+		case 8:
 			return {
 				id: util.readuint32(memta, p + 5),
 				state: memta[p+9],

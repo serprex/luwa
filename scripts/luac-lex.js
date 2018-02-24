@@ -67,7 +67,7 @@ function int2buf(x) {
 		const ptr = util.readuint32(mem8, values.val + 9 + i*4);
 		const ptrtype = Buffer.from(mem.buffer, ptr+4, 1);
 		process.stdout.write(ptrtype);
-		if (ptrtype[0] == 5) {
+		if (ptrtype[0] == 4) {
 			const slen = util.readuint32(mem8, ptr + 5);
 			process.stdout.write(int2buf(slen));
 			process.stdout.write(Buffer.from(mem.buffer, ptr+13, slen));
