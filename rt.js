@@ -68,7 +68,7 @@ FFI.prototype.mkref = function(p) {
 		case 8: return this.false;
 		case 16: return this.true;
 		default: {
-			let h = new Handle(p);
+			const h = new Handle(p);
 			this.handles.add(h);
 			return h;
 		}
@@ -79,8 +79,8 @@ FFI.prototype.newtbl = function() {
 }
 FFI.prototype.newstr = function(s) {
 	if (typeof s === "string") s = util.asUtf8(s);
-	let o = this.mod.newstr(s.length);
-	let memta = new Uint8Array(this.mem.buffer);
+	const o = this.mod.newstr(s.length);
+	const memta = new Uint8Array(this.mem.buffer);
 	memta.set(s, o+13);
 	return this.mkref(o);
 }
@@ -91,7 +91,7 @@ FFI.prototype.nil = new Handle(0);
 FFI.prototype.true = new Handle(8);
 FFI.prototype.false = new Handle(16);
 FFI.prototype.gettypeid = function(h) {
-	let memta = new Uint8Array(this.mem.buffer);
+	const memta = new Uint8Array(this.mem.buffer);
 	return memta[h.val+4];
 }
 const tys = ["number", "number", null, "table", "string", "vec", "buf", "function", "thread"];
@@ -163,7 +163,6 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 				stack: this.rawobj2js(util.readuint32(memta, p + 14), memta, memo),
 				data: this.rawobj2js(util.readuint32(memta, p + 18), memta, memo),
 			}
-			return "[Coroutine] @ " + p;
 		default:
 			return "Unknown type: " + memta[p+4] + " @ " + p;
 	}
@@ -184,8 +183,9 @@ FFI.prototype.evalWait = function() {
 	});
 }
 FFI.prototype.rawexec = function(fn, ...param) {
-	// TODO clear stack
 	// TODO have a flag for when mid computation?
+
+	this.mod.tmpclear();
 	for (const v of param) {
 		this.mod.tmppush(v);
 	}

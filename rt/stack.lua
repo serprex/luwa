@@ -23,6 +23,13 @@ local tmppop = func(function(f)
 	f:drop()
 end)
 
+local tmpclear = func(function(f)
+	f:loadg(oluastack)
+	f:i32load(coro.stack)
+	f:i32(0)
+	f:i32store(buf.len)
+end)
+
 local nthbuf = func(i32, i32, i32, function(f, v, n)
 	f:load(v)
 	f:i32load(buf.ptr)
@@ -80,6 +87,7 @@ end)
 return {
 	tmppush = tmppush,
 	tmppop = tmppop,
+	tmpclear = tmpclear,
 	nthtmp = nthtmp,
 	setnthtmp = setnthtmp,
 	extendtmp = extendtmp,

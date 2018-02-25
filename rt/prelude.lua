@@ -531,7 +531,7 @@ local bcgen = fakereq('bcgen')
 
 local function _load(src, name, mode, env)
 	-- TODO function names
-	local lx, vals = _luwa.lex(src)
+	local lx, vals = _luwa.lexgen(src)
 	if not lx then
 		return nil, vals
 	end

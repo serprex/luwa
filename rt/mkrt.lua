@@ -24,7 +24,7 @@ local function import(obj, ...)
 		mod:import(obj[select(i, ...)])
 	end
 end
-export(_stack, 'tmppush', 'tmppop', 'nthtmp', 'setnthtmp')
+export(_stack, 'tmppush', 'tmppop', 'tmpclear', 'nthtmp', 'setnthtmp')
 export(_table, 'tblget', 'tblset')
 export(_rt, 'getluastack', 'setluastack')
 export(_vm, 'init', 'eval')
