@@ -36,7 +36,7 @@ end
 function asmmeta:push(op, ...)
 	self.bc[#self.bc+1] = assert(op)
 	for i=1,select('#', ...) do
-		self:patch(#self.bc+1, select(i, ...))
+		self:patch(#self.bc+1, (select(i, ...)))
 	end
 end
 function asmmeta:patch(idx, x)
