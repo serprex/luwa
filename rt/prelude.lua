@@ -294,7 +294,9 @@ local function io_open(filename, mode)
 end
 io.open = io_open
 local io_in = _luwa.stdin()
+local stdin = io_in
 local io_out = _luwa.stdout()
+local stdout = io_out
 local function io_input(file)
 	if file == nil then
 		return io_in
@@ -425,11 +427,11 @@ end
 function print(...)
 	for i = 1, _select('#', ...) do
 		if i > 1 then
-			io_write('\t')
+			_luwa.iowrite(stdout, '\t')
 		end
-		io_write(_tostring((_select(i, ...))))
+		_luwa.iowrite(stdout, _tostring((_select(i, ...))))
 	end
-	io_write('\n')
+	_luwa.iowrite(stdout, '\n')
 end
 
 function pairs(t)
@@ -618,8 +620,6 @@ function debug.getregistry()
 end
 
 function debug.debug()
-	local stdin = _luwa.stdin
-	local stdout = _luwa.stdout
 	local iowrite = _luwa.iowrite
 	local ioread = _luwa.ioread
 	while true do
