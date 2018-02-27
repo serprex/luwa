@@ -977,12 +977,6 @@ local eval = func(i32, function(f)
 		f:ltu()
 		f:iff(function(btoob)
 			f:loop(function(loop)
-				f:load(b)
-				f:i32(4)
-				f:add()
-				f:tee(b)
-				f:load(objbase)
-				f:ltu()
 				f:load(e)
 				f:load(base)
 				f:add()
@@ -990,6 +984,13 @@ local eval = func(i32, function(f)
 				f:add()
 				f:i32(0)
 				f:i32store(vec.base)
+
+				f:load(b)
+				f:i32(4)
+				f:add()
+				f:tee(b)
+				f:load(objbase)
+				f:ltu()
 				f:brif(loop)
 			end)
 		end)
@@ -2168,19 +2169,10 @@ local eval = func(i32, function(f)
 	f:i32(0)
 end)
 
-local evalSync = func(function(f)
-	f:loop(function(loop)
-		f:call(vm.eval)
-		f:eqz()
-		f:brif(loop)
-	end)
-end)
-
 return {
 	dataframe = dataframe,
 	objframe = objframe,
 	calltypes = calltypes,
 	init = init,
 	eval = eval,
-	evalSync = evalSync,
 }
