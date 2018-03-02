@@ -109,6 +109,7 @@ FFI.prototype.rawobj2js = function(p, memta = new Uint8Array(this.mem.buffer), m
 	return result;
 }
 FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer), memo = new Map()) {
+	if (p&7) return "Unaligned object @ " + p;
 	switch (memta[p+4]) {
 		case 0:
 			return new Uint32Array(memta.slice(p+5, p+13).buffer);
@@ -204,5 +205,6 @@ FFI.prototype.compile = function(env, str) {
 }
 FFI.prototype.eval = async function(env, str, ...param) {
 	const fn = await this.compile(env, str);
+	if (!fn) throw new Error("Failed to compile");
 	return this.rawexec(fn, ...param.map(x => x.val));
 }

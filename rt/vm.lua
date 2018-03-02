@@ -674,7 +674,6 @@ local eval = func(i32, function(f)
 			end)
 
 			-- TODO stack pop needs to be different for coro
-			-- TODO handle retc ~= stack size
 			f:load(framebase)
 			f:i32load16u(dataframe.frame)
 			f:load(base)
