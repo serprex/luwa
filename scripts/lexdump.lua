@@ -1,5 +1,5 @@
 #!/bin/lua
-local lex = require './luart/lex'
+local lex = require './rt/lex'
 
 local rlex = {}
 for k, v in pairs(lex) do
