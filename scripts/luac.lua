@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 package.path = 'rt/?.lua;' .. package.path
-local astgen = require 'astgen'
+local astgen = require 'astgen2'
 local bcgen = require 'bcgen'
 
 local function pprintcore(x, dep, hist)
@@ -115,7 +115,9 @@ for i=2,select('#', ...) do
 
 	funcnums = 0
 	funcprefix = srcfile:gsub('^.*/(.*)%.lua$', '%1')
-	func2lua(bcgen(astgen(lx, vals)))
+	local a = astgen(lx, vals)
+	-- pprint(a)
+	-- func2lua(bcgen(a))
 end
 local f = assert(io.open(..., 'w'))
 f:write('return function() return ', table.concat(result, ','),' end')
