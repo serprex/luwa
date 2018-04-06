@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 package.path = 'rt/?.lua;' .. package.path
-local astgen = require 'astgen2'
+local astgen = require 'astgen'
 local bcgen = require 'bcgen'
 
 local function pprintcore(x, dep, hist)
@@ -9,23 +9,18 @@ local function pprintcore(x, dep, hist)
 		return print(a .. '...', x)
 	end
 	hist[x] = true
-	if type(x.val) == 'function' then
-		print(a .. 'val:', x:val())
-	end
 	for k,v in pairs(x) do
-		if k ~= 'mother' and k ~= 'father' then
-			if type(v) == 'table' then
-				print(a .. tostring(k), v)
-				pprintcore(v, dep+1, hist)
-			elseif k == 'lex' and type(v) == 'string' then
-				print(a .. k, table.concat(table.pack(string.byte(v, 1, #v)), ','))
-			else
-				print(a .. tostring(k),v)
-			end
+		if type(v) == 'table' then
+			print(a .. tostring(k), v)
+			pprintcore(v, dep+1, hist)
+		elseif k == 'lex' and type(v) == 'string' then
+			print(a .. k, table.concat(table.pack(string.byte(v, 1, #v)), ','))
+		else
+			print(a .. tostring(k),v)
 		end
 	end
 end
-local function pprint(x)
+function pprint(x)
 	pprintcore(x, 0, {})
 	return x
 end
@@ -115,9 +110,7 @@ for i=2,select('#', ...) do
 
 	funcnums = 0
 	funcprefix = srcfile:gsub('^.*/(.*)%.lua$', '%1')
-	local a = astgen(lx, vals)
-	-- pprint(a)
-	-- func2lua(bcgen(a))
+	func2lua(bcgen(astgen(lx, vals)))
 end
 local f = assert(io.open(..., 'w'))
 f:write('return function() return ', table.concat(result, ','),' end')

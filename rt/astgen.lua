@@ -1,293 +1,101 @@
 local lex = require 'lex'
 local ast = require 'ast'
+package.path = package.path .. ';LuLPeg/?.lua'
+local lp = require 'lulpeg'
+local C, Cc, Carg, P, V = lp.C, lp.Cc, lp.Carg, lp.P, lp.V
 
-local function iternone()
+local sc = string.char
+local unpack = string.unpack
+local slex, zlex = {}, {}
+for k,v in pairs(lex) do
+	zlex[k] = P(sc(v)) * Cc()
+	slex[k] = zlex[k]*Cc({ type = -1, val = v })
 end
-local function iterone(x, y)
-	if not y then
-		return x
+
+local P4arg = P(4) / function(x) return (unpack('<i4', x)) end * Carg(1)
+local function P4token(v)
+	return P(sc(v)) * P4arg / function(x, vals)
+		return { type = -1, val = v, arg = vals[x+1] }
 	end
 end
-return function(lx, vals)
-	local rules = {}
+local name = P4token(lex._ident)
+local number = P4token(lex._number)
+local slit = P4token(lex._string)
 
-	local function tag(r)
-		return function(x, p)
-			if x:nextval() == r then
-				return iterone, x:nextint(p)
-			end
-			return iternone
-		end
+local function many(rule)
+	return rule^0
+end
+local function maybe(rule)
+	return rule^-1
+end
+local function sf(id, rule)
+	return rule / function(...) return { type = id, ... } end
+end
+local function of(id, x, ...)
+	for i=1,select('#',...) do
+		x = x+(select(i, ...) / function(...) return { type = id+i*32, ... } end)
 	end
-	local name = tag(lex._ident)
-	local number = tag(lex._number)
-	local slit = tag(lex._string)
-
-	local function s(r)
-		return function(x, p)
-			if x:nextval() == r then
-				return iterone, x:next(p)
-			end
-			return iternone
-		end
-	end
-	local function o(n)
-		return rules[n] or function(x, p)
-			return rules[n](x, p)
-		end
-	end
-	local function seq(...)
-		local xs = {...}
-		return function(x, p)
-			local st = {}
-			local i = 1
-			local f, s, x = xs[i](x, p)
-			return function()
-				while true do
-					x = f(s, x)
-					if x then
-						if i == #xs then
-							return x
-						else
-							st[#st+1] = { x = x, i = i, f = f, s = s }
-							i = i+1
-							f, s, x = xs[i](x, p)
-						end
-					elseif #st == 0 then
-						return
-					else
-						local z = st[#st]
-						st[#st] = nil
-						x = z.x
-						i = z.i
-						f = z.f
-						s = z.s
-					end
-				end
-			end
-		end
-	end
-	local function sf(o, ...)
-		local seqf = seq(...)
-		rules[o] = function(x, p)
-			return seqf(x, x:spawn(o, p))
-		end
-	end
-	local function many(f)
-		local function manyf(x, p)
-			for fx in f(x, p) do
-				manyf(fx, p)
-			end
-			coroutine.yield(x)
-		end
-		return function(x, p)
-			return coroutine.wrap(function()
-				return manyf(x, p)
-			end)
-		end
-	end
-	local function maybe(f)
-		return function(x, p)
-			local f, s, var = f(x, p)
-			return function()
-				if f then
-					var = f(s, var)
-					if var then
-						return var
-					else
-						f = nil
-						return x
-					end
-				end
-			end
-		end
-	end
-	local function of(o, ...)
-		local xs = {...}
-		rules[o] = function(x, p)
-			p = x:spawn(o, p)
-			p.type = p.type + 32
-			local i, f, s, var = 1, xs[1](x, p)
-			return function()
-				::retry::
-				var = f(s, var)
-				if var then
-					return var
-				else
-					i = i + 1
-					if i <= #xs then
-						p.type = p.type + 32
-						f, s, var = xs[i](x, p)
-						goto retry
-					end
-				end
-			end
-		end
-	end
-	local function oof(...)
-		local xs = {...}
-		return function(x, p)
-			local i, f, s, var = 1, xs[1](x, p)
-			return function()
-				::retry::
-				var = f(s, var)
-				if var then
-					return var
-				else
-					i = i + 1
-					if i <= #xs then
-						f, s, var = xs[i](x, p)
-						goto retry
-					end
-				end
-			end
-		end
-	end
-	local function ofs(o, r)
-		rules[o] = function(x, p)
-			local rv = r[x:nextval()]
-			if rv then
-				return iterone, x:next(x:spawn(o + rv * 32, p))
-			else
-				return iternone
-			end
-		end
-	end
-	local Explist = seq(o(ast.ExpOr), many(seq(s(lex._comma), o(ast.ExpOr))))
-	local Namelist = seq(name, many(seq(s(lex._comma), name)))
-	local Varlist = seq(o(ast.Var), many(seq(s(lex._comma), o(ast.Var))))
-	local function Fieldsep(x, p)
-		local xn = x:next(p)
-		local xv = xn:val()
-		if xv == lex._comma or xv == lex._semi then
-			return iterone, xn
-		else
-			return iternone
-		end
-	end
-	local Call = seq(maybe(seq(s(lex._colon), name)), o(ast.Args))
-	local Funccall = seq(o(ast.Prefix), many(o(ast.Suffix)), Call)
-	sf(ast.Block, many(o(ast.Stat)), maybe(seq(s(lex._return), maybe(Explist), maybe(s(lex._semi)))))
-	of(ast.Stat,
-		s(lex._semi),
-		seq(Varlist, s(lex._set), Explist),
+	return x
+end
+local Block, Stat, Var, ExpOr, ExpAnd, Exp, Prefix, Args, Funcbody, Table, Field, Binop, Unop, Value, Index, SuffixI, SuffixC =
+	V"Block", V"Stat", V"Var", V"ExpOr", V"ExpAnd", V"Exp", V"Prefix", V"Args", V"Funcbody", V"Table", V"Field", V"Binop", V"Unop", V"Value", V"Index", V"SuffixI", V"SuffixC"
+local Explist = ExpOr * many(zlex._comma * ExpOr)
+local Namelist = name * many(zlex._comma * name)
+local Varlist = Var * many(zlex._comma * Var)
+local Fieldsep = zlex._comma + zlex._semi
+local Call = maybe(zlex._colon * name) * Args
+local Funccall = Prefix * SuffixC
+local Grammar = P {
+	Block * P"\0";
+	Block = sf(ast.Block, many(Stat) * maybe(slex._return * maybe(Explist) * maybe(zlex._semi))),
+	Stat = of(ast.Stat,
+		zlex._semi,
+		Varlist * zlex._set * Explist,
 		Funccall,
-		seq(s(lex._label), name, s(lex._label)),
-		s(lex._break),
-		seq(s(lex._goto), name),
-		seq(s(lex._do), o(ast.Block), s(lex._end)),
-		seq(s(lex._while), o(ast.ExpOr), s(lex._do), o(ast.Block), s(lex._end)),
-		seq(s(lex._repeat), o(ast.Block), s(lex._until), o(ast.ExpOr)),
-		seq(s(lex._if), o(ast.ExpOr), s(lex._then), o(ast.Block), many(seq(s(lex._elseif), o(ast.ExpOr), s(lex._then), o(ast.Block))), maybe(seq(s(lex._else), o(ast.Block))), s(lex._end)),
-		seq(s(lex._for), name, s(lex._set), o(ast.ExpOr), s(lex._comma), o(ast.ExpOr), maybe(seq(s(lex._comma), o(ast.ExpOr))), s(lex._do), o(ast.Block), s(lex._end)),
-		seq(s(lex._for), Namelist, s(lex._in), Explist, s(lex._do), o(ast.Block), s(lex._end)),
-		seq(s(lex._function), seq(name, many(seq(s(lex._dot), name)), maybe(seq(s(lex._colon), name))), o(ast.Funcbody)),
-		seq(s(lex._local), s(lex._function), name, o(ast.Funcbody)),
-		seq(s(lex._local), Namelist, maybe(seq(s(lex._set), Explist)))
-	)
-	of(ast.Var, name, seq(o(ast.Prefix), many(o(ast.Suffix)), o(ast.Index)))
-	sf(ast.ExpOr, o(ast.ExpAnd), many(seq(s(lex._or), o(ast.ExpAnd))))
-	sf(ast.ExpAnd, o(ast.Exp), many(seq(s(lex._and), o(ast.Exp))))
-	of(ast.Exp, seq(o(ast.Unop), o(ast.Exp)), seq(o(ast.Value), maybe(seq(o(ast.Binop), o(ast.Exp)))))
-	of(ast.Prefix, name, seq(s(lex._pl), o(ast.ExpOr), s(lex._pr)))
-	of(ast.Args,
-		seq(s(lex._pl), maybe(Explist), s(lex._pr)),
-		o(ast.Table),
-		slit)
-	sf(ast.Funcbody, s(lex._pl), maybe(oof(seq(Namelist, maybe(seq(s(lex._comma), s(lex._dotdotdot)))), s(lex._dotdotdot))), s(lex._pr), o(ast.Block), s(lex._end))
-	sf(ast.Table, s(lex._cl), maybe(seq(o(ast.Field), many(seq(Fieldsep, o(ast.Field))), maybe(Fieldsep))), s(lex._cr))
-	of(ast.Field,
-		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr), s(lex._set), o(ast.ExpOr)),
-		seq(name, s(lex._set), o(ast.ExpOr)),
-		o(ast.ExpOr))
-	ofs(ast.Binop, {
-		[lex._plus] = 1,
-		[lex._minus] = 2,
-		[lex._mul] = 3,
-		[lex._div] = 4,
-		[lex._idiv] = 5,
-		[lex._pow] = 6,
-		[lex._mod] = 7,
-		[lex._band] = 8,
-		[lex._bnot] = 9,
-		[lex._bor] = 10,
-		[lex._rsh] = 11,
-		[lex._lsh] = 12,
-		[lex._dotdot] = 13,
-		[lex._lt] = 14,
-		[lex._lte] = 15,
-		[lex._gt] = 16,
-		[lex._gte] = 17,
-		[lex._eq] = 18,
-		[lex._neq] = 19,
-	})
-	ofs(ast.Unop, {
-		[lex._minus] = 1,
-		[lex._not] = 2,
-		[lex._hash] = 3,
-		[lex._bnot] = 4,
-	})
-	of(ast.Value,
-		s(lex._nil), s(lex._false), s(lex._true), number, slit, s(lex._dotdotdot),
-		seq(s(lex._function), o(ast.Funcbody)), o(ast.Table), Funccall, o(ast.Var),
-		seq(s(lex._pl), o(ast.ExpOr), s(lex._pr)))
-	of(ast.Index,
-		seq(s(lex._sl), o(ast.ExpOr), s(lex._sr)),
-		seq(s(lex._dot), name))
-	of(ast.Suffix, Call, o(ast.Index))
+		zlex._label * name * zlex._label,
+		zlex._break,
+		zlex._goto * name,
+		zlex._do * Block * zlex._end,
+		zlex._while * ExpOr * zlex._do * Block * zlex._end,
+		zlex._repeat * Block * zlex._until * ExpOr,
+		zlex._if * ExpOr * zlex._then * Block * many(zlex._elseif * ExpOr * zlex._then * Block) * maybe(zlex._else * Block) * zlex._end,
+		zlex._for * name * zlex._set * ExpOr * zlex._comma * ExpOr * maybe(zlex._comma * ExpOr) * zlex._do * Block * zlex._end,
+		zlex._for * Namelist * zlex._in * Explist * zlex._do * Block * zlex._end,
+		zlex._function * name * many(zlex._dot * name) * maybe(slex._colon * name) * Funcbody,
+		zlex._local * zlex._function * name * Funcbody,
+		zlex._local * Namelist * maybe(zlex._set * Explist)
+	),
+	Var = of(ast.Var, Prefix * SuffixI, name),
+	ExpOr = sf(ast.ExpOr, ExpAnd * many(zlex._or * ExpAnd)),
+	ExpAnd = sf(ast.ExpAnd, Exp * many(zlex._and * Exp)),
+	Exp = of(ast.Exp, Unop * Exp, Value * maybe(Binop * Exp)),
+	Prefix = of(ast.Prefix, name, zlex._pl * ExpOr * zlex._pr),
+	Args = of(ast.Args,
+		zlex._pl * maybe(Explist) * zlex._pr,
+		Table,
+		slit),
+	Funcbody = sf(ast.Funcbody, zlex._pl * maybe(Namelist * maybe(zlex._comma * slex._dotdotdot) + slex._dotdotdot) * zlex._pr * Block * zlex._end),
+	Table = sf(ast.Table, zlex._cl * maybe(Field * many(Fieldsep * Field) * maybe(Fieldsep)) * zlex._cr),
+	Field = of(ast.Field,
+		zlex._sl * ExpOr * zlex._sr * zlex._set * ExpOr,
+		name * zlex._set * ExpOr,
+		ExpOr),
+	Binop = of(ast.Binop,
+		zlex._plus, zlex._minus, zlex._mul, zlex._div, zlex._idiv, zlex._pow, zlex._mod,
+		zlex._band, zlex._bnot, zlex._bor, zlex._rsh, zlex._lsh, zlex._dotdot,
+		zlex._lt, zlex._lte, zlex._gt, zlex._gte, zlex._eq, zlex._neq),
+	Unop = of(ast.Unop, zlex._minus, zlex._not, zlex._hash, zlex._bnot),
+	Value = of(ast.Value,
+		zlex._nil, zlex._false, zlex._true, number, slit, zlex._dotdotdot,
+		zlex._function * Funcbody, Table, Funccall, Var,
+		zlex._pl * ExpOr * zlex._pr),
+	Index = of(ast.Index,
+		zlex._sl * ExpOr * zlex._sr,
+		zlex._dot * name),
+	SuffixI = of(ast.Suffix, Call * (SuffixI^1), Index * (SuffixI^0)),
+	SuffixC = of(ast.Suffix, Call * (SuffixC^0), Index * (SuffixC^1)),
+}
 
-	local BuilderMeta = {}
-	local BuilderMT = { __index = BuilderMeta }
-	local function Builder(li, nx, mo, fa, ty)
-		return setmetatable({
-			li = li,
-			nx = nx,
-			type = ty,
-			mother = mo,
-			father = fa,
-			fathered = {},
-		}, BuilderMT)
-	end
-	function BuilderMeta:val()
-		return string.byte(lx, self.li)
-	end
-	function BuilderMeta:arg()
-		return vals[string.unpack('<i4', lx, self.li+1)+1]
-	end
-	function BuilderMeta:nextval()
-		return string.byte(lx, self.nx)
-	end
-	function BuilderMeta:next(p)
-		return Builder(self.nx, self.nx+1, self, p, -1)
-	end
-	function BuilderMeta:nextint(p)
-		return Builder(self.nx, self.nx+5, self, p, -1)
-	end
-	function BuilderMeta:spawn(ty, p)
-		return Builder(self.li, self.nx, self, p, ty)
-	end
-
-	local root = Builder(0, 1, nil, nil, -2)
-	for child in rules[ast.Block](root, root) do
-		if string.byte(lx, child.nx) == 0 then
-			repeat
-				local prev_father = child
-				local father = child.father
-				while father do
-					table.insert(father.fathered, prev_father)
-					if #father.fathered > 1 then
-						break
-					end
-					prev_father = father
-					father = father.father
-				end
-				child = child.mother
-			until not child
-			root = root.fathered[1]
-			root.father = nil
-			root.mother = nil
-			return root
-		end
-	end
-	error('Invalid parse')
+return function(lx, vals)
+	return Grammar:match(lx, 1, vals)
 end

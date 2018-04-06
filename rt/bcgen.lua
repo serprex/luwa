@@ -87,7 +87,7 @@ function asmmeta:name(n, isparam)
 end
 
 function asmmeta:usename(node)
-	local name = self.names[node:arg()]
+	local name = self.names[node.arg]
 	if name then
 		self.namety[node] = name
 	else
@@ -139,7 +139,7 @@ function asmmeta:opnamety(ops, name, namety)
 	local idx = self:nameidx(namety)
 	if namety.env then
 		self:opnamety(namety_loads, nil, namety.env)
-		self:push(bc.LoadConst, self:const(name:arg()))
+		self:push(bc.LoadConst, self:const(name.arg))
 		self:push(ops.Env)
 	elseif namety.free then
 		if namety.func ~= self then
@@ -165,9 +165,9 @@ end
 local nextNode = {}
 for k,ty in pairs(ast) do
 	nextNode[ty] = function(node, i)
-		while i > 0 do
-			local child = node.fathered[i]
-			i = i - 1
+		while i <= #node do
+			local child = node[i]
+			i = i + 1
 			if (child.type & 31) == ty then
 				return i, child
 			end
@@ -176,9 +176,9 @@ for k,ty in pairs(ast) do
 end
 
 local function hasToken(node, ty)
-	for i=#node.fathered, 1, -1 do
-		local child = node.fathered[i]
-		if child.type == -1 and child:val() == ty then
+	for i=1, #node do
+		local child = node[i]
+		if child.type == -1 and child.val == ty then
 			return true
 		end
 	end
@@ -188,9 +188,9 @@ end
 local function nextMask(ty)
 	return function(node, i)
 		while i > 0 do
-			local child = node.fathered[i]
+			local child = node[i]
 			i = i - 1
-			if child.type == -1 and child:val() == ty then
+			if child.type == -1 and child.val == ty then
 				return i, child
 			end
 		end
@@ -201,18 +201,18 @@ local nextNumber = nextMask(lex._number)
 local nextIdent = nextMask(lex._ident)
 
 local function selectNodes(node, ty)
-	return nextNode[ty], node, #node.fathered
+	return nextNode[ty], node, 1
 end
 local function selectNode(node, ty)
-	local i, n = nextNode[ty](node, #node.fathered)
+	local i, n = nextNode[ty](node, 1)
 	return n
 end
 
 local function selectIdents(node)
-	return nextIdent, node, #node.fathered
+	return nextIdent, node, #node
 end
 local function selectIdent(node)
-	local i, n = nextIdent(node, #node.fathered)
+	local i, n = nextIdent(node, #node)
 	return n
 end
 
@@ -258,8 +258,8 @@ end
 local function shunt(node)
 	return coroutine.wrap(function()
 		local ops = {}
-		while node.type == ExpValue and #node.fathered == 3 do
-			local rson, op, lson = table.unpack(node.fathered)
+		while node.type == ExpValue and #node == 3 do
+			local lson, op, rson = table.unpack(node)
 			coroutine.yield(lson)
 			while #ops > 0 do
 				local oprec = precedence(op)
@@ -295,11 +295,11 @@ scopeStatSwitch = {
 		scopeNode(self, node, ast.Args)
 	end,
 	function(self, node) -- 4 label
-		local name = selectIdent(node):arg()
+		local name = selectIdent(node).arg
 		if self.labelscope[name] then
 			error('Duplicate label', name)
 		end
-		if node.father.fathered[1] == node then
+		if node.father[1] == node then
 			self.labelscope[name] = self.scopes.prev
 		else
 			self.labelscope[name] = self.scopes
@@ -338,7 +338,7 @@ scopeStatSwitch = {
 		self:scope(function()
 			scopeNodes(self, node, ast.ExpOr)
 			local name = selectIdent(node)
-			self:name(name:arg())
+			self:name(name.arg)
 			self:usename(name)
 			scopeNode(self, node, ast.Block)
 		end)
@@ -347,7 +347,7 @@ scopeStatSwitch = {
 		self:scope(function()
 			scopeNodes(self, node, ast.ExpOr)
 			for i, name in selectIdents(node) do
-				self:name(name:arg())
+				self:name(name.arg)
 				self:usename(name)
 			end
 			scopeNode(self, node, ast.Block)
@@ -359,14 +359,14 @@ scopeStatSwitch = {
 	end,
 	function(self, node) -- 14 local func
 		local name = selectIdent(node)
-		self:name(name:arg())
+		self:name(name.arg)
 		self:usename(name)
 		scopeNode(self, node, ast.Funcbody)
 	end,
 	function(self, node) -- 15 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
-			self:name(name:arg())
+			self:name(name.arg)
 			self:usename(name)
 		end
 	end,
@@ -377,7 +377,7 @@ local function emitCall(self, node, outputs)
 		local temp = idxtbl(self.locals, methname)
 		self:push(bc.StoreLocal, temp)
 		self:push(bc.LoadLocal, temp)
-		self:push(bc.LoadConst, self:const(methname:arg()))
+		self:push(bc.LoadConst, self:const(methname.arg))
 		self:push(bc.Idx)
 		self:push(bc.LoadLocal, temp)
 	end
@@ -427,7 +427,7 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 4 label
 		local name = selectIdent(node)
-		self.labels[name:arg()] = #self.bc
+		self.labels[name.arg] = #self.bc
 	end,
 	function(self, node) -- 5 break
 		assert(self.breaks, "break outside of loop")
@@ -436,7 +436,7 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 6 goto
 		local name = selectIdent(node)
-		local namei = name:arg()
+		local namei = name.arg
 		local gotosc = self.gotoscope[node]
 		local labelsc = self.labelscope[namei]
 		while gotosc ~= labelsc do
@@ -472,8 +472,8 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 10 if
 		local eob, condbr = {}
-		for i=#node.fathered-1, 2, -1 do
-			local child = node.fathered[i]
+		for i=1, #node do
+			local child = node[i]
 			local ty = child.type&31
 			if ty == ast.ExpOr then
 				visitEmit[ast.ExpOr](self, child, 1)
@@ -581,7 +581,7 @@ emitStatSwitch = {
 					self:loadname(nlast)
 					first = false
 				else
-					self:push(bc.LoadConst, self:const(nlast:arg()))
+					self:push(bc.LoadConst, self:const(nlast.arg))
 					self:push(bc.TblGet)
 				end
 			end
@@ -590,7 +590,7 @@ emitStatSwitch = {
 		if first then
 			self:storename(nlast)
 		else
-			self:push(bc.LoadConst, self:const(nlast:arg()))
+			self:push(bc.LoadConst, self:const(nlast.arg))
 			self:push(bc.TblSet)
 		end
 	end,
@@ -632,13 +632,13 @@ emitValueSwitch = {
 		return 1
 	end),
 	emit0(function(self, node, outputs) -- 4 num
-		local i, val = nextNumber(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(val:arg()))
+		local i, val = nextNumber(node, #node)
+		self:push(bc.LoadConst, self:const(val.arg))
 		return 1
 	end),
 	emit0(function(self, node, outputs) -- 5 str
-		local i, val = nextString(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(val:arg()))
+		local i, val = nextString(node, #node)
+		self:push(bc.LoadConst, self:const(val.arg))
 		return 1
 	end),
 	emit0(function(self, node, outputs) -- 6 ...
@@ -677,8 +677,8 @@ emitFieldSwitch = {
 		self:push(bc.TblAdd)
 	end,
 	function(self, node) -- 2 name = exp
-		local i, val = nextIdent(node, #node.fathered)
-		self:push(bc.LoadConst, self:const(val:arg()))
+		local i, val = nextIdent(node, #node)
+		self:push(bc.LoadConst, self:const(val.arg))
 		emitNode(self, node, ast.ExpOr, 1)
 		self:push(bc.TblAdd)
 	end,
@@ -736,7 +736,7 @@ visitScope = {
 				asm:name('self', true)
 			end
 			for i=1,#names do
-				asm:name(names[i]:arg(), true)
+				asm:name(names[i].arg, true)
 			end
 			scopeNode(asm, node, ast.Block)
 		end)
@@ -805,8 +805,8 @@ visitScope = {
 local function emitShortCircuitFactory(ty, opcode)
 	return function(self, node, out)
 		local prod
-		if #node.fathered == 1 then
-			prod = visitEmit[ty](self, node.fathered[1], out)
+		if #node == 1 then
+			prod = visitEmit[ty](self, node[1], out)
 		else
 			local lab
 			for i, n in selectNodes(node, ty) do
@@ -874,8 +874,8 @@ visitEmit = {
 			emitNode(self, node, ast.Unop)
 			return 1
 		else
-			if #node.fathered == 1 then
-				return visitEmit[ast.Value](self, node.fathered[1], out)
+			if #node == 1 then
+				return visitEmit[ast.Value](self, node[1], out)
 			else
 				for op in shunt(node) do
 					local ty = op.type & 31
@@ -913,7 +913,7 @@ visitEmit = {
 			emitNode(self, node, ast.Table)
 			res = { 1 }
 		else
-			self:push(bc.LoadConst, self:const(node.fathered[1]:arg()))
+			self:push(bc.LoadConst, self:const(node[1].arg))
 			res = { 1 }
 		end
 		if outputs == -1 then
@@ -999,7 +999,7 @@ visitEmit = {
 		if node.type >> 5 == 1 then
 			emitNode(self, node, ast.ExpOr, 1)
 		else
-			self:push(bc.LoadConst, self:const(selectIdent(node):arg()))
+			self:push(bc.LoadConst, self:const(selectIdent(node).arg))
 		end
 		if isload then
 			self:push(bc.Idx)
