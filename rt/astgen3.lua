@@ -30,14 +30,14 @@ local function of(id, x, ...)
 	end
 	return x
 end
-local Block, Stat, Var, ExpOr, ExpAnd, Exp, Prefix, Args, Funcbody, Table, Field, Binop, Unop, Value, Index, Suffix =
-	V"Block", V"Stat", V"Var", V"ExpOr", V"ExpAnd", V"Exp", V"Prefix", V"Args", V"Funcbody", V"Table", V"Field", V"Binop", V"Unop", V"Value", V"Index", V"Suffix"
+local Block, Stat, Var, ExpOr, ExpAnd, Exp, Prefix, Args, Funcbody, Table, Field, Binop, Unop, Value, Index, SuffixI, SuffixC =
+	V"Block", V"Stat", V"Var", V"ExpOr", V"ExpAnd", V"Exp", V"Prefix", V"Args", V"Funcbody", V"Table", V"Field", V"Binop", V"Unop", V"Value", V"Index", V"SuffixI", V"SuffixC"
 local Explist = ExpOr * many(slex._comma * ExpOr)
 local Namelist = name * many(slex._comma * name)
 local Varlist = Var * many(slex._comma * Var)
 local Fieldsep = slex._comma + slex._semi
 local Call = maybe(slex._colon * name) * Args
-local Funccall = Prefix * many(Suffix) * Call
+local Funccall = Prefix * SuffixC
 local Grammar = P {
 	Block * P("\0");
 	Block = sf(ast.Block, many(Stat) * maybe(slex._return * maybe(Explist) * maybe(slex._semi))),
@@ -58,7 +58,7 @@ local Grammar = P {
 		slex._local * slex._function * name * Funcbody,
 		slex._local * Namelist * maybe(slex._set * Explist)
 	),
-	Var = of(ast.Var, name, Prefix * many(Suffix) * Index),
+	Var = of(ast.Var, Prefix * SuffixI, name),
 	ExpOr = sf(ast.ExpOr, ExpAnd * many(slex._or * ExpAnd)),
 	ExpAnd = sf(ast.ExpAnd, Exp * many(slex._and * Exp)),
 	Exp = of(ast.Exp, Unop * Exp, Value * maybe(Binop * Exp)),
@@ -85,7 +85,8 @@ local Grammar = P {
 	Index = of(ast.Index,
 		slex._sl * ExpOr * slex._sr,
 		slex._dot * name),
-	Suffix = of(ast.Suffix, Call, Index),
+	SuffixI = of(ast.Suffix, Call * (SuffixI^1), Index * (SuffixI^0)),
+	SuffixC = of(ast.Suffix, Call * (SuffixC^0), Index * (SuffixC^1)),
 }
 
 return function(lx, vals)
