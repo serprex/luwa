@@ -239,8 +239,8 @@ end
 local function emitNode(self, node, ty, ...)
 	return singleNode(self, node, ty, visitEmit[ty], ...)
 end
-local function scopeNodes(self, node, ty)
-	return multiNodes(self, node, ty, visitScope[ty])
+local function scopeNodes(self, node, ty, ...)
+	return multiNodes(self, node, ty, visitScope[ty], ...)
 end
 local function emitNodes(self, node, ty, ...)
 	return multiNodes(self, node, ty, visitEmit[ty], ...)
@@ -284,49 +284,48 @@ local function shunt(node)
 end
 
 scopeStatSwitch = {
-	nop, -- 1 ;
-	function(self, node) -- 2 vars=exps
+	function(self, node) -- 1 vars=exps
 		scopeNodes(self, node, ast.ExpOr)
 		scopeNodes(self, node, ast.Var)
 	end,
-	function(self, node) -- 3 call
+	function(self, node) -- 2 call
 		scopeNode(self, node, ast.Prefix)
 		scopeNodes(self, node, ast.Suffix)
 		scopeNode(self, node, ast.Args)
 	end,
-	function(self, node) -- 4 label
+	function(self, node, block) -- 3 label
 		local name = selectIdent(node).arg
 		if self.labelscope[name] then
 			error('Duplicate label', name)
 		end
-		if node.father[1] == node then
+		if block[#block] == node then
 			self.labelscope[name] = self.scopes.prev
 		else
 			self.labelscope[name] = self.scopes
 		end
 	end,
-	nop, -- 5 break
-	function(self, node) -- 6 goto
+	nop, -- 4 break
+	function(self, node) -- 5 goto
 		self.gotoscope[node] = self.scopes
 	end,
-	function(self, node) -- 7 do-end
+	function(self, node) -- 6 do-end
 		self:scope(function()
 			scopeNode(self, node, ast.Block)
 		end)
 	end,
-	function(self, node) -- 8 while
+	function(self, node) -- 7 while
 		self:scope(function()
 			scopeNode(self, node, ast.ExpOr)
 			scopeNode(self, node, ast.Block)
 		end)
 	end,
-	function(self, node) -- 9 repeat
+	function(self, node) -- 8 repeat
 		self:scope(function()
 			scopeNode(self, node, ast.Block)
 			scopeNode(self, node, ast.ExpOr)
 		end)
 	end,
-	function(self, node) -- 10 if
+	function(self, node) -- 9 if
 		scopeNodes(self, node, ast.ExpOr)
 		for i, block in selectNodes(node, ast.Block) do
 			self:scope(function()
@@ -334,7 +333,7 @@ scopeStatSwitch = {
 			end)
 		end
 	end,
-	function(self, node) -- 11 for
+	function(self, node) -- 10 for
 		self:scope(function()
 			scopeNodes(self, node, ast.ExpOr)
 			local name = selectIdent(node)
@@ -343,7 +342,7 @@ scopeStatSwitch = {
 			scopeNode(self, node, ast.Block)
 		end)
 	end,
-	function(self, node) -- 12 generic for
+	function(self, node) -- 11 generic for
 		self:scope(function()
 			scopeNodes(self, node, ast.ExpOr)
 			for i, name in selectIdents(node) do
@@ -353,17 +352,17 @@ scopeStatSwitch = {
 			scopeNode(self, node, ast.Block)
 		end)
 	end,
-	function(self, node) -- 13 func
+	function(self, node) -- 12 func
 		self:usename(selectIdent(node))
 		scopeNode(self, node, ast.Funcbody, hasToken(node, lex._colon))
 	end,
-	function(self, node) -- 14 local func
+	function(self, node) -- 13 local func
 		local name = selectIdent(node)
 		self:name(name.arg)
 		self:usename(name)
 		scopeNode(self, node, ast.Funcbody)
 	end,
-	function(self, node) -- 15 locals=exps
+	function(self, node) -- 14 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
 		for i, name in selectIdents(node) do
 			self:name(name.arg)
@@ -385,8 +384,11 @@ local function emitCall(self, node, outputs)
 end
 local function emitFunccall(self, node, outputs)
 	emitNode(self, node, ast.Prefix)
-	emitNodes(self, node, ast.Suffix)
-	return emitCall(self, node, outputs)
+	local res
+	emitNodes(self, node, ast.Suffix, function(node)
+		res = emitCall(self, node, outputs)
+	end)
+	return res
 end
 local function emitExplist(self, node, outputs)
 	local n, lastv = 0
@@ -410,8 +412,7 @@ local function emitExplist(self, node, outputs)
 	end
 end
 emitStatSwitch = {
-	nop, -- 1 ;
-	function(self, node) -- 2 vars=exps
+	function(self, node) -- 1 vars=exps
 		local vars = {}
 		for i, v in selectNodes(node, ast.Var) do
 			vars[#vars+1] = v
@@ -422,19 +423,19 @@ emitStatSwitch = {
 			visitEmit[ast.Var](self, vars[i], false)
 		end
 	end,
-	function(self, node) -- 3 call
+	function(self, node) -- 2 call
 		return emitFunccall(self, node, 0)
 	end,
-	function(self, node) -- 4 label
+	function(self, node) -- 3 label
 		local name = selectIdent(node)
 		self.labels[name.arg] = #self.bc
 	end,
-	function(self, node) -- 5 break
+	function(self, node) -- 4 break
 		assert(self.breaks, "break outside of loop")
 		self.breaks[#self.breaks+1] = #self.bc+2
 		self:push(bc.Jmp, 0)
 	end,
-	function(self, node) -- 6 goto
+	function(self, node) -- 5 goto
 		local name = selectIdent(node)
 		local namei = name.arg
 		local gotosc = self.gotoscope[node]
@@ -448,10 +449,10 @@ emitStatSwitch = {
 		self.gotos[#self.bc+2] = namei
 		self:push(bc.Jmp, 0)
 	end,
-	function(self, node) -- 7 do-end
+	function(self, node) -- 6 do-end
 		return emitNode(self, node, ast.Block)
 	end,
-	function(self, node) -- 8 while
+	function(self, node) -- 7 while
 		self:breakscope(function()
 			local soc = #self.bc
 			emitNode(self, node, ast.ExpOr, 1)
@@ -462,7 +463,7 @@ emitStatSwitch = {
 			self:patch(jmp, #self.bc)
 		end)
 	end,
-	function(self, node) -- 9 repeat
+	function(self, node) -- 8 repeat
 		self:breakscope(function()
 			local soc = #self.bc
 			emitNode(self, node, ast.Block)
@@ -470,7 +471,7 @@ emitStatSwitch = {
 			self:push(bc.JifNot, soc)
 		end)
 	end,
-	function(self, node) -- 10 if
+	function(self, node) -- 9 if
 		local eob, condbr = {}
 		for i=1, #node do
 			local child = node[i]
@@ -495,7 +496,7 @@ emitStatSwitch = {
 			self:patch(eob[i], #self.bc)
 		end
 	end,
-	function(self, node) -- 11 for
+	function(self, node) -- 10 for
 		-- TODO float increment causes initial value to be a float
 		local exps=0
 		for i, n in selectNodes(node, ast.ExpOr) do
@@ -540,7 +541,7 @@ emitStatSwitch = {
 		self:push(bc.Jmp, incrdecr)
 		self:patch(forxit, #self.bc)
 	end,
-	function(self, node) -- 12 generic for
+	function(self, node) -- 11 generic for
 		emitExplist(self, node, 3)
 		local tempf = idxtbl(self.locals, {})
 		local temps = idxtbl(self.locals, {})
@@ -572,7 +573,7 @@ emitStatSwitch = {
 		self:push(bc.Jmp, begfor)
 		self:patch(forxit, #self.bc)
 	end,
-	function(self, node) -- 13 func
+	function(self, node) -- 12 func
 		emitNode(self, node, ast.Funcbody)
 		local first, nlast = true
 		for i, name in selectIdents(node) do
@@ -594,11 +595,11 @@ emitStatSwitch = {
 			self:push(bc.TblSet)
 		end
 	end,
-	function(self, node) -- 14 local func
+	function(self, node) -- 13 local func
 		emitNode(self, node, ast.Funcbody)
 		self:storename(selectIdent(node))
 	end,
-	function(self, node) -- 15 locals=exps
+	function(self, node) -- 14 locals=exps
 		local vars = {}
 		for i, v in selectIdents(node) do
 			vars[#vars+1] = v
@@ -688,19 +689,19 @@ emitFieldSwitch = {
 }
 visitScope = {
 	[ast.Block] = function(self, node)
-		scopeNodes(self, node, ast.Stat)
+		scopeNodes(self, node, ast.Stat, node)
 		scopeNodes(self, node, ast.ExpOr)
 	end,
-	[ast.Stat] = function(self, node)
-		return scopeStatSwitch[node.type >> 5](self, node)
+	[ast.Stat] = function(self, node, block)
+		return scopeStatSwitch[node.type >> 5](self, node, block)
 	end,
 	[ast.Var] = function(self, node)
 		if node.type >> 5 == 1 then
-			self:usename(selectIdent(node))
-		else
 			scopeNode(self, node, ast.Prefix)
 			scopeNodes(self, node, ast.Suffix)
 			scopeNode(self, node, ast.Index)
+		else
+			self:usename(selectIdent(node))
 		end
 	end,
 	[ast.Exp] = function(self, node)
@@ -794,6 +795,7 @@ visitScope = {
 		else
 			scopeNode(self, node, ast.Index)
 		end
+		return scopeNode(self, node, ast.Suffix)
 	end,
 	[ast.ExpOr] = function(self, node)
 		return scopeNodes(self, node, ast.ExpAnd)
@@ -856,16 +858,17 @@ visitEmit = {
 	end,
 	[ast.Var] = function(self, node, isload)
 		if node.type >> 5 == 1 then
+			emitNode(self, node, ast.Prefix)
+			emitNodes(self, node, ast.Suffix, function(node)
+				emitNode(self, node, ast.Index, isload)
+			end)
+		else
 			local name = selectIdent(node)
 			if isload then
 				self:loadname(name)
 			else
 				self:storename(name)
 			end
-		else
-			emitNode(self, node, ast.Prefix)
-			emitNodes(self, node, ast.Suffix)
-			emitNode(self, node, ast.Index, isload)
 		end
 	end,
 	[ast.Exp] = function(self, node, out)
@@ -1007,12 +1010,16 @@ visitEmit = {
 			self:push(bc.TblSet)
 		end
 	end,
-	[ast.Suffix] = function(self, node)
-		if node.type >> 5 == 1 then
-			return emitCall(self, node, 1)
+	[ast.Suffix] = function(self, node, tailfn)
+		local nx = singleNode(self, node, ast.Suffix)
+		if not nx then
+			return tailfn(node)
+		elseif node.type >> 5 == 1 then
+			emitCall(self, node, 1)
 		else
-			return emitNode(self, node, ast.Index, true)
+			emitNode(self, node, ast.Index, true)
 		end
+		return emitNode(self, node, ast.Suffix, tailfn)
 	end,
 	[ast.ExpOr] = emitShortCircuitFactory(ast.ExpAnd, bc.JifOrPop),
 	[ast.ExpAnd] = emitShortCircuitFactory(ast.Exp, bc.JifNotOrPop),

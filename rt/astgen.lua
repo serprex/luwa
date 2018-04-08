@@ -1,15 +1,15 @@
 local lex = require 'lex'
 local ast = require 'ast'
-package.path = package.path .. ';LuLPeg/?.lua'
-local lp = require 'lulpeg'
+local lp = require 'LuLPeg/lulpeg'
 local C, Cc, Carg, P, V = lp.C, lp.Cc, lp.Carg, lp.P, lp.V
 
 local sc = string.char
 local unpack = string.unpack
 local slex, zlex = {}, {}
 for k,v in pairs(lex) do
-	zlex[k] = P(sc(v)) * Cc()
-	slex[k] = zlex[k]*Cc({ type = -1, val = v })
+	local pv = P(sc(v))
+	zlex[k] = pv * Cc()
+	slex[k] = pv * Cc({ type = -1, val = v })
 end
 
 local P4arg = P(4) / function(x) return (unpack('<i4', x)) end * Carg(1)
@@ -32,8 +32,9 @@ local function sf(id, rule)
 	return rule / function(...) return { type = id, ... } end
 end
 local function of(id, x, ...)
-	for i=1,select('#',...) do
-		x = x+(select(i, ...) / function(...) return { type = id+i*32, ... } end)
+	x = x / function(...) return { type = id+32, ... } end
+	for i=1,select('#', ...) do
+		x = x+(select(i, ...) / function(...) return { type = id+i*32+32, ... } end)
 	end
 	return x
 end
@@ -45,11 +46,12 @@ local Varlist = Var * many(zlex._comma * Var)
 local Fieldsep = zlex._comma + zlex._semi
 local Call = maybe(zlex._colon * name) * Args
 local Funccall = Prefix * SuffixC
+local Pexp = zlex._pl * ExpOr * zlex._pr
+local Sexp = zlex._sl * ExpOr * zlex._sr
 local Grammar = P {
 	Block * P"\0";
 	Block = sf(ast.Block, many(Stat) * maybe(slex._return * maybe(Explist) * maybe(zlex._semi))),
-	Stat = of(ast.Stat,
-		zlex._semi,
+	Stat = zlex._semi + of(ast.Stat,
 		Varlist * zlex._set * Explist,
 		Funccall,
 		zlex._label * name * zlex._label,
@@ -69,17 +71,11 @@ local Grammar = P {
 	ExpOr = sf(ast.ExpOr, ExpAnd * many(zlex._or * ExpAnd)),
 	ExpAnd = sf(ast.ExpAnd, Exp * many(zlex._and * Exp)),
 	Exp = of(ast.Exp, Unop * Exp, Value * maybe(Binop * Exp)),
-	Prefix = of(ast.Prefix, name, zlex._pl * ExpOr * zlex._pr),
-	Args = of(ast.Args,
-		zlex._pl * maybe(Explist) * zlex._pr,
-		Table,
-		slit),
-	Funcbody = sf(ast.Funcbody, zlex._pl * maybe(Namelist * maybe(zlex._comma * slex._dotdotdot) + slex._dotdotdot) * zlex._pr * Block * zlex._end),
+	Prefix = of(ast.Prefix, name, Pexp),
+	Args = of(ast.Args, zlex._pl * maybe(Explist) * zlex._pr, Table, slit),
+	Funcbody = sf(ast.Funcbody, zlex._pl * (slex._dotdotdot + maybe(Namelist * maybe(zlex._comma * slex._dotdotdot))) * zlex._pr * Block * zlex._end),
 	Table = sf(ast.Table, zlex._cl * maybe(Field * many(Fieldsep * Field) * maybe(Fieldsep)) * zlex._cr),
-	Field = of(ast.Field,
-		zlex._sl * ExpOr * zlex._sr * zlex._set * ExpOr,
-		name * zlex._set * ExpOr,
-		ExpOr),
+	Field = of(ast.Field, Sexp * zlex._set * ExpOr, name * zlex._set * ExpOr, ExpOr),
 	Binop = of(ast.Binop,
 		zlex._plus, zlex._minus, zlex._mul, zlex._div, zlex._idiv, zlex._pow, zlex._mod,
 		zlex._band, zlex._bnot, zlex._bor, zlex._rsh, zlex._lsh, zlex._dotdot,
@@ -87,11 +83,8 @@ local Grammar = P {
 	Unop = of(ast.Unop, zlex._minus, zlex._not, zlex._hash, zlex._bnot),
 	Value = of(ast.Value,
 		zlex._nil, zlex._false, zlex._true, number, slit, zlex._dotdotdot,
-		zlex._function * Funcbody, Table, Funccall, Var,
-		zlex._pl * ExpOr * zlex._pr),
-	Index = of(ast.Index,
-		zlex._sl * ExpOr * zlex._sr,
-		zlex._dot * name),
+		zlex._function * Funcbody, Table, Funccall, Var, Pexp),
+	Index = of(ast.Index, Sexp, zlex._dot * name),
 	SuffixI = of(ast.Suffix, Call * (SuffixI^1), Index * (SuffixI^0)),
 	SuffixC = of(ast.Suffix, Call * (SuffixC^0), Index * (SuffixC^1)),
 }
