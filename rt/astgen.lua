@@ -90,5 +90,5 @@ local Grammar = P {
 }
 
 return function(lx, vals)
-	return Grammar:match(lx, 1, vals)
+	return assert(Grammar:match(lx, 1, vals))
 end

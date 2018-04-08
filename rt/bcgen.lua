@@ -1011,7 +1011,7 @@ visitEmit = {
 		end
 	end,
 	[ast.Suffix] = function(self, node, tailfn)
-		local nx = singleNode(self, node, ast.Suffix)
+		local nx = selectNode(node, ast.Suffix)
 		if not nx then
 			return tailfn(node)
 		elseif node.type >> 5 == 1 then
@@ -1019,7 +1019,7 @@ visitEmit = {
 		else
 			emitNode(self, node, ast.Index, true)
 		end
-		return emitNode(self, node, ast.Suffix, tailfn)
+		return visitEmit[ast.Suffix](self, nx, tailfn)
 	end,
 	[ast.ExpOr] = emitShortCircuitFactory(ast.ExpAnd, bc.JifOrPop),
 	[ast.ExpAnd] = emitShortCircuitFactory(ast.Exp, bc.JifNotOrPop),

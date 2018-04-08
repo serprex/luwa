@@ -41,7 +41,7 @@ GF = {}
 
 local function doboot()
 	return table.unpack(require('bootrt')(
-		'./rt/prelude.lua',
+		'./rt/prelude.lua', './LuLPeg/lulpeg.lua',
 		'./rt/astgen.lua', './rt/bcgen.lua',
 		'./rt/ast.lua', './rt/bc.lua', './rt/lex.lua'))
 end

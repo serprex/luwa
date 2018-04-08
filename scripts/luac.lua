@@ -20,7 +20,7 @@ local function pprintcore(x, dep, hist)
 		end
 	end
 end
-function pprint(x)
+local function pprint(x)
 	pprintcore(x, 0, {})
 	return x
 end
