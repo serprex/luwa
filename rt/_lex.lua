@@ -1857,8 +1857,6 @@ local lex = func(i32, void, function(f, src)
 	end) -- loopwrap
 	f:i32(lexslot)
 	f:call(nthtmp)
-	f:i32(tokens._eof)
-	f:call(pushstr)
 	f:call(unbufstr)
 	f:i32(constslot)
 	f:call(nthtmp)

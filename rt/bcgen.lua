@@ -187,9 +187,9 @@ end
 
 local function nextMask(ty)
 	return function(node, i)
-		while i > 0 do
+		while i <= #node do
 			local child = node[i]
-			i = i - 1
+			i = i + 1
 			if child.type == -1 and child.val == ty then
 				return i, child
 			end
@@ -209,10 +209,10 @@ local function selectNode(node, ty)
 end
 
 local function selectIdents(node)
-	return nextIdent, node, #node
+	return nextIdent, node, 1
 end
 local function selectIdent(node)
-	local i, n = nextIdent(node, #node)
+	local i, n = nextIdent(node, 1)
 	return n
 end
 
@@ -382,14 +382,6 @@ local function emitCall(self, node, outputs)
 	end
 	return emitNode(self, node, ast.Args, outputs)
 end
-local function emitFunccall(self, node, outputs)
-	emitNode(self, node, ast.Prefix)
-	local res
-	emitNodes(self, node, ast.Suffix, function(node)
-		res = emitCall(self, node, outputs)
-	end)
-	return res
-end
 local function emitExplist(self, node, outputs)
 	local n, lastv = 0
 	for i, v in selectNodes(node, ast.ExpOr) do
@@ -424,7 +416,10 @@ emitStatSwitch = {
 		end
 	end,
 	function(self, node) -- 2 call
-		return emitFunccall(self, node, 0)
+		emitNode(self, node, ast.Prefix)
+		emitNodes(self, node, ast.Suffix, function(node)
+			emitCall(self, node, 0)
+		end)
 	end,
 	function(self, node) -- 3 label
 		local name = selectIdent(node)
@@ -533,12 +528,14 @@ emitStatSwitch = {
 		self:push(bc.Jif, 0)
 		self:push(bc.LoadLocal, tempi)
 		self:storename(selectIdent(node))
-		emitNode(self, node, ast.Block)
-		self:push(bc.LoadLocal, tempi)
-		self:push(bc.LoadLocal, temps)
-		self:push(bc.Add)
-		self:push(bc.StoreLocal, tempi)
-		self:push(bc.Jmp, incrdecr)
+		self:breakscope(function()
+			emitNode(self, node, ast.Block)
+			self:push(bc.LoadLocal, tempi)
+			self:push(bc.LoadLocal, temps)
+			self:push(bc.Add)
+			self:push(bc.StoreLocal, tempi)
+			self:push(bc.Jmp, incrdecr)
+		end)
 		self:patch(forxit, #self.bc)
 	end,
 	function(self, node) -- 11 generic for
@@ -569,8 +566,10 @@ emitStatSwitch = {
 		self:push(bc.Jif, 0)
 		self:push(bc.LoadLocal, tempv)
 		self:storename(vars[1])
-		emitNode(self, node, ast.Block)
-		self:push(bc.Jmp, begfor)
+		self:breakscope(function()
+			emitNode(self, node, ast.Block)
+			self:push(bc.Jmp, begfor)
+		end)
 		self:patch(forxit, #self.bc)
 	end,
 	function(self, node) -- 12 func
@@ -633,12 +632,12 @@ emitValueSwitch = {
 		return 1
 	end),
 	emit0(function(self, node, outputs) -- 4 num
-		local i, val = nextNumber(node, #node)
+		local i, val = nextNumber(node, 1)
 		self:push(bc.LoadConst, self:const(val.arg))
 		return 1
 	end),
 	emit0(function(self, node, outputs) -- 5 str
-		local i, val = nextString(node, #node)
+		local i, val = nextString(node, 1)
 		self:push(bc.LoadConst, self:const(val.arg))
 		return 1
 	end),
@@ -658,14 +657,17 @@ emitValueSwitch = {
 		emitNode(self, node, ast.Table)
 		return 1
 	end,
-	emitFunccall, -- 9 Call
-	function(self, node, outputs) -- 10 Var load
-		emitNode(self, node, ast.Var, true)
-		return 1
-	end,
-	function(self, node, outputs) -- 11 Exp
-		emitNode(self, node, ast.ExpOr, 1)
-		return 1
+	function(self, node, outputs) -- 9 Prefix Suffix?
+		emitNode(self, node, ast.Prefix)
+		local res = 1
+		emitNodes(self, node, ast.Suffix, function(node)
+			if node.type >> 5 == 1 then
+				res = emitCall(self, node, outputs)
+			else
+				emitNode(self, node, ast.Index, true)
+			end
+		end)
+		return res
 	end,
 }
 emitFieldSwitch = {
@@ -678,7 +680,7 @@ emitFieldSwitch = {
 		self:push(bc.TblAdd)
 	end,
 	function(self, node) -- 2 name = exp
-		local i, val = nextIdent(node, #node)
+		local i, val = nextIdent(node, 1)
 		self:push(bc.LoadConst, self:const(val.arg))
 		emitNode(self, node, ast.ExpOr, 1)
 		self:push(bc.TblAdd)
