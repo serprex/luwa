@@ -503,30 +503,43 @@ local function fakereq(s)
 	return fs
 end
 fakereqenv = {
-	assert = assert,
-	error = error,
-	require = fakereq,
-	select = select,
-	setmetatable = setmetatable,
-	type = type,
-	pairs = pairs,
+	assert = _assert,
+	error = _error,
+	getmetatable = _getmetatable,
+	ipairs = ipairs,
+	pairs = _pairs,
+	pcall = _pcall,
 	print = print,
+	rawget = _rawget,
+	rawset = rawset,
+	require = fakereq,
+	select = _select,
+	setmetatable = setmetatable,
+	tonumber = tonumber,
+	tostring = tostring,
+	type = type,
 	coroutine = {
 		create = co_create,
 		wrap = coroutine.wrap,
 		yield = coroutine.yield,
 	},
 	math = {
-		type = math_type
+		type = math_type,
+		max = math.max,
 	},
 	string = {
 		byte = string.byte,
+		gsub = string.gsub,
+		match = string.match,
 		pack = string.pack,
+		sub = string.sub,
 	},
 	table = {
-		unpack = table.unpack,
+		concat =table.concat,
 		insert = table.insert,
+		remove = table.remove,
 		sort = table.sort,
+		unpack = table_unpack,
 	},
 }
 local astgen = fakereq('astgen')
