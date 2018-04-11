@@ -172,16 +172,15 @@ FFI.prototype.obj2js = function(h) {
 	return this.rawobj2js(h.val);
 }
 FFI.prototype.evalWait = function() {
-	return new Promise(resolve => {
-		function core(mod) {
+	return new Promise(resolve =>
+		(function core(mod) {
 			if (mod.eval()) {
 				resolve();
 			} else {
 				setTimeout(core, 0, mod);
 			}
-		}
-		core(this.mod);
-	});
+		})(this.mod)
+	);
 }
 FFI.prototype.rawexec = function(fn, ...param) {
 	// TODO have a flag for when mid computation?

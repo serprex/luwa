@@ -490,6 +490,7 @@ local fakereqtbl = {
 	lex =  _luwa.lex,
 	astgen = _luwa.astgen,
 	bcgen = _luwa.bcgen,
+	['LuLPeg/lulpeg'] = _luwa.lpeg,
 }
 local fakereqcache = {}
 local fakereqenv
@@ -537,12 +538,12 @@ local function _load(src, name, mode, env)
 	if not lx then
 		return nil, vals
 	end
-	local result, root = pcall(astgen, lx, vals)
+	local result, root = _pcall(astgen, lx, vals)
 	if not result then
 		return nil, root
 	end
 	-- TODO need to signal _ENV is free
-	local result, bcg = pcall(bcgen, root)
+	local result, bcg = _pcall(bcgen, root)
 	if not result then
 		return nil, bcg
 	end

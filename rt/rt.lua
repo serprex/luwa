@@ -168,7 +168,7 @@ local image = M.data(memory, addStatics(4, {
 	'create', 'resume', 'yield', 'running', 'status',
 	'_VERSION', Version,
 	-- begin _luwa fields
-	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc',
+	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc', 'lpeg',
 	'stdin', 'stdout', 'ioread', 'iowrite', 'ioflush', 'ioclose',
 	'iosetvbuf', 'vec_new',
 	'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
