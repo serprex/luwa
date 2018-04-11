@@ -1,0 +1,3 @@
+[submodule "LuLPeg"]
+	path = LuLPeg
+	url = git@github.com:serprex/LuLPeg.git
