@@ -10,27 +10,12 @@ NIL = 0
 FALSE = 8
 TRUE = 16
 otmp = M.global(i32, true)
-oluastack = M.global(i32, true) -- default to NIL
+oluastack = M.global(i32, true)
 ostrmt = M.global(i32, true)
 markbit = M.global(i32, true)
 idcount = M.global(i32, true)
 
 local memory = M.importmemory('', 'm', 1)
-
---[[TODO
-corountine.status: running suspended normal dead
-type: nil number string boolean table function thread userdata
-load: b t bt
-gc: collect stop restart count step setpause setstepmul isrunning
-os.execute: exit, signal
-io.seek: set cur end
-io.setvbuf: no full line
-io.type: file 'closed file'
-io.read: n a l L
-io.open: r w r+ w+ a+
-metamethods: index newindex mode call metatable tostring len gc eq lt le
-metamath: unm add sub mul div idiv mod pow concat band bor bxor bnot bshl bshr
-]]
 
 GN = {
 	integer = {},
@@ -41,7 +26,7 @@ GF = {}
 
 local function doboot()
 	return table.unpack(require('bootrt')(
-		'./rt/prelude.lua', './LuLPeg/lulpeg.lua',
+		'./rt/prelude.lua',
 		'./rt/astgen.lua', './rt/bcgen.lua',
 		'./rt/ast.lua', './rt/bc.lua', './rt/lex.lua'))
 end

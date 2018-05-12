@@ -109,7 +109,6 @@ local initPrelude = func(i32, function(f)
 		GS.lex, GF.lex0,
 		GS.ast, GF.ast0,
 		GS.bc, GF.bc0,
-		GS.lpeg, GF.lulpeg0,
 		GS.stdin, GF._stdin,
 		GS.stdout, GF._stdout,
 		GS.ioread, GF._ioread,

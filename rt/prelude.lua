@@ -490,7 +490,6 @@ local fakereqtbl = {
 	lex =  _luwa.lex,
 	astgen = _luwa.astgen,
 	bcgen = _luwa.bcgen,
-	['LuLPeg/lulpeg'] = _luwa.lpeg,
 }
 local fakereqcache = {}
 local fakereqenv

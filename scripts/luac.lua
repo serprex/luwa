@@ -13,8 +13,6 @@ local function pprintcore(x, dep, hist)
 		if type(v) == 'table' then
 			print(a .. tostring(k), v)
 			pprintcore(v, dep+1, hist)
-		elseif k == 'lex' and type(v) == 'string' then
-			print(a .. k, table.concat(table.pack(string.byte(v, 1, #v)), ','))
 		else
 			print(a .. tostring(k),v)
 		end
