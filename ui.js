@@ -38,9 +38,9 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		assert.equal(rt.mod.tblget(newt.val, newf.val), nil.val);
 		console.log("Tested newtbl/tblget/tblset. Next: string gc pressure");
 		let s = "0123456789", ss = [];
-		for (var i=0; i<10; i++) s += s;
-		for (var j=0; j<2; j++) {
-			for (var i=0; i<8; i++) {
+		for (let i=0; i<10; i++) s += s;
+		for (let j=0; j<2; j++) {
+			for (let i=0; i<8; i++) {
 				ss.push(rt.newstr(s));
 				console.log(rt.mem.buffer.byteLength, ss.map(x => x.val), Array.from(rt.handles).map(x => x.val));
 			}
@@ -78,8 +78,6 @@ document.getElementById("btnRt").addEventListener("click", (s, e) => {
 		rt.mod.init(main.val);
 		console.log(rt.mod.eval());
 		console.log(rt.mod.eval());
-	}).catch(err => {
-		console.log("ERR", err);
 	});
 });
 document.getElementById("btnGo").addEventListener("click", (s, e) => {

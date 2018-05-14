@@ -160,7 +160,7 @@ local Block = G.Block
 
 return function(lx, vals)
 	local res = {}
-	local i, ri = assert(Block(lx, 1, res, 1, vals))
+	local i = assert(Block(lx, 1, res, 1, vals))
 	assert(i > #lx)
 	return res[1]
 end
