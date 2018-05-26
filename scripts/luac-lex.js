@@ -53,7 +53,8 @@ function int2buf(x) {
 	const src = mkref(mod.newstr(srcbuf.length));
 	let mem8 = new Uint8Array(mem.buffer);
 	srcbuf.copy(mem8, src.val+13);
-	mod.lex(src.val);
+	mod.tmppush(src.val);
+	mod.lex();
 	const tokens = mkref(mod.nthtmp(8));
 	const values = mkref(mod.nthtmp(4));
 	mem8 = new Uint8Array(mem.buffer);

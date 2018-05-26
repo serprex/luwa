@@ -79,18 +79,15 @@ end)
 
 local CHZERO = string.byte('0')
 
-local lex = func(i32, void, function(f, src)
-	local i, ch, j, k, srclen, tlen = f:locals(i32, 6)
+local lex = func(void, function(f)
+	local src, i, ch, j, k, srclen, tlen = f:locals(i32, 7)
 	local temp64, temp642 = f:locals(i64, 2)
 	local double, flt10 = f:locals(f64, 2)
 
-	f:load(src)
+	f:i32(4)
+	f:call(nthtmp)
 	f:i32load(str.len)
 	f:store(srclen)
-
-	-- srcslot
-	f:load(src)
-	f:call(tmppush)
 
 	-- lexslot
 	f:i32(1011)
