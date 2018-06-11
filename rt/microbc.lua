@@ -70,9 +70,23 @@ ops[bc.LoadFunc] = Seq(
 	),
 	Push(LoadName('func'))
 )
+ops[bc.LoadVarg] = Seq(
+	StoreNamePtr('tmp', AllocateTemp(Arg(0))),
+	StoreNameInt('i', 0),
+	StoreNameInt('vlen', VargLen()),
+	StoreNamePtr('vptr', VargPtr()),
+	If(
+		Lt(LoadNameInt('vlen'), Arg(0)),
+		Seq(
+			StoreNameInt('vlen4', Mul(LoadNameInt('vlen'), Int(2))),
+			MemCpy4(LoadNamePtr('tmp'), LoadNamePtr('vptr'), LoadNameInt('vlen4')),
+			FillRange(Add(LoadNamePtr('tmp'), LoadNameInt('vlen4')), NilAtom, Mul(Sub(Arg(0), LoadNameInt('vlen')), Int(2)))
+		),
+		MemCpy4(LoadNamePtr('tmp'), LoadNamePtr('vptr'), Mul(Arg(0), Int(2)))
+	)
+)
 
--- TODO
-ops[bc.AppendVarg] = {}
+ops[bc.AppendVarg] = AppendRange(Pop(), VargPtr(), Arg(0))
 -- TODO
 ops[bc.Call] = Seq(
 	StoreNameInt('nret', Arg(0)),
@@ -82,7 +96,7 @@ ops[bc.Call] = Seq(
 	-- TODO StoreName 'func'
 	ForRange('i', Arg(1),
 		StoreNameInt(Add('rollingbase', Mul(Arg(LoadNameInt('i')), Int(4)))),
-		WriteDataframe(
+		WriteDataFrame(
 			Add(LoadNameInt('baseframe'), LoadNameInt('i')),
 			If(LoadNameInt('i'), 3, 1), -- type = i ? call : norm
 			Int(0), -- pc
@@ -93,7 +107,9 @@ ops[bc.Call] = Seq(
 			0, --  TODO calc locals
 			0 -- TODO calc frame
 		)
-	)
+	),
+	PushObjFrameFromFunc(LoadName('func')),
+	SetPc(Int(0))
 )
 
 ops[bc.CmpEq] = Seq(
