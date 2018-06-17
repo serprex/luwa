@@ -112,6 +112,22 @@ ops[bc.Call] = Seq(
 	SetPc(Int(0))
 )
 
+ops[bc.Not] = Push(
+	If(Truthy(Pop()),
+		FalseAtom,
+		TrueAtom)
+)
+
+ops[bc.TblNew] = Push(NewTbl())
+ops[bc.TblAdd] = Seq(
+	StoreName('v', Pop()),
+	StoreName('k', Pop()),
+	StoreName('tbl', Pop()),
+	TblSet(LoadName('tbl'), LoadName('k'), LoadName('v')),
+	Pop(),
+	Pop()
+)
+
 ops[bc.CmpEq] = Seq(
 	StoreName('a', Pop()),
 	StoreName('b', Pop()),
