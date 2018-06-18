@@ -25,6 +25,9 @@ local Push = mkMop('Push')
 local Truthy = mkMop('Truthy')
 local CloneFunc = mkMop('CloneFunc')
 local ObjMetalessEq = mkMop('ObjMetalessEq')
+local IntObjFromInt = mkMop('IntObjFromInt')
+local LoadStrLen = mkOp('LoadStrLen')
+local Error = mkOp('Error')
 local NopAtom = Nop()
 local NilAtom = Int(0)
 local FalseAtom = Int(4)
@@ -54,11 +57,11 @@ ops[bc.Jmp] = SetPc(Arg(0))
 ops[bc.JifNot] = If(
 	Truthy(Pop()),
 	SetPc(Arg(0)),
-	Nop()
+	NopAtom
 )
 ops[bc.Jif] = If(
 	Truthy(Pop()),
-	Nop(),
+	NopAtom
 	SetPc(Arg(0))
 )
 ops[bc.LoadFunc] = Seq(
@@ -66,7 +69,7 @@ ops[bc.LoadFunc] = Seq(
 	If(
 		Arg(0),
 		Store(Add(LoadName('func'), functy.frees), FillFromStack(NewVec(Arg(0)), Arg(0))),
-		Nop()
+		NopAtom
 	),
 	Push(LoadName('func'))
 )
@@ -116,6 +119,23 @@ ops[bc.Not] = Push(
 	If(Truthy(Pop()),
 		FalseAtom,
 		TrueAtom)
+)
+
+ops[bc.Len] = Seq(
+	StoreName('a', Pop()),
+	StoreNameInt('aty', Type(LoadName('a'))),
+	If(Eq(LoadNameInt('aty'), Int(types.str)),
+		Push(IntObjFromInt(LoadStrLen(LoadName('a')))),
+		If(Eq(LoadNameInt('aty'), Int(types.tbl)),
+			Seq(
+				StoreName('ameta', Meta(LoadName('a'))),
+				If(LoadName('ameta'),
+					CallMetaMethod('__len'), -- TODO helper function this
+					NopAtom)
+			),
+			Error()
+		)
+	)
 )
 
 ops[bc.TblNew] = Push(NewTbl())
