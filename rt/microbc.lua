@@ -202,7 +202,7 @@ mkOp(bc.Len, function(f)
 			f:If(
 				f:Eq(aty, f:Int(types.tbl)),
 				function()
-					local ameta = Meta(a)
+					local ameta = f:Meta(a)
 					f:If(ameta,
 						function() f:CallMetaMethod('__len') end -- TODO helper function this
 					)
@@ -231,22 +231,95 @@ mkOp(bc.CmpEq, function(f)
 	f:If(
 		f:ObjMetalessEq(a, b),
 		function() f:Push(f:True()) end,
-		f:If(
-			f:And(
-				f:Eq(f:Type(a), f:Int(types.tbl)),
-				f:Eq(f:Type(b), f:Int(types.tbl))
-			),
-			function()
-				f:If(
-					f:Eq(f:Meta(a), f:Meta(b)),
-					function() f:Push(f:True()) end, -- CALL META
-					function() f:Push(f:False()) end
-				)
-			end,
-			function() f:Push(f:False()) end
-		)
+		function()
+			f:If(
+				f:And(
+					f:Eq(f:Type(a), f:Int(types.tbl)),
+					f:Eq(f:Type(b), f:Int(types.tbl))
+				),
+				function()
+					f:If(
+						f:Eq(f:Meta(a), f:Meta(b)),
+						function() f:Push(f:True()) end, -- CALL META
+						function() f:Push(f:False()) end
+					)
+				end,
+				function() f:Push(f:False()) end
+			)
+		end
 	)
 end)
+
+function cmpop(op, cmpop, strlogic)
+	mkOp(op, function(f)
+		local a = f:Pop()
+		local b = f:Pop()
+		f:Typeck({a, b},
+			{
+				types.int,
+				types.int,
+				function()
+					f:If(
+						f[cmpop](f, f:LoadInt(a), f:LoadInt(b)),
+						function() f:Push(f:True()) end,
+						function() f:Push(f:False()) end
+					)
+				end,
+			},
+			{
+				types.float,
+				types.float,
+				function()
+					f:If(
+						f[cmpop](f, f:LoadFlt(a), f:LoadFlt(b)),
+						function() f:Push(f:True()) end,
+						function() f:Push(f:False()) end
+					)
+				end,
+			},
+			{
+				types.str,
+				types.str,
+				function()
+					f:If(
+						strlogic(f, f:StrCmp(f, a, b)),
+						function() f:Push(f:True()) end,
+						function() f:Push(f:False()) end
+					)
+				end,
+			},
+			{
+				types.int,
+				types.float,
+				function()
+					f:If(
+						f[cmpop](f, f:Int2Flt(f:LoadInt(a)), f:LoadFlt(b)),
+						function() f:Push(f:True()) end,
+						function() f:Push(f:False()) end
+					)
+				end,
+			},
+			{
+				types.float,
+				types.int,
+				function()
+					f:If(
+						f[cmpop](f, f:LoadFlt(a), f:Int2Flt(f:LoadInt(b))),
+						function() f:Push(f:True()) end,
+						function() f:Push(f:False()) end
+					)
+				end,
+			},
+			function()
+				-- TODO metamethod fallbacks, error otherwise
+			end
+		)
+	end)
+end
+cmpop(bc.CmpLe, 'Le', function(f, cmp) f:Le(cmp, f:Int(0)) end)
+cmpop(bc.CmpLt, 'Lt', function(f, cmp) f:Lt(cmp, f:Int(0)) end)
+cmpop(bc.CmpGe, 'Ge', function(f, cmp) f:Ge(cmp, f:Int(0)) end)
+cmpop(bc.CmpGt, 'Gt', function(f, cmp) f:Gt(cmp, f:Int(0)) end)
 
 return {
 	mops = mops,
