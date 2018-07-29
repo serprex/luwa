@@ -238,9 +238,22 @@ mkOp(bc.CmpEq, function(f)
 					f:Eq(f:Type(b), f:Int(types.tbl))
 				),
 				function()
+					local amt = f:Meta(a)
+					local bmt = f:Meta(b)
 					f:If(
-						f:Eq(f:Meta(a), f:Meta(b)),
-						function() f:Push(f:True()) end, -- CALL META
+						f:And(amt, bmt),
+						function()
+							local amteq = f:TblGet(amt, f:Str("__eq"))
+							local bmteq = f:TblGet(bmt, f:Str("__eq"))
+							f:If(
+								f:Eq(amteq, bmteq),
+								function()
+									-- TODO call as boolret
+									f:CallMetaMethod('__eq') -- TODO helper function this
+								end, -- CALL META
+								function() f:Push(f:False()) end
+							)
+						end,
 						function() f:Push(f:False()) end
 					)
 				end,
