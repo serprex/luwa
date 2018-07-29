@@ -43,8 +43,7 @@ function mopmt__index:True()
 	return self:Int(8)
 end
 local ops = {}
-mkOp(bc.Nop, function()
-end)
+mkOp(bc.Nop, function() end)
 mkOp(bc.LoadNil, function(f)
 	f:Push(f:Nil())
 end)
@@ -117,7 +116,31 @@ mkOp(bc.Jif, function(f)
 	f:If(
 		f:Truthy(f:Pop()),
 		function() end,
-		f:SetPc(f:Arg(0))
+		function()
+			f:SetPc(f:Arg(0))
+		end
+	)
+end)
+mkOp(bc.JifNotOrPop, function(f)
+	f:If(
+		f:Truthy(f:Peek()),
+		function()
+			f:SetPc(f:Arg(0))
+		end,
+		function()
+			f:Pop()
+		end
+	)
+end)
+mkOp(bc.JifOrPop, function(f)
+	f:If(
+		f:Truthy(f:Peek()),
+		function()
+			f:Pop()
+		end,
+		function()
+			f:SetPc(f:Arg(0))
+		end
 	)
 end)
 mkOp(bc.LoadFunc, function(f)
@@ -204,7 +227,8 @@ mkOp(bc.Len, function(f)
 				function()
 					local ameta = f:Meta(a)
 					f:If(ameta,
-						function() f:CallMetaMethod('__len') end -- TODO helper function this
+						function() f:CallMetaMethod('__len') end, -- TODO helper function this
+						function() f:Push(f:IntObjFromInt(f:LoadTblLen(a))) end
 					)
 				end,
 				function() f:Error() end
@@ -333,6 +357,22 @@ cmpop(bc.CmpLe, 'Le', function(f, cmp) f:Le(cmp, f:Int(0)) end)
 cmpop(bc.CmpLt, 'Lt', function(f, cmp) f:Lt(cmp, f:Int(0)) end)
 cmpop(bc.CmpGe, 'Ge', function(f, cmp) f:Ge(cmp, f:Int(0)) end)
 cmpop(bc.CmpGt, 'Gt', function(f, cmp) f:Gt(cmp, f:Int(0)) end)
+
+-- bc.Add
+-- bc.Sub
+-- bc.Mul
+-- bc.Div
+-- bc.IDiv
+-- bc.Pow
+-- bc.Mod
+-- bc.BAnd
+-- bc.BOr
+-- bc.BXor
+-- bc.Shr
+-- bc.Shl
+-- bc.Concat
+-- bc.Idx
+-- bc.Append
 
 return {
 	mops = mops,
