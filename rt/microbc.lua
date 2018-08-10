@@ -237,6 +237,45 @@ mkOp(bc.Len, function(f)
 	)
 end)
 
+mkOp(bc.Neg, function(f)
+	local a = f:Pop()
+	local aty = f:Type(a)
+	f:Typeck({a},
+		{
+			types.int,
+			function ()
+				f:NegateInt(a)
+			end,
+		}, {
+			types.float,
+			function ()
+				f:NegateFloat(a)
+			end,
+		},
+		{
+			types.str,
+			function ()
+				f:NegateFloat(f:ParseFloat(a))
+			end,
+		},
+		{
+			types.tbl,
+			function ()
+				local ameta = f:Meta(a)
+				f:If(ameta,
+					function() f:CallMetaMethod('__neg') end, -- TODO helper function this
+					function()
+						-- TODO error
+					end
+				)
+			end,
+		}
+		function()
+			-- TODO error
+		end
+	)
+end)
+
 mkOp(bc.TblNew, function(f)
 	f:Push(f:NewTbl())
 end)
