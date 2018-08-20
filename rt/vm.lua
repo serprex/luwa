@@ -19,7 +19,7 @@ local _obj = require 'obj'
 local ops = require 'bc'
 
 local rt = require 'rt'
-
+local microbc = require 'microbc'
 
 local dataframe = {
 	type = str.base + 0,
@@ -191,6 +191,36 @@ param0 = func(i32, function(f)
 	f:add()
 end)
 
+mopcomp = {}
+function defMop(opName, func)
+	mopcomp[microbc.mops[opName]] = func
+end
+function walk(f, ast)
+	mopcomp[ast.op](f, ast)
+end
+function compop(f, op)
+	return function(scopes)
+		local opdef = microbc.ops[op]
+		for i=1,#opdef.ops do
+			walk(f, opdef.ops[i])
+		end
+		f:br(scopes.nop)
+	end
+end
+
+defMop('Nop', function()
+end)
+defMop('Int', function(f, mop)
+	f:i32(mop[1])
+end)
+defMop('Load', function(f, mop)
+	walk(mop[1])
+	f:i32load(0)
+end)
+defMop('Push', function(f, mop)
+	f:call(tmppush)
+end)
+
 local eval = func(i32, function(f)
 	local a, b, c, d, e,
 		meta_callty, meta_retb, meta_retc, meta_key, meta_off,
@@ -248,19 +278,10 @@ local eval = func(i32, function(f)
 		f:add()
 		f:i32load8u(str.base - 1)
 		f:call(rt.echo)
-	end, ops.LoadNil, function(scopes)
-		f:i32(NIL)
-		f:call(tmppush)
-		f:br(scopes.nop)
-	end, ops.LoadFalse, function(scopes)
-		f:i32(FALSE)
-		f:call(tmppush)
-		f:br(scopes.nop)
-	end, ops.LoadTrue, function(scopes)
-		f:i32(TRUE)
-		f:call(tmppush)
-		f:br(scopes.nop)
-	end, ops.CmpEq, function(scopes)
+	end, ops.LoadNil, compop(f, ops.LoadNil),
+	ops.LoadFalse, compop(f, ops.LoadFalse),
+	ops.LoadTrue, compop(f, ops.LoadTrue),
+	ops.CmpEq, function(scopes)
 		f:i32(8)
 		f:call(nthtmp)
 		f:tee(c)

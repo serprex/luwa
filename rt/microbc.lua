@@ -32,7 +32,6 @@ mkMop('ObjMetalessEq')
 mkMop('IntObjFromInt')
 mkMop('LoadStrLen')
 mkMop('Error')
-mkMop('Macro')
 function mopmt__index:Nil()
 	return self:Int(0)
 end
