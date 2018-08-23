@@ -35,6 +35,10 @@ mkMop('Int', {
 	arg = {'Lint'},
 	out = 'i32',
 })
+mkMop('Str', {
+	arg = {'Lstr'},
+	out = 'Pstr',
+})
 mkMop('Load', {
 	arg = {},
 	out = {},
@@ -59,7 +63,10 @@ end)
 mkMop('In')
 mkMop('Arg')
 mkMop('Push')
-mkMop('Truthy')
+mkMop('Truthy', {
+	arg = {'obj'},
+	out = 'i32',
+})
 mkMop('CloneFunc')
 mkMop('ObjMetalessEq')
 mkMop('IntObjFromInt')
@@ -75,7 +82,7 @@ function mopmt__index:True()
 	return self:Int(8)
 end
 local ops = {}
-mkOp(bc.Nop, function() end)
+mkOp(bc.Nop, function(f) end)
 mkOp(bc.LoadNil, function(f)
 	f:Push(f:Nil())
 end)
@@ -139,7 +146,7 @@ end)
 mkOp(bc.JifNot, function(f)
 	f:If(
 		f:Truthy(f:Pop()),
-		function()
+		function(f)
 			f:SetPc(f:Arg(0))
 		end
 	)
@@ -147,8 +154,8 @@ end)
 mkOp(bc.Jif, function(f)
 	f:If(
 		f:Truthy(f:Pop()),
-		function() end,
-		function()
+		function(f) end,
+		function(f)
 			f:SetPc(f:Arg(0))
 		end
 	)
@@ -156,10 +163,10 @@ end)
 mkOp(bc.JifNotOrPop, function(f)
 	f:If(
 		f:Truthy(f:Peek()),
-		function()
+		function(f)
 			f:SetPc(f:Arg(0))
 		end,
-		function()
+		function(f)
 			f:Pop()
 		end
 	)
@@ -167,10 +174,10 @@ end)
 mkOp(bc.JifOrPop, function(f)
 	f:If(
 		f:Truthy(f:Peek()),
-		function()
+		function(f)
 			f:Pop()
 		end,
-		function()
+		function(f)
 			f:SetPc(f:Arg(0))
 		end
 	)
@@ -179,7 +186,7 @@ mkOp(bc.LoadFunc, function(f)
 	local func = f:CloneFunc(f:Const(f:Arg(1)))
 	f:If(
 		f:Arg(0),
-		function()
+		function(f)
 			f:Store(
 				f:Add(func, f:Int(functy.frees)),
 				f:FillFromStack(f:NewVec(f:Arg(0)), f:Arg(0))
@@ -194,12 +201,12 @@ mkOp(bc.LoadVarg, function(f)
 	local vptr = VargPtr()
 	f:If(
 		f:Lt(vlen, f:Arg(0)),
-		function()
+		function(f)
 			local vlen4 = f:Mul(vlen, f:Int(2))
 			f:MemCpy4(tmp, vptr, vlen4)
 			f:FillRange(f:Add(tmp, vlen4), NilAtom, f:Mul(f:Sub(f:Arg(0), vlen), f:Int(2)))
 		end,
-		function()
+		function(f)
 			f:MemCpy4(tmp, vptr, f:Mul(f:Arg(0), f:Int(2)))
 		end
 	)
@@ -220,10 +227,10 @@ mkOp(bc.Call, function(f)
 		WriteDataFrame(
 			f:Add(baseframe, i),
 			f:If(i,
-				function()
+				function(f)
 					f:Int(3)
 				end,
-				function()
+				function(f)
 					f:Int(1)
 				end), -- type = i ? call : norm
 			f:Int(0), -- pc
@@ -243,8 +250,8 @@ end)
 mkOp(bc.Not, function(f)
 	f:Push(
 		f:If(f:Truthy(f:Pop()),
-			function() f:False() end,
-			function() f:True() end)
+			function(f) return f:False() end,
+			function(f) return f:True() end)
 	)
 end)
 
@@ -253,18 +260,18 @@ mkOp(bc.Len, function(f)
 	local aty = f:Type(a)
 	f:If(
 		f:Eq(aty, f:Int(types.str)),
-		function() f:Push(f:IntObjFromInt(f:LoadStrLen(a))) end,
-		function()
+		function(f) f:Push(f:IntObjFromInt(f:LoadStrLen(a))) end,
+		function(f)
 			f:If(
 				f:Eq(aty, f:Int(types.tbl)),
-				function()
+				function(f)
 					local ameta = f:Meta(a)
 					f:If(ameta,
-						function() f:CallMetaMethod('__len') end, -- TODO helper function this
-						function() f:Push(f:IntObjFromInt(f:LoadTblLen(a))) end
+						function(f) f:CallMetaMethod('__len') end, -- TODO helper function this
+						function(f) f:Push(f:IntObjFromInt(f:LoadTblLen(a))) end
 					)
 				end,
-				function() f:Error() end
+				function(f) f:Error() end
 			)
 		end
 	)
@@ -276,34 +283,34 @@ mkOp(bc.Neg, function(f)
 	f:Typeck({a},
 		{
 			types.int,
-			function ()
+			function(f)
 				f:NegateInt(a)
 			end,
 		}, {
 			types.float,
-			function ()
+			function(f)
 				f:NegateFloat(a)
 			end,
 		},
 		{
 			types.str,
-			function ()
+			function(f)
 				f:NegateFloat(f:ParseFloat(a))
 			end,
 		},
 		{
 			types.tbl,
-			function ()
+			function(f)
 				local ameta = f:Meta(a)
 				f:If(ameta,
-					function() f:CallMetaMethod('__neg') end, -- TODO helper function this
-					function()
+					function(f) f:CallMetaMethod('__neg') end, -- TODO helper function this
+					function(f)
 						-- TODO error
 					end
 				)
 			end,
-		}
-		function()
+		},
+		function(f)
 			-- TODO error
 		end
 	)
@@ -326,34 +333,34 @@ mkOp(bc.CmpEq, function(f)
 	local b = f:Pop()
 	f:If(
 		f:ObjMetalessEq(a, b),
-		function() f:Push(f:True()) end,
-		function()
+		function(f) f:Push(f:True()) end,
+		function(f)
 			f:If(
 				f:And(
 					f:Eq(f:Type(a), f:Int(types.tbl)),
 					f:Eq(f:Type(b), f:Int(types.tbl))
 				),
-				function()
+				function(f)
 					local amt = f:Meta(a)
 					local bmt = f:Meta(b)
 					f:If(
 						f:And(amt, bmt),
-						function()
+						function(f)
 							local amteq = f:TblGet(amt, f:Str("__eq"))
 							local bmteq = f:TblGet(bmt, f:Str("__eq"))
 							f:If(
 								f:Eq(amteq, bmteq),
-								function()
+								function(f)
 									-- TODO call as boolret
 									f:CallMetaMethod('__eq') -- TODO helper function this
 								end, -- CALL META
-								function() f:Push(f:False()) end
+								function(f) f:Push(f:False()) end
 							)
 						end,
-						function() f:Push(f:False()) end
+						function(f) f:Push(f:False()) end
 					)
 				end,
-				function() f:Push(f:False()) end
+				function(f) f:Push(f:False()) end
 			)
 		end
 	)
@@ -367,59 +374,59 @@ function cmpop(op, cmpop, strlogic)
 			{
 				types.int,
 				types.int,
-				function()
-					f:If(
+				function(f)
+					f:Push(f:If(
 						f[cmpop](f, f:LoadInt(a), f:LoadInt(b)),
-						function() f:Push(f:True()) end,
-						function() f:Push(f:False()) end
-					)
+						function(f) return f:True() end,
+						function(f) return f:False() end
+					))
 				end,
 			},
 			{
 				types.float,
 				types.float,
-				function()
-					f:If(
+				function(f)
+					f:Push(f:If(
 						f[cmpop](f, f:LoadFlt(a), f:LoadFlt(b)),
-						function() f:Push(f:True()) end,
-						function() f:Push(f:False()) end
-					)
+						function(f) return f:True() end,
+						function(f) return f:False() end
+					))
 				end,
 			},
 			{
 				types.str,
 				types.str,
-				function()
-					f:If(
-						strlogic(f, f:StrCmp(f, a, b)),
-						function() f:Push(f:True()) end,
-						function() f:Push(f:False()) end
-					)
+				function(f)
+					f:Push(f:If(
+						strlogic(f, f:StrCmp(a, b)),
+						function(f) return f:True() end,
+						function(f) return f:False() end
+					))
 				end,
 			},
 			{
 				types.int,
 				types.float,
-				function()
-					f:If(
+				function(f)
+					f:Push(f:If(
 						f[cmpop](f, f:Int2Flt(f:LoadInt(a)), f:LoadFlt(b)),
-						function() f:Push(f:True()) end,
-						function() f:Push(f:False()) end
-					)
+						function(f) return f:True() end,
+						function(f) return f:False() end
+					))
 				end,
 			},
 			{
 				types.float,
 				types.int,
-				function()
-					f:If(
+				function(f)
+					f:Push(f:If(
 						f[cmpop](f, f:LoadFlt(a), f:Int2Flt(f:LoadInt(b))),
-						function() f:Push(f:True()) end,
-						function() f:Push(f:False()) end
-					)
+						function(f) f:True() end,
+						function(f) f:False() end
+					))
 				end,
 			},
-			function()
+			function(f)
 				-- TODO metamethod fallbacks, error otherwise
 			end
 		)
