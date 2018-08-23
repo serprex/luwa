@@ -4,25 +4,58 @@ local types = alloc.types
 local mops = {}
 local mopmt__index = {}
 local mopmt = { __index = mopmt__index }
-local function mkMop(op)
+local function mkMop(op, sig)
 	local id = #mops+1
-	mops[id] = op
+	mops[id] = {
+		op = op,
+		sig = sig,
+	}
 	mops[op] = id
 	mopmt__index[op] = function(f, ...)
-		f.ops[#f.ops] = { op = id, ... }
+		local instr = { op = id, ... }
+		for i = 1, #instr do
+			local x = instr[i]
+			if type(x) == 'function' then
+				local g = setmetatable({ op = -1, ops = {} }, mopmt)
+				x(g)
+				instr[i] = g
+			end
+		end
+		f.ops[#f.ops + 1] = instr
+		return instr
 	end
 end
 local function mkOp(op, func)
-	local f = setmetatable({}, mopmt)
+	local f = setmetatable({ ops = {} }, mopmt)
 	func(f)
 	ops[op] = f
 end
-mkMop('Nop')
-mkMop('Int')
-mkMop('Load')
-mkMop('Store')
-mkMop('Eq')
-mkMop('If')
+mkMop('Nop', {})
+mkMop('Int', {
+	arg = {'Lint'},
+	out = 'i32',
+})
+mkMop('Load', {
+	arg = {},
+	out = {},
+})
+mkMop('Store', {
+	arg = { 'i32', 'i32' },
+})
+mkMop('Eq', {
+	arg = { 'i32', 'i32' },
+	out = 'i32',
+})
+-- TODO need to work out concept of 'deferred' block in arg sig
+-- ie we're mixing up idea of input vs argument
+mkMop('If', function(args)
+	local _then, _else = out(args[2]), args[2] and out(args[2])
+	assert(_then == _else, "If's branches with unequal type")
+	return {
+		arg = { 'i32' },
+		out = _then,
+	}
+end)
 mkMop('In')
 mkMop('Arg')
 mkMop('Push')
@@ -206,6 +239,7 @@ mkOp(bc.Call, function(f)
 	f:SetPc(f:Int(0))
 end)
 
+-- TODO replace f:If with something that'll compile to wasm's select
 mkOp(bc.Not, function(f)
 	f:Push(
 		f:If(f:Truthy(f:Pop()),
