@@ -36,14 +36,34 @@ local function mkType(name, obj)
 	mtypes[name] = obj
 	return obj
 end
-mkType('Lint', { type = 'obj', otype = types.int })
-mkType('Lfloat', { type = 'obj', otype = types.float })
-mkType('Lsingle', { type = 'obj', otype = types.single })
-mkType('Lstr', { type = 'obj', otype = types.str })
-mkType('Lvec', { type = 'obj', otype = types.vec })
-mkType('Lbuf', { type = 'obj', otype = types.buf })
-mkType('Lfuncty', { type = 'obj', otype = types.functy })
-mkType('Lcoro', { type = 'obj', otype = types.coro })
+mkType('Lint', { type = 'const', ltype = 'number', mtype = 'integer' })
+mkType('Lfloat', { type = 'const', ltype = 'number', mtype = 'float' })
+mkType('Lnumber', { type = 'const', ltype = 'number' })
+mkType('Lstr', { type = 'const', ltype = 'string' })
+mkType('Ltbl', { type = 'const', ltype = 'table' })
+mkType('int', { type = 'obj', otype = types.int })
+mkType('float', { type = 'obj', otype = types.float })
+mkType('single', { type = 'obj', otype = types.single })
+mkType('tbl', { type = 'obj', otype = types.tbl, layout = {
+	arr = 'vec',
+	hash = 'vec',
+	meta = {'single', 'tbl'},
+}})
+mkType('str', { type = 'obj', otype = types.str })
+mkType('vec', { type = 'obj', otype = types.vec })
+mkType('buf', { type = 'obj', otype = types.buf, layout = {
+	ptr = {'str', 'vec'},
+}})
+mkType('functy', { type = 'obj', otype = types.functy, layout = {
+	bc = 'str',
+	consts = {'single', 'vec'},
+	frees = {'single', 'vec'},
+}})
+mkType('coro', { type = 'obj', otype = types.coro, layout = {
+	caller = {'single', 'coro'},
+	stack = 'buf',
+	data = 'buf',
+}})
 mkType('i32', { type = 'i32' })
 mkType('i64', { type = 'i64' })
 mkType('f32', { type = 'f32' })
