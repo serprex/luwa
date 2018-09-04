@@ -1,6 +1,7 @@
 local bc = require 'bc'
 local alloc = require 'alloc'
 local types = alloc.types
+local mtypes = {}
 local mops = {}
 local mopmt__index = {}
 local mopmt = { __index = mopmt__index }
@@ -30,6 +31,23 @@ local function mkOp(op, func)
 	func(f)
 	ops[op] = f
 end
+local function mkType(name, obj)
+	obj.name = name
+	mtypes[name] = obj
+	return obj
+end
+mkType('Lint', { type = 'obj', otype = types.int })
+mkType('Lfloat', { type = 'obj', otype = types.float })
+mkType('Lsingle', { type = 'obj', otype = types.single })
+mkType('Lstr', { type = 'obj', otype = types.str })
+mkType('Lvec', { type = 'obj', otype = types.vec })
+mkType('Lbuf', { type = 'obj', otype = types.buf })
+mkType('Lfuncty', { type = 'obj', otype = types.functy })
+mkType('Lcoro', { type = 'obj', otype = types.coro })
+mkType('i32', { type = 'i32' })
+mkType('i64', { type = 'i64' })
+mkType('f32', { type = 'f32' })
+mkType('f64', { type = 'f64' })
 mkMop('Nop', {})
 mkMop('Int', {
 	arg = {'Lint'},
