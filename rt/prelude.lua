@@ -185,14 +185,17 @@ function string:len()
 	return #self
 end
 function smtfb(meth, x, y)
-	local mt = getmetatable(y)
-	if mt then
-		local fn = mt[meth]
-		if fn then
-			return fn(x, y)
+	local yt = _type(y)
+	if yt ~= 'string' then
+		local mt = getmetatable(y)
+		if mt and mt then
+			local fn = mt[meth]
+			if fn then
+				return fn(x, y)
+			end
 		end
 	end
-	return error("attempt to " .. meth .. " a '" .. _type(x) .. "' with a '" .. _type(y) .. "'")
+	return error("attempt to " .. meth .. " a '" .. _type(x) .. "' with a '" .. yt .. "'")
 end
 function string.__add(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
