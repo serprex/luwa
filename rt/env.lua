@@ -122,7 +122,8 @@ local initPrelude = func(i32, function(f)
 		GS.fn_set_bc, GF._fn_set_bc,
 		GS.fn_set_frees, GF._fn_set_frees,
 		GS.fn_set_consts, GF._fn_set_consts,
-		GS.vec_new, GF._vec_new)
+		GS.vec_new, GF._vec_new,
+		GS.random, GF._random)
 
 	addmod(GS.coroutine,
 		GS.create, GF.coro_create,

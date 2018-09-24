@@ -155,7 +155,7 @@ local image = M.data(memory, addStatics(4, {
 	-- begin _luwa fields
 	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc', 'lpeg',
 	'stdin', 'stdout', 'ioread', 'iowrite', 'ioflush', 'ioclose',
-	'iosetvbuf', 'vec_new',
+	'iosetvbuf', 'vec_new', 'random',
 	'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
 	'fn_set_bc', 'fn_set_frees', 'fn_set_consts',
 	{'error', 2, false, '\x1f\x07'},
@@ -189,6 +189,7 @@ local image = M.data(memory, addStatics(4, {
 	{'_fn_set_consts', 2, false, '\x1f\x18\x0c'},
 	{'_vec_new', 1, false, '\x1f\x19\x0c'},
 	{'_lex', 1, false, '\x1f\x1a\x0c'},
+	{'_random', 1, false, '\x1f\x1e\x0c'},
 	(BOOTRT or doboot)()
 ))
 
@@ -205,6 +206,7 @@ local asin = importfunc('', 'asin', f64, f64)
 local acos = importfunc('', 'acos', f64, f64)
 local atan = importfunc('', 'atan', f64, f64)
 local atan2 = importfunc('', 'atan2', f64, f64, f64)
+local random = importfunc('', 'random', f64)
 local exp = importfunc('', 'exp', f64, f64)
 local log = importfunc('', 'log', f64, f64)
 

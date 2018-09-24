@@ -154,7 +154,7 @@ end
 function math.rad(x)
 	return x * (0x1.921fb54442d18p1/180.)
 end
-local randomseed = 1
+local randomseed = 1 + math_floor(_luwa.random() * 0x7ffffffffffffff7)
 function math.random()
 	-- xorshift* from wikipedia
 	randomseed = randomseed ~ (randomseed>>12)
@@ -183,6 +183,80 @@ end
 function string:len()
 	_assert(_type(self) == "string", "bad argument #1 to 'len' (string expected)")
 	return #self
+end
+function smtfb(meth, x, y)
+	local mt = getmetatable(y)
+	if mt then
+		local fn = mt[meth]
+		if fn then
+			return fn(x, y)
+		end
+	end
+	return error("attempt to " .. meth .. " a '" .. _type(x) .. "' with a '" .. _type(y) .. "'")
+end
+function string.__add(x, y)
+	local nx, ny = tonumber(x), tonumber(y)
+	if nx ~= nil and ny ~= nil then
+		return nx + ny
+	else
+		return smtfb('__add', x, y)
+	end
+end
+function string.__sub(x, y)
+	local nx, ny = tonumber(x), tonumber(y)
+	if nx ~= nil and ny ~= nil then
+		return nx - ny
+	else
+		return smtfb('__sub', x, y)
+	end
+end
+function string.__mul(x, y)
+	local nx, ny = tonumber(x), tonumber(y)
+	if nx ~= nil and ny ~= nil then
+		return nx * ny
+	else
+		return smtfb('__mul', x, y)
+	end
+end
+function string.__mod(x, y)
+	local nx, ny = tonumber(x), tonumber(y)
+	if nx ~= nil and ny ~= nil then
+		return nx % ny
+	else
+		return smtfb('__mod', x, y)
+	end
+end
+function string.__pow(x, y)
+	local nx, ny = tonumber(x), tonumber(y)
+	if nx ~= nil and ny ~= nil then
+		return nx ^ ny
+	else
+		return smtfb('__pow', x, y)
+	end
+end
+function string.__div(x, y)
+	local nx, ny = tonumber(x), tonumber(y)
+	if nx ~= nil and ny ~= nil then
+		return nx / ny
+	else
+		return smtfb('__div', x, y)
+	end
+end
+function string.__idiv(x, y)
+	local nx, ny = tonumber(x), tonumber(y)
+	if nx ~= nil and ny ~= nil then
+		return nx // ny
+	else
+		return smtfb('__idiv', x, y)
+	end
+end
+function string:__unm()
+	local nx = tonumber(self)
+	if nx ~= nil then
+		return -nx
+	else
+		return error("attempt to unm a 'string'")
+	end
 end
 
 utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
