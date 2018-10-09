@@ -38,7 +38,6 @@ local function mkType(name, obj)
 end
 mkType('Lint', { type = 'const', ltype = 'number', mtype = 'integer' })
 mkType('Lfloat', { type = 'const', ltype = 'number', mtype = 'float' })
-mkType('Lnumber', { type = 'const', ltype = 'number' })
 mkType('Lstr', { type = 'const', ltype = 'string' })
 mkType('Ltbl', { type = 'const', ltype = 'table' })
 mkType('int', { type = 'obj', otype = types.int })
@@ -75,7 +74,7 @@ mkMop('Int', {
 })
 mkMop('Str', {
 	arg = {'Lstr'},
-	out = 'Pstr',
+	out = 'str',
 })
 mkMop('Load', {
 	arg = {},
@@ -384,8 +383,8 @@ mkOp(bc.CmpEq, function(f)
 					f:If(
 						f:And(amt, bmt),
 						function(f)
-							local amteq = f:TblGet(amt, f:Str("__eq"))
-							local bmteq = f:TblGet(bmt, f:Str("__eq"))
+							local amteq = f:TblGet(amt, f:Str('__eq'))
+							local bmteq = f:TblGet(bmt, f:Str('__eq'))
 							f:If(
 								f:Eq(amteq, bmteq),
 								function(f)
@@ -436,7 +435,7 @@ function cmpop(op, cmpop, strlogic)
 				types.str,
 				function(f)
 					f:Push(f:If(
-						strlogic(f, f:StrCmp(a, b)),
+						f[cmpop](f, f:StrCmp(a, b), f:Int(0)),
 						function(f) return f:True() end,
 						function(f) return f:False() end
 					))
@@ -470,23 +469,139 @@ function cmpop(op, cmpop, strlogic)
 		)
 	end)
 end
-cmpop(bc.CmpLe, 'Le', function(f, cmp) f:Le(cmp, f:Int(0)) end)
-cmpop(bc.CmpLt, 'Lt', function(f, cmp) f:Lt(cmp, f:Int(0)) end)
-cmpop(bc.CmpGe, 'Ge', function(f, cmp) f:Ge(cmp, f:Int(0)) end)
-cmpop(bc.CmpGt, 'Gt', function(f, cmp) f:Gt(cmp, f:Int(0)) end)
+cmpop(bc.CmpLe, 'Le')
+cmpop(bc.CmpLt, 'Lt')
+cmpop(bc.CmpGe, 'Ge')
+cmpop(bc.CmpGt, 'Gt')
 
--- bc.Add
--- bc.Sub
--- bc.Mul
--- bc.Div
--- bc.IDiv
--- bc.Pow
--- bc.Mod
--- bc.BAnd
--- bc.BOr
--- bc.BXor
--- bc.Shr
--- bc.Shl
+function binmathop(op, floatlogic, intlogic, metamethod)
+	mkOp(op, function(f)
+		local a = f:Pop()
+		local b = f:Pop()
+		f:Typeck({a, b},
+		{
+			types.int,
+			types.int,
+			function(f)
+				f:Push(intlogic(f, f:LoadInt(a), f:LoadInt(b)))
+			end
+		},{
+			types.float,
+			types.float,
+			function(f)
+				f:Push(floatlogic(f, f:LoadFlt(a), f:LoadFlt(b)))
+			end
+		},{
+			types.int,
+			types.float,
+			function(f)
+				f:Push(floatlogic(f, f:Int2Flt(f:LoadInt(a)), f:LoadFlt(b)))
+			end
+		},{
+			types.float,
+			types.int,
+			function(f)
+				f:Push(floatlogic(f, f:LoadFlt(a), f:Int2Flt(f:LoadInt(b))))
+			end
+		})
+	end)
+end
+function binmathop_mono(op, mop, metamethod)
+	function logic(f, a, b)
+		return f[mop](a, b)
+	end
+	return binmathop(op, logic, logic, metamethod)
+end
+binmathop_mono(bc.Add, 'Add', '__add')
+binmathop_mono(bc.Sub, 'Sub', '__sub')
+binmathop_mono(bc.Mul, 'Mul', '__mul')
+binmathop(bc.Div,
+	function(f, a, b)
+		return f:Div(f:Flt2Int(a), f:Flt2Int(b))
+	end,
+	function(f, a, b)
+		return f:Div(a, b)
+	end,
+	'__div')
+mkOp(bc.IDiv, function(f)
+	local a = f:Pop()
+	local b = f:Pop()
+	f:Typeck({a, b},
+	{
+		types.int,
+		types.int,
+		function(f)
+			f:Push(f:Div(f:LoadInt(a), f:LoadInt(b)))
+		end
+	},{
+		types.float,
+		types.float,
+		function(f)
+			f:Push(f:Div(f:Flt2Int(f:LoadFlt(a)), f:Flt2Int(f:LoadFlt(b))))
+		end
+	},{
+		types.int,
+		types.float,
+		function(f)
+			f:Push(f:Div(f:LoadInt(a), f:Flt2Int(f:LoadFlt(b))))
+		end
+	},{
+		types.float,
+		types.int,
+		function(f)
+			f:Push(f:Div(f:Flt2Int(f:LoadFlt(a)), f:LoadInt(b)))
+		end
+	})
+end)
+binmathop(bc.Pow,
+	function(f, a, b)
+		return f:Pow(f:Flt2Int(a), f:Flt2Int(b))
+	end,
+	function(f, a, b)
+		return f:Pow(a, b)
+	end,
+	'__pow')
+binmathop_mono(bc.Mod, 'Mod', '__mod')
+function binbitop(op, mop, metamethod)
+	mkOp(op, function(f)
+		local a = f:Pop()
+		local b = f:Pop()
+		f:Typeck({a, b},
+		{
+			types.int,
+			types.int,
+			function(f)
+				f:Push(f[mop](f, f:LoadInt(a), f:LoadInt(b)))
+			end
+			-- TODO assert floats are integer compatible
+		},{
+			types.float,
+			types.float,
+			function(f)
+				f:Push(f[mop](f, f:Flt2Int(f:LoadFlt(a)), f:Flt2Int(f:LoadFlt(b))))
+			end
+		},{
+			types.int,
+			types.float,
+			function(f)
+				f:Push(f[mop](f, f:LoadInt(a), f:Flt2Int(f:LoadFlt(b))))
+			end
+		},{
+			types.float,
+			types.int,
+			function(f)
+				f:Push(f[mop](f, f:Flt2Int(f:LoadFlt(a)), f:LoadInt(b)))
+			end
+		})
+	end)
+end
+binbitop(bc.BAnd, 'BAnd', '__band')
+binbitop(bc.BOr, 'BOr', '__bor')
+binbitop(bc.BXor, 'BXor', '__bxor')
+binbitop(bc.Shr, 'Shr', '__shr')
+binbitop(bc.Shl, 'Shl', '__shl')
+
+-- bc.BNot
 -- bc.Concat
 -- bc.Idx
 -- bc.Append
