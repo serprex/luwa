@@ -77,8 +77,12 @@ mkMop('Str', {
 	out = 'str',
 })
 mkMop('Load', {
-	arg = {},
-	out = {},
+	arg = {'i32'},
+	out = {'i32'},
+})
+mkMop('Free', {
+	arg = {'i32'},
+	out = {'obj'},
 })
 mkMop('Store', {
 	arg = { 'i32', 'i32' },
@@ -98,17 +102,56 @@ mkMop('If', function(args)
 	}
 end)
 mkMop('In')
-mkMop('Arg')
-mkMop('Push')
+mkMop('Arg', {
+	arg = { 'Lint' },
+	out = { 'i32' },
+})
+mkMop('Push', {
+	alloc = true,
+	arg = {'obj'},
+	out = {},
+})
+mkMop('Pop', {
+	arg = {},
+	out = {'obj'},
+})
+mkMop('SetPc', {
+	arg = {'i32'},
+	out = {},
+})
 mkMop('Truthy', {
 	arg = {'obj'},
 	out = 'i32',
 })
-mkMop('CloneFunc')
-mkMop('ObjMetalessEq')
-mkMop('IntObjFromInt')
-mkMop('LoadStrLen')
+mkMop('Box', {
+	alloc = true,
+	arg = {'obj'},
+	out = {'obj'},
+})
+mkMop('CloneFunc', {
+	alloc = true,
+	arg = {'obj'},
+	out = {'obj'},
+})
+mkMop('ObjMetalessEq', {
+	arg = {'obj', 'obj'},
+	out = {'i32'},
+})
+mkMop('IntObjFromInt', {
+	alloc = true,
+	arg = {'i32'},
+	out = {'obj'},
+})
+mkMop('LoadStrLen', {
+	arg = {'obj'},
+	out = {'i32'},
+})
 mkMop('Error')
+mkMop('Syscall', {
+	alloc = true,
+	arg = {'i32'},
+	out = {},
+})
 function mopmt__index:Nil()
 	return self:Int(0)
 end
@@ -148,7 +191,7 @@ mkOp(bc.LoadFreeBox, function(f)
 	f:Push(f:Load(f:Load(f:Free(f:Arg(0)))))
 end)
 mkOp(bc.StoreFreeBox, function(f)
-	f:Store(Load(Free(Arg(0))), Pop())
+	f:Store(f:Load(f:Free(f:Arg(0))), f:Pop())
 end)
 mkOp(bc.LoadParamBox, function(f)
 	f:Push(f:Load(f:Load(f:Param(f:Arg(0)))))
@@ -258,10 +301,10 @@ mkOp(bc.Call, function(f)
 	local rollingbase = f:DataFrameTopBase()
 	f:AllocateDataFrames(f:Arg(1))
 	-- TODO StoreName 'func'
-	ForRange(Int(0), Arg(1), function(i)
+	f:ForRange(f:Int(0), f:Arg(1), function(i)
 		-- TODO SSA this:
 		-- rollingbase = Add(rollingbase, Mul(Arg(LoadNameInt('i')), Int(4)))
-		WriteDataFrame(
+		f:WriteDataFrame(
 			f:Add(baseframe, i),
 			f:If(i,
 				function(f)
