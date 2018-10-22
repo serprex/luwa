@@ -80,6 +80,14 @@ mkMop('Load', {
 	arg = {'i32'},
 	out = {'i32'},
 })
+mkMop('LoadInt', {
+	arg = {'obj'},
+	out = {'i64'},
+})
+mkMop('LoadFlt', {
+	arg = {'obj'},
+	out = {'f64'},
+})
 mkMop('Free', {
 	arg = {'i32'},
 	out = {'obj'},
@@ -151,6 +159,14 @@ mkMop('Syscall', {
 	alloc = true,
 	arg = {'i32'},
 	out = {},
+})
+mkMop('Int2Flt', {
+	arg = {'i64'},
+	out = {'f64'},
+})
+mkMop('Flt2Int', {
+	arg = {'f64'},
+	out = {'i64'},
 })
 function mopmt__index:Nil()
 	return self:Int(0)
@@ -276,9 +292,10 @@ mkOp(bc.LoadFunc, function(f)
 	f:Push(func)
 end)
 mkOp(bc.LoadVarg, function(f)
-	local tmp = AllocateTemp(Arg(0))
-	local vlen = VargLen()
-	local vptr = VargPtr()
+	-- TODO AllocateTemp points inside an object, needs special book keeping over allocation barriers
+	local tmp = f:AllocateTemp(f:Arg(0))
+	local vlen = f:VargLen()
+	local vptr = f:VargPtr()
 	f:If(
 		f:Lt(vlen, f:Arg(0)),
 		function(f)
@@ -298,12 +315,12 @@ end)
 mkOp(bc.Call, function(f)
 	local nret = f:Arg(0)
 	local baseframe = f:DataFrameTop()
-	local rollingbase = f:DataFrameTopBase()
+	local rollingbase = f:AllocateTemp(f:Int(1))
+	f:Store(rollingbase, f:DataFrameTopBase())
 	f:AllocateDataFrames(f:Arg(1))
 	-- TODO StoreName 'func'
 	f:ForRange(f:Int(0), f:Arg(1), function(i)
-		-- TODO SSA this:
-		-- rollingbase = Add(rollingbase, Mul(Arg(LoadNameInt('i')), Int(4)))
+		f:Store(rollingbase, f:Add(f:Load(rollingbase), f:Mul(f:LoadArg(f:LoadNameInt('i')), f:Int(4))))
 		f:WriteDataFrame(
 			f:Add(baseframe, i),
 			f:If(i,
