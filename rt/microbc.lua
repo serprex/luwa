@@ -364,7 +364,7 @@ mkOp(bc.Len, function(f)
 				function(f)
 					local ameta = f:Meta(a)
 					f:If(ameta,
-						function(f) f:CallMetaMethod('__len') end, -- TODO helper function this
+						function(f) f:CallMetaMethod('__len', ameta, a) end, -- TODO helper function this
 						function(f) f:Push(f:IntObjFromInt(f:LoadTblLen(a))) end
 					)
 				end,
@@ -400,7 +400,7 @@ mkOp(bc.Neg, function(f)
 			function(f)
 				local ameta = f:Meta(a)
 				f:If(ameta,
-					function(f) f:CallMetaMethod('__neg') end, -- TODO helper function this
+					function(f) f:CallMetaMethod('__neg', ameta, a) end, -- TODO helper function this
 					function(f)
 						-- TODO error
 					end
@@ -449,7 +449,7 @@ mkOp(bc.CmpEq, function(f)
 								f:Eq(amteq, bmteq),
 								function(f)
 									-- TODO call as boolret
-									f:CallMetaMethod('__eq') -- TODO helper function this
+									f:BoolCall(amteq, a, b)
 								end, -- CALL META
 								function(f) f:Push(f:False()) end
 							)
@@ -660,8 +660,29 @@ binbitop(bc.BOr, 'BOr', '__bor')
 binbitop(bc.BXor, 'BXor', '__bxor')
 binbitop(bc.Shr, 'Shr', '__shr')
 binbitop(bc.Shl, 'Shl', '__shl')
+mkOp(bc.BNot, function()
+	local a = f:Pop()
+	f:Typeck({a},
+	{
+		types.int,
+		function(f)
+			f:Push(f:BNot(f:LoadInt(a)))
+		end
+	},{
+		types.float,
+		function(f)
+			f:Push(f:BNot(f:Flt2Int(f:LoadFlt(a))))
+		end
+	},
+	function(f)
+		local ameta = f:Meta(a)
+		f:If(ameta,
+			function(f) f:CallMetaMethod('__bnot', ameta, a) end, -- TODO helper function this
+			function(f) f:Error() end
+		)
+	end)
+end)
 
--- bc.BNot
 -- bc.Concat
 -- bc.Idx
 -- bc.Append
