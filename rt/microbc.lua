@@ -1,10 +1,12 @@
-local bc = require 'bc'
 local alloc = require 'alloc'
 local types = alloc.types
 local mtypes = {}
 local mops = {}
-local mopmt__index = {}
-local mopmt = { __index = mopmt__index }
+local mopmt = {}
+function mopmt:__call(op)
+	self.ops[#self.ops+1] = op
+end
+
 local function mkMop(op, sig)
 	local id = #mops+1
 	mops[id] = {
@@ -12,23 +14,11 @@ local function mkMop(op, sig)
 		sig = sig,
 	}
 	mops[op] = id
-	mopmt__index[op] = function(f, ...)
-		local instr = { op = id, ... }
-		for i = 1, #instr do
-			local x = instr[i]
-			if type(x) == 'function' then
-				local g = setmetatable({ op = -1, ops = {} }, mopmt)
-				x(g)
-				instr[i] = g
-			end
-		end
-		f.ops[#f.ops + 1] = instr
-		return instr
+	return function(f, ...)
+		return { op = id, ... }
 	end
 end
-local function mkOp(op, func)
-	local f = setmetatable({ ops = {} }, mopmt)
-	func(f)
+local function mkOp(op, f)
 	ops[op] = f
 end
 local function mkType(name, obj)
@@ -67,41 +57,41 @@ mkType('i32', { type = 'i32' })
 mkType('i64', { type = 'i64' })
 mkType('f32', { type = 'f32' })
 mkType('f64', { type = 'f64' })
-mkMop('Nop', {})
-mkMop('Int', {
+local Nop = mkMop('Nop', {})
+local Int = mkMop('Int', {
 	arg = {'Lint'},
 	out = 'i32',
 })
-mkMop('Str', {
+local Str = mkMop('Str', {
 	arg = {'Lstr'},
 	out = 'str',
 })
-mkMop('Load', {
+local Load = mkMop('Load', {
 	arg = {'i32'},
 	out = {'i32'},
 })
-mkMop('LoadInt', {
+local LoadInt = mkMop('LoadInt', {
 	arg = {'obj'},
 	out = {'i64'},
 })
-mkMop('LoadFlt', {
+local LoadFlt = mkMop('LoadFlt', {
 	arg = {'obj'},
 	out = {'f64'},
 })
-mkMop('Free', {
+local Free = mkMop('Free', {
 	arg = {'i32'},
 	out = {'obj'},
 })
-mkMop('Store', {
+local Store = mkMop('Store', {
 	arg = { 'i32', 'i32' },
 })
-mkMop('Eq', {
+local Eq = mkMop('Eq', {
 	arg = { 'i32', 'i32' },
 	out = 'i32',
 })
 -- TODO need to work out concept of 'deferred' block in arg sig
 -- ie we're mixing up idea of input vs argument
-mkMop('If', function(args)
+local If = mkMop('If', function(args)
 	local _then, _else = out(args[2]), args[2] and out(args[2])
 	assert(_then == _else, "If's branches with unequal type")
 	return {
@@ -109,579 +99,453 @@ mkMop('If', function(args)
 		out = _then,
 	}
 end)
-mkMop('In')
-mkMop('Arg', {
+local In = mkMop('In')
+local Arg = mkMop('Arg', {
 	arg = { 'Lint' },
 	out = { 'i32' },
 })
-mkMop('Push', {
+local Push = mkMop('Push', {
 	alloc = true,
 	arg = {'obj'},
 	out = {},
 })
-mkMop('Pop', {
+local Pop = mkMop('Pop', {
 	arg = {},
 	out = {'obj'},
 })
-mkMop('SetPc', {
+local SetPc = mkMop('SetPc', {
 	arg = {'i32'},
 	out = {},
 })
-mkMop('Truthy', {
+local Truthy = mkMop('Truthy', {
 	arg = {'obj'},
 	out = 'i32',
 })
-mkMop('Box', {
+local Box = mkMop('Box', {
 	alloc = true,
 	arg = {'obj'},
 	out = {'obj'},
 })
-mkMop('CloneFunc', {
+local CloneFunc = mkMop('CloneFunc', {
 	alloc = true,
 	arg = {'obj'},
 	out = {'obj'},
 })
-mkMop('ObjMetalessEq', {
+local ObjMetalessEq = mkMop('ObjMetalessEq', {
 	arg = {'obj', 'obj'},
 	out = {'i32'},
 })
-mkMop('IntObjFromInt', {
+local IntObjFromInt = mkMop('IntObjFromInt', {
 	alloc = true,
 	arg = {'i32'},
 	out = {'obj'},
 })
-mkMop('LoadStrLen', {
+local LoadStrLen = mkMop('LoadStrLen', {
 	arg = {'obj'},
 	out = {'i32'},
 })
-mkMop('Error')
-mkMop('Syscall', {
+local Error = mkMop('Error')
+local Syscall = mkMop('Syscall', {
 	alloc = true,
 	arg = {'i32'},
 	out = {},
 })
-mkMop('Int2Flt', {
+local Int2Flt = mkMop('Int2Flt', {
 	arg = {'i64'},
 	out = {'f64'},
 })
-mkMop('Flt2Int', {
+local Flt2Int = mkMop('Flt2Int', {
 	arg = {'f64'},
 	out = {'i64'},
 })
-function mopmt__index:Nil()
-	return self:Int(0)
-end
-function mopmt__index:False()
-	return self:Int(4)
-end
-function mopmt__index:True()
-	return self:Int(8)
-end
+local Parallel = Seq
+local function Nil() return Int(0) end
+local function False() return Int(4) end
+local function True() return Int(8) end
 local ops = {}
-mkOp(bc.Nop, function(f) end)
-mkOp(bc.LoadNil, function(f)
-	f:Push(f:Nil())
-end)
-mkOp(bc.LoadFalse, function(f)
-	f:Push(f:False())
-end)
-mkOp(bc.LoadTrue, function(f)
-	f:Push(f:True())
-end)
-mkOp(bc.LoadParam, function(f)
-	f:Push(f:Load(f:Param(f:Arg(0))))
-end)
-mkOp(bc.StoreParam, function(f)
-	f:Store(f:Param(f:Arg(0)), f:Pop())
-end)
-mkOp(bc.LoadLocal, function(f)
-	f:Push(f:Load(f:Local(f:Arg(0))))
-end)
-mkOp(bc.StoreLocal, function(f)
-	f:Store(f:Local(f:Arg(0)), f:Pop())
-end)
-mkOp(bc.LoadFree, function(f)
-	f:Push(f:Load(f:Free(f:Arg(0))))
-end)
-mkOp(bc.LoadFreeBox, function(f)
-	f:Push(f:Load(f:Load(f:Free(f:Arg(0)))))
-end)
-mkOp(bc.StoreFreeBox, function(f)
-	f:Store(f:Load(f:Free(f:Arg(0))), f:Pop())
-end)
-mkOp(bc.LoadParamBox, function(f)
-	f:Push(f:Load(f:Load(f:Param(f:Arg(0)))))
-end)
-mkOp(bc.StoreParamBox, function(f)
-	f:Store(f:Load(f:Param(f:Arg(0))), f:Pop())
-end)
-mkOp(bc.BoxParam, function(f)
-	f:Store(f:Param(0), f:Box(f:Param(f:Arg(0))))
-end)
-mkOp(bc.BoxLocal, function(f)
-	f:Store(f:Local(0), f:Box(f:Nil()))
-end)
-mkOp(bc.LoadLocalBox, function(f)
-	f:Push(f:Load(f:Load(f:Local(f:Arg(0)))))
-end)
-mkOp(bc.StoreLocalBox, function(f)
-	f:Store(f:Load(f:Local(f:Arg(0))), f:Pop())
-end)
-mkOp(bc.LoadConst, function(f)
-	f:Push(f:Load(f:Const(f:Arg(0))))
-end)
-mkOp(bc.Pop, function(f)
-	f:Pop()
-end)
-mkOp(bc.Syscall, function(f)
-	f:Syscall(f:Arg(0))
-end)
-mkOp(bc.Jmp, function(f)
-	f:SetPc(f:Arg(0))
-end)
-mkOp(bc.JifNot, function(f)
-	f:If(
-		f:Truthy(f:Pop()),
-		function(f)
-			f:SetPc(f:Arg(0))
-		end
+mkOp(bc.Nop, Nop())
+mkOp(bc.LoadNil, Push(Nil()))
+mkOp(bc.LoadFalse, Push(False()))
+mkOp(bc.LoadTrue, Push(True()))
+mkOp(bc.LoadParam, Push(Load(Param(Arg(0)))))
+mkOp(bc.StoreParam, Store(Param(Arg(0)), Pop()))
+mkOp(bc.LoadLocal, Push(Load(Local(Arg(0)))))
+mkOp(bc.StoreLocal, Store(Local(Arg(0)), Pop()))
+mkOp(bc.LoadFree, Push(Load(Free(Arg(0)))))
+mkOp(bc.LoadFreeBox, Push(Load(Load(Free(Arg(0))))))
+mkOp(bc.StoreFreeBox, Store(Load(Free(Arg(0))), Pop()))
+mkOp(bc.LoadParamBox, Push(Load(Load(Param(Arg(0))))))
+mkOp(bc.StoreParamBox, Store(Load(Param(Arg(0))), Pop()))
+mkOp(bc.BoxParam, Store(Param(0), Box(Param(Arg(0)))))
+mkOp(bc.BoxLocal, Store(Local(0), Box(Nil())))
+mkOp(bc.LoadLocalBox, Push(Load(Load(Local(Arg(0))))))
+mkOp(bc.StoreLocalBox, Store(Load(Local(Arg(0))), Pop()))
+mkOp(bc.LoadConst, Push(Load(Const(Arg(0)))))
+mkOp(bc.Pop, Pop())
+mkOp(bc.Syscall, Syscall(Arg(0)))
+mkOp(bc.Jmp, SetPc(Arg(0)))
+mkOp(bc.JifNot,
+	If(
+		Truthy(Pop()),
+		SetPc(Arg(0))
 	)
-end)
-mkOp(bc.Jif, function(f)
-	f:If(
-		f:Truthy(f:Pop()),
-		function(f) end,
-		function(f)
-			f:SetPc(f:Arg(0))
-		end
+)
+mkOp(bc.Jif,
+	IfNot(
+		Truthy(Pop()),
+		SetPc(Arg(0))
 	)
-end)
-mkOp(bc.JifNotOrPop, function(f)
-	f:If(
-		f:Truthy(f:Peek()),
-		function(f)
-			f:SetPc(f:Arg(0))
-		end,
-		function(f)
-			f:Pop()
-		end
+)
+mkOp(bc.JifNotOrPop,
+	If(
+		Truthy(Peek()),
+		SetPc(Arg(0)),
+		Pop()
 	)
-end)
-mkOp(bc.JifOrPop, function(f)
-	f:If(
-		f:Truthy(f:Peek()),
-		function(f)
-			f:Pop()
-		end,
-		function(f)
-			f:SetPc(f:Arg(0))
-		end
+)
+mkOp(bc.JifOrPop,
+	If(
+		Truthy(Peek()),
+		Pop(),
+		SetPc(Arg(0))
 	)
-end)
-mkOp(bc.LoadFunc, function(f)
-	local func = f:CloneFunc(f:Const(f:Arg(1)))
-	f:If(
-		f:Arg(0),
-		function(f)
-			f:Store(
-				f:Add(func, f:Int(functy.frees)),
-				f:FillFromStack(f:NewVec(f:Arg(0)), f:Arg(0))
+)
+mkOp(bc.LoadFunc, (function()
+	local func = CloneFunc(Const(Arg(1)))
+	return Seq(
+		If(
+			Arg(0),
+			Store(
+				Add(func, Int(functy.frees)),
+				FillFromStack(NewVec(Arg(0)), Arg(0))
 			)
-		end
+		),
+		Push(func)
 	)
-	f:Push(func)
-end)
-mkOp(bc.LoadVarg, function(f)
+end)())
+mkOp(bc.LoadVarg, (function()
 	-- TODO AllocateTemp points inside an object, needs special book keeping over allocation barriers
-	local tmp = f:AllocateTemp(f:Arg(0))
-	local vlen = f:VargLen()
-	local vptr = f:VargPtr()
-	f:If(
-		f:Lt(vlen, f:Arg(0)),
+	local tmp = AllocateTemp(Arg(0))
+	local vlen = VargLen()
+	local vptr = VargPtr()
+	return If(
+		Lt(vlen, Arg(0)),
 		function(f)
-			local vlen4 = f:Mul(vlen, f:Int(2))
-			f:MemCpy4(tmp, vptr, vlen4)
-			f:FillRange(f:Add(tmp, vlen4), NilAtom, f:Mul(f:Sub(f:Arg(0), vlen), f:Int(2)))
+			local vlen4 = Mul(vlen, Int(2))
+			return Parallel(
+				MemCpy4(tmp, vptr, vlen4),
+				FillRange(Add(tmp, vlen4), NilAtom, Mul(Sub(Arg(0), vlen), Int(2)))
+			)
 		end,
-		function(f)
-			f:MemCpy4(tmp, vptr, f:Mul(f:Arg(0), f:Int(2)))
-		end
+		MemCpy4(tmp, vptr, Mul(Arg(0), Int(2)))
 	)
-end)
-mkOp(bc.AppendVarg, function(f)
-	f:AppendRange(f:Pop(), f:VargPtr(), f:Arg(0))
-end)
+end)())
+mkOp(bc.AppendVarg, AppendRange(Pop(), VargPtr(), Arg(0)))
 -- TODO
-mkOp(bc.Call, function(f)
-	local nret = f:Arg(0)
-	local baseframe = f:DataFrameTop()
-	local rollingbase = f:AllocateTemp(f:Int(1))
-	f:Store(rollingbase, f:DataFrameTopBase())
-	f:AllocateDataFrames(f:Arg(1))
+mkOp(bc.Call, (function()
+	local nret = Arg(0)
+	local baseframe = DataFrameTop()
+	local rollingbase = AllocateTemp(Int(1))
+	local n0 = Store(rollingbase, DataFrameTopBase())
+	local n1 = AllocateDataFrames(Arg(1))
 	-- TODO StoreName 'func'
-	f:ForRange(f:Int(0), f:Arg(1), function(i)
-		f:Store(rollingbase, f:Add(f:Load(rollingbase), f:Mul(f:LoadArg(f:LoadNameInt('i')), f:Int(4))))
-		f:WriteDataFrame(
-			f:Add(baseframe, i),
-			f:If(i,
-				function(f)
-					f:Int(3)
-				end,
-				function(f)
-					f:Int(1)
-				end), -- type = i ? call : norm
-			f:Int(0), -- pc
-			rollingbase, -- base
-			f:Mul(f:LoadFuncParamc(func), f:Int(4)), -- dotdotdot
-			f:Int(-4), -- retb
-			f:Int(-1), -- retc
-			0, --  TODO calc locals
-			0 -- TODO calc frame
+	local n2 = ForRange(Int(0), Arg(1), function(i)
+		local newrollingbase = Add(Load(rollingbase), Mul(LoadArg(i), Int(4)))
+		return Parallel(
+			Store(rollingbase, newrollingbase),
+			WriteDataFrame(
+				Add(baseframe, i),
+				If(i, Int(3), Int(1)), -- type = i ? call : norm
+				Int(0), -- pc
+				newrollingbase, -- base
+				Mul(LoadFuncParamc(func), Int(4)), -- dotdotdot
+				Int(-4), -- retb
+				Int(-1), -- retc
+				0, --  TODO calc locals
+				0 -- TODO calc frame
+			)
 		)
 	end)
-	f:PushObjFrameFromFunc(func)
-	f:SetPc(f:Int(0))
-end)
+	local n3 = PushObjFrameFromFunc(func)
+	local n4 = SetPc(Int(0))
+	return Seq(n0, n1, n2, n3, n4)
+end)())
 
--- TODO replace f:If with something that'll compile to wasm's select
-mkOp(bc.Not, function(f)
-	f:Push(
-		f:If(f:Truthy(f:Pop()),
-			function(f) return f:False() end,
-			function(f) return f:True() end)
+mkOp(bc.Not, Push(If(Truthy(Pop()), False(), True())))
+
+mkOp(bc.Len, (function()
+	local a = Pop()
+	local aty = Type(a)
+	return If(
+		Eq(aty, Int(types.str)),
+		Push(IntObjFromInt(LoadStrLen(a))),
+		If(
+			Eq(aty, Int(types.tbl)),
+			(function()
+				local ameta = Meta(a)
+				If(ameta,
+					function(f) CallMetaMethod('__len', ameta, a) end, -- TODO helper function this
+					function(f) Push(IntObjFromInt(LoadTblLen(a))) end
+				)
+			end)(),
+			Error()
+		)
 	)
-end)
+end)())
 
-mkOp(bc.Len, function(f)
-	local a = f:Pop()
-	local aty = f:Type(a)
-	f:If(
-		f:Eq(aty, f:Int(types.str)),
-		function(f) f:Push(f:IntObjFromInt(f:LoadStrLen(a))) end,
-		function(f)
-			f:If(
-				f:Eq(aty, f:Int(types.tbl)),
-				function(f)
-					local ameta = f:Meta(a)
-					f:If(ameta,
-						function(f) f:CallMetaMethod('__len', ameta, a) end, -- TODO helper function this
-						function(f) f:Push(f:IntObjFromInt(f:LoadTblLen(a))) end
-					)
-				end,
-				function(f) f:Error() end
-			)
-		end
-	)
-end)
-
-mkOp(bc.Neg, function(f)
-	local a = f:Pop()
-	local aty = f:Type(a)
-	f:Typeck({a},
+mkOp(bc.Neg, (function()
+	local a = Pop()
+	local aty = Type(a)
+	return Typeck({a},
 		{
 			types.int,
-			function(f)
-				f:NegateInt(a)
-			end,
+			Push(NegateInt(a))
 		}, {
 			types.float,
-			function(f)
-				f:NegateFloat(a)
-			end,
+			Push(NegateFloat(a))
 		},
 		{
 			types.str,
-			function(f)
-				f:NegateFloat(f:ParseFloat(a))
-			end,
+			Push(NegateFloat(ParseFloat(a)))
 		},
 		{
 			types.tbl,
-			function(f)
-				local ameta = f:Meta(a)
-				f:If(ameta,
-					function(f) f:CallMetaMethod('__neg', ameta, a) end, -- TODO helper function this
-					function(f)
-						-- TODO error
-					end
+			(function()
+				local ameta = Meta(a)
+				If(ameta,
+					CallMetaMethod('__neg', ameta, a), -- TODO helper function this
+					Error()
 				)
-			end,
+			end)(),
 		},
-		function(f)
-			-- TODO error
-		end
+		Error()
 	)
-end)
+end)())
 
-mkOp(bc.TblNew, function(f)
-	f:Push(f:NewTbl())
-end)
-mkOp(bc.TblAdd, function(f)
-	local v = f:Pop()
-	local k = f:Pop()
-	local tbl = f:Pop()
-	f:TblSet(tbl, k, v)
-	f:Pop()
-	f:Pop()
-end)
+mkOp(bc.TblNew, Push(NewTbl()))
+mkOp(bc.TblAdd, (function()
+	local v = Pop()
+	local k = Seq(v, Pop())
+	local tbl = Seq(k, Pop())
+	return Seq(TblSet(tbl, k, v), Pop(), Pop())
+end)())
 
-mkOp(bc.CmpEq, function(f)
-	local a = f:Pop()
-	local b = f:Pop()
-	f:If(
-		f:ObjMetalessEq(a, b),
-		function(f) f:Push(f:True()) end,
-		function(f)
-			f:If(
-				f:And(
-					f:Eq(f:Type(a), f:Int(types.tbl)),
-					f:Eq(f:Type(b), f:Int(types.tbl))
-				),
-				function(f)
-					local amt = f:Meta(a)
-					local bmt = f:Meta(b)
-					f:If(
-						f:And(amt, bmt),
-						function(f)
-							local amteq = f:TblGet(amt, f:Str('__eq'))
-							local bmteq = f:TblGet(bmt, f:Str('__eq'))
-							f:If(
-								f:Eq(amteq, bmteq),
-								function(f)
-									-- TODO call as boolret
-									f:BoolCall(amteq, a, b)
-								end, -- CALL META
-								function(f) f:Push(f:False()) end
-							)
-						end,
-						function(f) f:Push(f:False()) end
-					)
-				end,
-				function(f) f:Push(f:False()) end
-			)
-		end
+mkOp(bc.CmpEq, (function()
+	local a = Pop()
+	local b = Seq(a, Pop())
+	return If(
+		ObjMetalessEq(a, b),
+		Push(True()),
+		If(
+			And(
+				Eq(Type(a), Int(types.tbl)),
+				Eq(Type(b), Int(types.tbl))
+			),
+			(function()
+				local amt = Meta(a)
+				local bmt = Meta(b)
+				If(
+					And(amt, bmt),
+					(function()
+						local amteq = TblGet(amt, Str('__eq'))
+						local bmteq = TblGet(bmt, Str('__eq'))
+						If(
+							Eq(amteq, bmteq),
+							-- TODO call as boolret
+							BoolCall(amteq, a, b),
+							-- CALL META
+							Push(False())
+						)
+					end)(),
+					Push(False())
+				)
+			end)(),
+			Push(False())
+		)
 	)
-end)
+end)())
 
 function cmpop(op, cmpop, strlogic)
-	mkOp(op, function(f)
-		local a = f:Pop()
-		local b = f:Pop()
-		f:Typeck({a, b},
+	mkOp(op, (function()
+		local a = Pop()
+		local b = Seq(a, Pop())
+		return Typeck({a, b},
 			{
 				types.int,
 				types.int,
-				function(f)
-					f:Push(f:If(
-						f[cmpop](f, f:LoadInt(a), f:LoadInt(b)),
-						function(f) return f:True() end,
-						function(f) return f:False() end
-					))
-				end,
+				Push(If(
+					cmpop(LoadInt(a), LoadInt(b)),
+					True(), False()
+				))
 			},
 			{
 				types.float,
 				types.float,
-				function(f)
-					f:Push(f:If(
-						f[cmpop](f, f:LoadFlt(a), f:LoadFlt(b)),
-						function(f) return f:True() end,
-						function(f) return f:False() end
-					))
-				end,
+				Push(If(
+					cmpop(LoadFlt(a), LoadFlt(b)),
+					True(), False()
+				))
 			},
 			{
 				types.str,
 				types.str,
-				function(f)
-					f:Push(f:If(
-						f[cmpop](f, f:StrCmp(a, b), f:Int(0)),
-						function(f) return f:True() end,
-						function(f) return f:False() end
-					))
-				end,
+				Push(If(
+					cmpop(StrCmp(a, b), Int(0)),
+					True(), False()
+				))
 			},
 			{
 				types.int,
 				types.float,
-				function(f)
-					f:Push(f:If(
-						f[cmpop](f, f:Int2Flt(f:LoadInt(a)), f:LoadFlt(b)),
-						function(f) return f:True() end,
-						function(f) return f:False() end
-					))
-				end,
+				Push(If(
+					cmpop(Int2Flt(LoadInt(a)), LoadFlt(b)),
+					True(), False()
+				))
 			},
 			{
 				types.float,
 				types.int,
-				function(f)
-					f:Push(f:If(
-						f[cmpop](f, f:LoadFlt(a), f:Int2Flt(f:LoadInt(b))),
-						function(f) f:True() end,
-						function(f) f:False() end
-					))
-				end,
+				Push(If(
+					cmpop(LoadFlt(a), Int2Flt(LoadInt(b))),
+					True(), False()
+				))
 			},
 			function(f)
 				-- TODO metamethod fallbacks, error otherwise
 			end
 		)
-	end)
+	end)())
 end
-cmpop(bc.CmpLe, 'Le')
-cmpop(bc.CmpLt, 'Lt')
-cmpop(bc.CmpGe, 'Ge')
-cmpop(bc.CmpGt, 'Gt')
+cmpop(bc.CmpLe, Le)
+cmpop(bc.CmpLt, Lt)
+cmpop(bc.CmpGe, Ge)
+cmpop(bc.CmpGt, Gt)
 
 function binmathop(op, floatlogic, intlogic, metamethod)
-	mkOp(op, function(f)
-		local a = f:Pop()
-		local b = f:Pop()
-		f:Typeck({a, b},
+	mkOp(op, (function()
+		local a = Pop()
+		local b = Seq(a, Pop())
+		return Typeck({a, b},
 		{
 			types.int,
 			types.int,
-			function(f)
-				f:Push(intlogic(f, f:LoadInt(a), f:LoadInt(b)))
-			end
+			Push(intlogic(LoadInt(a), LoadInt(b)))
 		},{
 			types.float,
 			types.float,
-			function(f)
-				f:Push(floatlogic(f, f:LoadFlt(a), f:LoadFlt(b)))
-			end
+			Push(floatlogic(LoadFlt(a), LoadFlt(b)))
 		},{
 			types.int,
 			types.float,
-			function(f)
-				f:Push(floatlogic(f, f:Int2Flt(f:LoadInt(a)), f:LoadFlt(b)))
-			end
+			Push(floatlogic(Int2Flt(LoadInt(a)), LoadFlt(b)))
 		},{
 			types.float,
 			types.int,
-			function(f)
-				f:Push(floatlogic(f, f:LoadFlt(a), f:Int2Flt(f:LoadInt(b))))
-			end
+			Push(floatlogic(LoadFlt(a), Int2Flt(LoadInt(b))))
 		})
-	end)
+	end)())
 end
 function binmathop_mono(op, mop, metamethod)
-	function logic(f, a, b)
-		return f[mop](a, b)
-	end
-	return binmathop(op, logic, logic, metamethod)
+	return binmathop(op, mop, mop, metamethod)
 end
-binmathop_mono(bc.Add, 'Add', '__add')
-binmathop_mono(bc.Sub, 'Sub', '__sub')
-binmathop_mono(bc.Mul, 'Mul', '__mul')
+binmathop_mono(bc.Add, Add, '__add')
+binmathop_mono(bc.Sub, Sub, '__sub')
+binmathop_mono(bc.Mul, Mul, '__mul')
 binmathop(bc.Div,
-	function(f, a, b)
-		return f:Div(f:Flt2Int(a), f:Flt2Int(b))
+	function(a, b)
+		return Div(Flt2Int(a), Flt2Int(b))
 	end,
-	function(f, a, b)
-		return f:Div(a, b)
+	function(a, b)
+		return Div(a, b)
 	end,
 	'__div')
-mkOp(bc.IDiv, function(f)
-	local a = f:Pop()
-	local b = f:Pop()
-	f:Typeck({a, b},
+mkOp(bc.IDiv, (function()
+	local a = Pop()
+	local b = Seq(a, Pop())
+	return Typeck({a, b},
 	{
 		types.int,
 		types.int,
 		function(f)
-			f:Push(f:Div(f:LoadInt(a), f:LoadInt(b)))
+			Push(Div(LoadInt(a), LoadInt(b)))
 		end
 	},{
 		types.float,
 		types.float,
 		function(f)
-			f:Push(f:Div(f:Flt2Int(f:LoadFlt(a)), f:Flt2Int(f:LoadFlt(b))))
+			Push(Div(Flt2Int(LoadFlt(a)), Flt2Int(LoadFlt(b))))
 		end
 	},{
 		types.int,
 		types.float,
 		function(f)
-			f:Push(f:Div(f:LoadInt(a), f:Flt2Int(f:LoadFlt(b))))
+			Push(Div(LoadInt(a), Flt2Int(LoadFlt(b))))
 		end
 	},{
 		types.float,
 		types.int,
 		function(f)
-			f:Push(f:Div(f:Flt2Int(f:LoadFlt(a)), f:LoadInt(b)))
+			Push(Div(Flt2Int(LoadFlt(a)), LoadInt(b)))
 		end
 	})
-end)
+end)())
 binmathop(bc.Pow,
 	function(f, a, b)
-		return f:Pow(f:Flt2Int(a), f:Flt2Int(b))
+		return Pow(Flt2Int(a), Flt2Int(b))
 	end,
 	function(f, a, b)
-		return f:Pow(a, b)
+		return Pow(a, b)
 	end,
 	'__pow')
 binmathop_mono(bc.Mod, 'Mod', '__mod')
 function binbitop(op, mop, metamethod)
-	mkOp(op, function(f)
-		local a = f:Pop()
-		local b = f:Pop()
-		f:Typeck({a, b},
+	mkOp(op, (function()
+		local a = Pop()
+		local b = Seq(a, Pop())
+		return Typeck({a, b},
 		{
 			types.int,
 			types.int,
-			function(f)
-				f:Push(f[mop](f, f:LoadInt(a), f:LoadInt(b)))
-			end
+			Push(mop(LoadInt(a), LoadInt(b)))
 			-- TODO assert floats are integer compatible
 		},{
 			types.float,
 			types.float,
-			function(f)
-				f:Push(f[mop](f, f:Flt2Int(f:LoadFlt(a)), f:Flt2Int(f:LoadFlt(b))))
-			end
+			Push(mop(Flt2Int(LoadFlt(a)), Flt2Int(LoadFlt(b))))
 		},{
 			types.int,
 			types.float,
-			function(f)
-				f:Push(f[mop](f, f:LoadInt(a), f:Flt2Int(f:LoadFlt(b))))
-			end
+			Push(mop(LoadInt(a), Flt2Int(LoadFlt(b))))
 		},{
 			types.float,
 			types.int,
-			function(f)
-				f:Push(f[mop](f, f:Flt2Int(f:LoadFlt(a)), f:LoadInt(b)))
-			end
+			Push(mop(Flt2Int(LoadFlt(a)), LoadInt(b)))
 		})
-	end)
+	end)())
 end
-binbitop(bc.BAnd, 'BAnd', '__band')
-binbitop(bc.BOr, 'BOr', '__bor')
-binbitop(bc.BXor, 'BXor', '__bxor')
-binbitop(bc.Shr, 'Shr', '__shr')
-binbitop(bc.Shl, 'Shl', '__shl')
-mkOp(bc.BNot, function()
-	local a = f:Pop()
-	f:Typeck({a},
+binbitop(bc.BAnd, BAnd, '__band')
+binbitop(bc.BOr, BOr, '__bor')
+binbitop(bc.BXor, BXor, '__bxor')
+binbitop(bc.Shr, Shr, '__shr')
+binbitop(bc.Shl, Shl, '__shl')
+mkOp(bc.BNot, (function()
+	local a = Pop()
+	return Typeck({a},
 	{
 		types.int,
-		function(f)
-			f:Push(f:BNot(f:LoadInt(a)))
-		end
+		Push(BNot(LoadInt(a)))
 	},{
 		types.float,
-		function(f)
-			f:Push(f:BNot(f:Flt2Int(f:LoadFlt(a))))
-		end
+		Push(BNot(Flt2Int(LoadFlt(a))))
 	},
-	function(f)
-		local ameta = f:Meta(a)
-		f:If(ameta,
-			function(f) f:CallMetaMethod('__bnot', ameta, a) end, -- TODO helper function this
-			function(f) f:Error() end
+	(function()
+		local ameta = Meta(a)
+		If(ameta,
+			CallMetaMethod('__bnot', ameta, a), -- TODO helper function this
+			Error()
 		)
-	end)
-end)
+	end)())
+end)())
 
 -- bc.Concat
 -- bc.Idx
