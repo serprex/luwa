@@ -531,25 +531,52 @@ binbitop(bc.Shl, Shl, '__shl')
 mkOp(bc.BNot, (function()
 	local a = Pop()
 	return Typeck({a},
-	{
-		types.int,
-		Push(BNot(LoadInt(a)))
-	},{
-		types.float,
-		Push(BNot(Flt2Int(LoadFlt(a))))
-	},
-	(function()
-		local ameta = Meta(a)
-		If(ameta,
-			CallMetaMethod('__bnot', ameta, a), -- TODO helper function this
-			Error()
-		)
-	end)())
+		{
+			types.int,
+			Push(BNot(LoadInt(a)))
+		},{
+			types.float,
+			Push(BNot(Flt2Int(LoadFlt(a))))
+		},
+		CallMetaMethod('__bnot', a)
+	)
 end)())
 
--- bc.Concat
--- bc.Idx
--- bc.Append
+mkOp(bc.Concat, (function()
+	local b = Pop()
+	local a = Seq(b, Pop())
+	return Typeck({a, b},
+		{
+			types.str,
+			types.str,
+			Push(StrConcat(a, b))
+		},
+		If(
+			And(IsNumOrStr(a), IsNumOrStr(b)),
+			Push(StrConcat(ToString(a), ToString(b))),
+			CallBinMetaMethod('__concat', a, b)
+		)
+	)
+end)())
+
+mkOp(bc.Idx, (function()
+	local b = Pop()
+	local a = Seq(b, Pop())
+	local ameta = Meta(a)
+	return If(ameta,
+		CallMetaMethod('__index', a, b),
+		If(IsTbl(a),
+			TblGet(a, b),
+			Error()
+		)
+	)
+end)())
+
+mkOp(bc.Append, (function()
+	local b = Pop()
+	local a = Seq(b, Pop())
+	return TblSet(TblLen(a), b)
+end)())
 
 return {
 	mops = mops,
