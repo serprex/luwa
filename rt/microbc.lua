@@ -60,11 +60,19 @@ mkType('f64', { type = 'f64' })
 local Nop = mkMop('Nop', {})
 local Int = mkMop('Int', {
 	arg = {'Lint'},
-	out = 'i32',
+	out = {'i32'},
+})
+local ToString = mkMop('ToString', {
+	arg = {'obj'},
+	out = {'obj'},
+})
+local Int64 = mkMop('Int64', {
+	arg = {'Lint'},
+	out = {'i64'},
 })
 local Str = mkMop('Str', {
 	arg = {'Lstr'},
-	out = 'str',
+	out = {'str'},
 })
 local Load = mkMop('Load', {
 	arg = {'i32'},
@@ -82,24 +90,72 @@ local Free = mkMop('Free', {
 	arg = {'i32'},
 	out = {'obj'},
 })
+local Const = mkMop('Const', {
+	arg = {'i32'},
+	out = {'obj'},
+})
 local Store = mkMop('Store', {
 	arg = { 'i32', 'i32' },
 })
+local Reg32 = mkMop('Reg32', {
+	out = {'r32'},
+})
+local LoadReg = mkMop('LoadReg', {
+	arg = { 'r32' },
+	out = { 'i32' }
+})
+local StoreReg = mkMop('StoreReg', {
+	arg = { 'r32', 'i32' }
+})
 local Eq = mkMop('Eq', {
 	arg = { 'i32', 'i32' },
-	out = 'i32',
+	out = { 'i32' }
+})
+local Add = mkMop('Add', {
+	arg = {'i32', 'i32'},
+	out = {'i32'},
+})
+local Or = mkMop('Or', {
+	arg = {'i32', 'i32'},
+	out = {'i32'},
+})
+local And = mkMop('And', {
+	arg = {'i32', 'i32'},
+	out = {'i32'},
+})
+local BNot64 = mkMop('BNot64', {
+	arg = {'i64'},
+	out = {'i64'},
+})
+local NegateInt = mkMop('NegateInt', {
+	arg = {'obj'},
+	out = {'obj'},
+})
+local NegateFloat = mkMop('NegateFloat', {
+	arg = {'obj'},
+	out = {'obj'},
+})
+local StrConcat = mkMop('StrConcat', {
+	arg = {'obj','obj'},
+	out = {'obj'},
 })
 -- TODO need to work out concept of 'deferred' block in arg sig
 -- ie we're mixing up idea of input vs argument
 local If = mkMop('If', function(args)
-	local _then, _else = out(args[2]), args[2] and out(args[2])
-	assert(_then == _else, "If's branches with unequal type")
+	local _then, _else = out(args[2]), args[3] and out(args[3])
+	assert(tyeq(_then == _else), "If's branches with unequal type")
+	arg = { 'i32', { type = 'block' } }
+	if args[3] then
+		arg[3] = { type = 'block' }
+	end
 	return {
-		arg = { 'i32' },
+		arg = arg,
 		out = _then,
 	}
 end)
-local In = mkMop('In')
+local ForRange = mkMop('ForRange', {
+	arg = { 'i32', 'i32', { type = 'block', arg = 'i32' } }
+})
 local Arg = mkMop('Arg', {
 	arg = { 'Lint' },
 	out = { 'i32' },
@@ -110,6 +166,10 @@ local Push = mkMop('Push', {
 	out = {},
 })
 local Pop = mkMop('Pop', {
+	arg = {},
+	out = {'obj'},
+})
+local Peek = mkMop('Peek', {
 	arg = {},
 	out = {'obj'},
 })
@@ -144,7 +204,9 @@ local LoadStrLen = mkMop('LoadStrLen', {
 	arg = {'obj'},
 	out = {'i32'},
 })
-local Error = mkMop('Error')
+local Error = mkMop('Error', {
+	alloc = true,
+})
 local Syscall = mkMop('Syscall', {
 	alloc = true,
 	arg = {'i32'},
@@ -158,6 +220,49 @@ local Flt2Int = mkMop('Flt2Int', {
 	arg = {'f64'},
 	out = {'i64'},
 })
+local Meta = mkMop('Meta', {
+	arg = {'obj'},
+	out = {'obj'},
+})
+local Type = mkMop('Type', {
+	arg = {'obj'},
+	out = {'i32'},
+})
+local IsTbl = mkMop('IsTbl', {
+	arg = {'obj'},
+	out = {'i32'},
+})
+local IsNumOrStr = mkMop('IsNumOrStr', {
+	arg = {'obj'},
+	out = {'i32'},
+})
+local TblGet = mkMop('TblGet', {
+	arg = {'obj', 'obj'},
+	out = {'obj'},
+})
+local TblSet = mkMop('TblSet', {
+	arg = {'obj', 'obj', 'obj'},
+})
+local LoadTblLen = mkMop('LoadTblLen', {
+	arg = {'obj'},
+	out = {'i32'},
+})
+local NewVec = mkMop('NewVec', {
+	arg = {'i32'},
+	out = {'obj'},
+})
+-- TODO CallMetaMethod
+-- TODO CallBinMetaMethod
+-- TODO FillRange
+-- TODO MemCpy4
+-- TODO VargLen
+-- TODO VargPtr
+-- TODO AllocateTemp
+-- TODO BoolCall
+-- TODO Typeck
+-- TODO LoadFuncParamc
+-- TODO WriteDataFrame
+-- TODO FillFromStack
 local Parallel = Seq
 local function Nil() return Int(0) end
 local function False() return Int(4) end
@@ -234,25 +339,24 @@ mkOp(bc.LoadVarg, (function()
 			local vlen4 = Mul(vlen, Int(2))
 			return Parallel(
 				MemCpy4(tmp, vptr, vlen4),
-				FillRange(Add(tmp, vlen4), NilAtom, Mul(Sub(Arg(0), vlen), Int(2)))
+				FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(2)))
 			)
 		end,
 		MemCpy4(tmp, vptr, Mul(Arg(0), Int(2)))
 	)
 end)())
 mkOp(bc.AppendVarg, AppendRange(Pop(), VargPtr(), Arg(0)))
--- TODO
 mkOp(bc.Call, (function()
 	local nret = Arg(0)
 	local baseframe = DataFrameTop()
-	local rollingbase = AllocateTemp(Int(1))
-	local n0 = Store(rollingbase, DataFrameTopBase())
+	local rollingbase = Reg32()
+	local n0 = StoreReg(rollingbase, DataFrameTopBase())
 	local n1 = AllocateDataFrames(Arg(1))
 	-- TODO StoreName 'func'
 	local n2 = ForRange(Int(0), Arg(1), function(i)
-		local newrollingbase = Add(Load(rollingbase), Mul(LoadArg(i), Int(4)))
+		local newrollingbase = Add(LoadReg(rollingbase), Mul(Arg(i), Int(4)))
 		return Parallel(
-			Store(rollingbase, newrollingbase),
+			StoreReg(rollingbase, newrollingbase),
 			WriteDataFrame(
 				Add(baseframe, i),
 				If(i, Int(3), Int(1)), -- type = i ? call : norm
@@ -270,6 +374,10 @@ mkOp(bc.Call, (function()
 	local n4 = SetPc(Int(0))
 	return Seq(n0, n1, n2, n3, n4)
 end)())
+mkOp(bc.ReturnCall, Nop())
+mkOp(bc.AppendCall, Nop())
+mkOp(bc.ReturnCallVarg, Nop())
+mkOp(bc.AppendCallVarg, Nop())
 
 mkOp(bc.Not, Push(If(Truthy(Pop()), False(), True())))
 
@@ -295,7 +403,6 @@ end)())
 
 mkOp(bc.Neg, (function()
 	local a = Pop()
-	local aty = Type(a)
 	return Typeck({a},
 		{
 			types.int,
@@ -303,10 +410,6 @@ mkOp(bc.Neg, (function()
 		}, {
 			types.float,
 			Push(NegateFloat(a))
-		},
-		{
-			types.str,
-			Push(NegateFloat(ParseFloat(a)))
 		},
 		{
 			types.tbl,
@@ -533,10 +636,10 @@ mkOp(bc.BNot, (function()
 	return Typeck({a},
 		{
 			types.int,
-			Push(BNot(LoadInt(a)))
+			Push(BNot64(LoadInt(a)))
 		},{
 			types.float,
-			Push(BNot(Flt2Int(LoadFlt(a))))
+			Push(BNot64(Flt2Int(LoadFlt(a))))
 		},
 		CallMetaMethod('__bnot', a)
 	)
@@ -575,7 +678,7 @@ end)())
 mkOp(bc.Append, (function()
 	local b = Pop()
 	local a = Seq(b, Pop())
-	return TblSet(TblLen(a), b)
+	return TblSet(a, TblLen(a), b)
 end)())
 
 return {
