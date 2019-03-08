@@ -63,6 +63,7 @@ local Int = mkMop('Int', {
 	out = {'i32'},
 })
 local ToString = mkMop('ToString', {
+	alloc = true,
 	arg = {'obj'},
 	out = {'obj'},
 })
@@ -143,10 +144,10 @@ local StrConcat = mkMop('StrConcat', {
 -- ie we're mixing up idea of input vs argument
 local If = mkMop('If', function(args)
 	local _then, _else = out(args[2]), args[3] and out(args[3])
-	assert(tyeq(_then == _else), "If's branches with unequal type")
-	arg = { 'i32', { type = 'block' } }
+	assert(tyeq(_then, _else), "If's branches with unequal type")
+	arg = { 'i32', { type = 'block', out = _then } }
 	if args[3] then
-		arg[3] = { type = 'block' }
+		arg[3] = { type = 'block', out = _else }
 	end
 	return {
 		arg = arg,
@@ -154,7 +155,7 @@ local If = mkMop('If', function(args)
 	}
 end)
 local ForRange = mkMop('ForRange', {
-	arg = { 'i32', 'i32', { type = 'block', arg = 'i32' } }
+	arg = { 'r32', 'i32', 'i32', { type = 'block' } }
 })
 local Arg = mkMop('Arg', {
 	arg = { 'Lint' },
@@ -213,10 +214,12 @@ local Syscall = mkMop('Syscall', {
 	out = {},
 })
 local Int2Flt = mkMop('Int2Flt', {
+	alloc = true,
 	arg = {'i64'},
 	out = {'f64'},
 })
 local Flt2Int = mkMop('Flt2Int', {
+	alloc = true,
 	arg = {'f64'},
 	out = {'i64'},
 })
@@ -241,6 +244,7 @@ local TblGet = mkMop('TblGet', {
 	out = {'obj'},
 })
 local TblSet = mkMop('TblSet', {
+	alloc = true,
 	arg = {'obj', 'obj', 'obj'},
 })
 local LoadTblLen = mkMop('LoadTblLen', {
@@ -248,6 +252,7 @@ local LoadTblLen = mkMop('LoadTblLen', {
 	out = {'i32'},
 })
 local NewVec = mkMop('NewVec', {
+	alloc = true,
 	arg = {'i32'},
 	out = {'obj'},
 })
@@ -350,16 +355,18 @@ mkOp(bc.Call, (function()
 	local nret = Arg(0)
 	local baseframe = DataFrameTop()
 	local rollingbase = Reg32()
+	local ri = Reg32()
 	local n0 = StoreReg(rollingbase, DataFrameTopBase())
 	local n1 = AllocateDataFrames(Arg(1))
 	-- TODO StoreName 'func'
-	local n2 = ForRange(Int(0), Arg(1), function(i)
-		local newrollingbase = Add(LoadReg(rollingbase), Mul(Arg(i), Int(4)))
+	local n2 = ForRange(ri, Int(0), Arg(1), (function()
+		local rival = LoadReg(ri)
+		local newrollingbase = Add(LoadReg(rollingbase), Mul(LoadArg(rival), Int(4)))
 		return Parallel(
 			StoreReg(rollingbase, newrollingbase),
 			WriteDataFrame(
-				Add(baseframe, i),
-				If(i, Int(3), Int(1)), -- type = i ? call : norm
+				Add(baseframe, rival),
+				If(rival, Int(3), Int(1)), -- type = i ? call : norm
 				Int(0), -- pc
 				newrollingbase, -- base
 				Mul(LoadFuncParamc(func), Int(4)), -- dotdotdot
@@ -369,7 +376,7 @@ mkOp(bc.Call, (function()
 				0 -- TODO calc frame
 			)
 		)
-	end)
+	end)())
 	local n3 = PushObjFrameFromFunc(func)
 	local n4 = SetPc(Int(0))
 	return Seq(n0, n1, n2, n3, n4)
