@@ -198,13 +198,28 @@ end
 function walk(f, ast)
 	mopcomp[ast.op](f, ast)
 end
-function compop(f, op)
-	return function(scopes)
-		local opdef = microbc.ops[op]
-		for i=1,#opdef.ops do
-			walk(f, opdef.ops[i])
+function mkgenop(f, bc, pc, objbase)
+	local ctx = {
+		bc = bc,
+		pc = pc,
+		objbase = objbase,
+	}
+	return function(op)
+		return function(scopes)
+			local opdef = microbc.ops[op]
+			if stackspace > 0 then
+				f:i32(stackspace)
+				f:call(extendtmp)
+			end
+			walk(f, opdef)
+			if argoffset > 0 then
+				f:load(pc)
+				f:i32(argoffset)
+				f:add()
+				f:store(pc)
+			end
+			f:br(scopes.nop)
 		end
-		f:br(scopes.nop)
 	end
 end
 
@@ -215,7 +230,7 @@ defMop('Int', function(f, mop)
 end)
 defMop('Load', function(f, mop)
 	walk(mop[1])
-	f:i32load(0)
+	f:i32load(mop[2] or 0)
 end)
 defMop('LoadInt', function(f, mop)
 	resolveobj(mop[1])
@@ -225,8 +240,79 @@ defMop('LoadFlt', function(f, mop)
 	resolveobj(mop[1])
 	f:f64load(num.base)
 end)
+defMop('FltInt64', function(f, mop)
+	resolvef64(mop[1])
+	f:i64converts()
+end)
+defMop('Int64Flt', function(f, mop)
+	resolvei64(mop[1])
+	f:f64converts()
+end)
 defMop('Push', function(f, mop)
+	resolveobj(mop[1])
 	f:call(tmppush)
+end)
+defMop('Pop', function(f, mop)
+	f:call(tmppop)
+end)
+defMop('Arg', function(f, mop, ctx)
+	f:load(ctx.bc)
+	f:load(ctx.pc)
+	f:add()
+	if mop[1] ~= 0 then
+		f:i32(mop[1])
+		f:i32(4)
+		f:mul()
+		f:add()
+	end
+	f:i32load(str.base)
+end)
+defMop('Const', function(f, mop, ctx)
+	f:load(ctx.objbase)
+	f:i32load(objframe.consts)
+	resolvei32(mop[1])
+	f:i32(4)
+	f:mul()
+	f:add()
+end)
+defMop('Free', function(f, mop, ctx)
+	f:load(ctx.objbase)
+	f:i32load(objframe.frees)
+	resolvei32(mop[1])
+	f:i32(4)
+	f:mul()
+	f:add()
+end)
+defMop('Local', function(f, mop, ctx)
+	f:call(loadframebase)
+	f:i32load32u(dataframe.base)
+	f:call(loadframebase)
+	f:i32load16u(dataframe.locals)
+	f:add()
+	f:loadg(oluastack)
+	f:i32load(coro.stack)
+	f:i32load(buf.ptr)
+	f:add()
+	resolvei32(mop[1])
+	f:i32(4)
+	f:mul()
+	f:add()
+end)
+defMop('Param', function(f, mop)
+	f:call(param0)
+	resolvei32(mop[1])
+	f:i32(4)
+	f:mul()
+	f:add()
+end)
+defMop('VargLen', function(f, mop, ctx)
+	f:call(loadframebase)
+	f:i32load16u(objframe.locals)
+	f:call(loadframebase)
+	f:i32load16u(dataframe.dotdotdot)
+	f:sub()
+	f:i32(2)
+	f:shru()
 end)
 defMop('Add', function(f, mop)
 	resolvei32(mop[1])
@@ -276,6 +362,8 @@ local eval = func(i32, function(f)
 
 	loadframe()
 
+	local genop = mkgenop(f, bc, pc, objbase)
+
 	f:switch(function(scopes)
 		-- baseptr = ls.obj.ptr + base
 		-- bc = baseptr.bc
@@ -300,9 +388,9 @@ local eval = func(i32, function(f)
 		f:add()
 		f:i32load8u(str.base - 1)
 		f:call(rt.echo)
-	end, ops.LoadNil, compop(f, ops.LoadNil),
-	ops.LoadFalse, compop(f, ops.LoadFalse),
-	ops.LoadTrue, compop(f, ops.LoadTrue),
+	end, ops.LoadNil, genop(ops.LoadNil),
+	ops.LoadFalse, genop(ops.LoadFalse),
+	ops.LoadTrue, genop(ops.LoadTrue),
 	ops.CmpEq, function(scopes)
 		f:i32(8)
 		f:call(nthtmp)
@@ -1083,7 +1171,6 @@ local eval = func(i32, function(f)
 		readArg4()
 		f:add()
 		f:i32load(vec.base)
-		f:call(rt.echoptr)
 		f:call(tmppush)
 		f:br(scopes.nop)
 	end, ops.LoadLocal, function(scopes)

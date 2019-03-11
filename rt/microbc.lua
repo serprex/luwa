@@ -76,7 +76,7 @@ local Str = mkMop('Str', {
 	out = {'str'},
 })
 local Load = mkMop('Load', {
-	arg = {'i32'},
+	arg = {'i32', 'Lint'},
 	out = {'i32'},
 })
 local LoadInt = mkMop('LoadInt', {
@@ -93,7 +93,15 @@ local Free = mkMop('Free', {
 })
 local Const = mkMop('Const', {
 	arg = {'i32'},
-	out = {'obj'},
+	out = {'i32'},
+})
+local Local = mkMop('Local', {
+	arg = {'i32'},
+	out = {'i32'},
+})
+local Param = mkMop('Param', {
+	arg = {'i32'},
+	out = {'i32'},
 })
 local Store = mkMop('Store', {
 	arg = { 'i32', 'i32' },
@@ -162,7 +170,6 @@ local Arg = mkMop('Arg', {
 	out = { 'i32' },
 })
 local Push = mkMop('Push', {
-	alloc = true,
 	arg = {'obj'},
 	out = {},
 })
@@ -213,13 +220,11 @@ local Syscall = mkMop('Syscall', {
 	arg = {'i32'},
 	out = {},
 })
-local Int2Flt = mkMop('Int2Flt', {
-	alloc = true,
+local Int64Flt = mkMop('Int64Flt', {
 	arg = {'i64'},
 	out = {'f64'},
 })
-local Flt2Int = mkMop('Flt2Int', {
-	alloc = true,
+local FltInt64 = mkMop('Flt64Int', {
 	arg = {'f64'},
 	out = {'i64'},
 })
@@ -260,7 +265,10 @@ local NewVec = mkMop('NewVec', {
 -- TODO CallBinMetaMethod
 -- TODO FillRange
 -- TODO MemCpy4
--- TODO VargLen
+local VargLen = mkMop('VargLen', {
+	arg = {},
+	out = {'i32'},
+})
 -- TODO VargPtr
 -- TODO AllocateTemp
 -- TODO BoolCall
@@ -288,9 +296,9 @@ mkOp(bc.LoadParamBox, Push(Load(Load(Param(Arg(0))))))
 mkOp(bc.StoreParamBox, Store(Load(Param(Arg(0))), Pop()))
 mkOp(bc.BoxParam, Store(Param(0), Box(Param(Arg(0)))))
 mkOp(bc.BoxLocal, Store(Local(0), Box(Nil())))
-mkOp(bc.LoadLocalBox, Push(Load(Load(Local(Arg(0))))))
-mkOp(bc.StoreLocalBox, Store(Load(Local(Arg(0))), Pop()))
-mkOp(bc.LoadConst, Push(Load(Const(Arg(0)))))
+mkOp(bc.LoadLocalBox, Push(Load(Load(Local(Arg(0)), vec.base))))
+mkOp(bc.StoreLocalBox, Store(Load(Local(Arg(0)), vec.base), Pop()))
+mkOp(bc.LoadConst, Push(Load(Const(Arg(0)), vec.base)))
 mkOp(bc.Pop, Pop())
 mkOp(bc.Syscall, Syscall(Arg(0)))
 mkOp(bc.Jmp, SetPc(Arg(0)))
@@ -341,10 +349,10 @@ mkOp(bc.LoadVarg, (function()
 	return If(
 		Lt(vlen, Arg(0)),
 		function(f)
-			local vlen4 = Mul(vlen, Int(2))
+			local vlen4 = Mul(vlen, Int(4))
 			return Parallel(
 				MemCpy4(tmp, vptr, vlen4),
-				FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(2)))
+				FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(4)))
 			)
 		end,
 		MemCpy4(tmp, vptr, Mul(Arg(0), Int(2)))
@@ -508,7 +516,7 @@ function cmpop(op, cmpop, strlogic)
 				types.int,
 				types.float,
 				Push(If(
-					cmpop(Int2Flt(LoadInt(a)), LoadFlt(b)),
+					cmpop(Int64Flt(LoadInt(a)), LoadFlt(b)),
 					True(), False()
 				))
 			},
@@ -516,7 +524,7 @@ function cmpop(op, cmpop, strlogic)
 				types.float,
 				types.int,
 				Push(If(
-					cmpop(LoadFlt(a), Int2Flt(LoadInt(b))),
+					cmpop(LoadFlt(a), Int64Flt(LoadInt(b))),
 					True(), False()
 				))
 			},
@@ -547,11 +555,11 @@ function binmathop(op, floatlogic, intlogic, metamethod)
 		},{
 			types.int,
 			types.float,
-			Push(floatlogic(Int2Flt(LoadInt(a)), LoadFlt(b)))
+			Push(floatlogic(Int64Flt(LoadInt(a)), LoadFlt(b)))
 		},{
 			types.float,
 			types.int,
-			Push(floatlogic(LoadFlt(a), Int2Flt(LoadInt(b))))
+			Push(floatlogic(LoadFlt(a), Int64Flt(LoadInt(b))))
 		})
 	end)())
 end
@@ -563,7 +571,7 @@ binmathop_mono(bc.Sub, Sub, '__sub')
 binmathop_mono(bc.Mul, Mul, '__mul')
 binmathop(bc.Div,
 	function(a, b)
-		return Div(Flt2Int(a), Flt2Int(b))
+		return Div(Flt64Int(a), Flt64Int(b))
 	end,
 	function(a, b)
 		return Div(a, b)
@@ -583,25 +591,25 @@ mkOp(bc.IDiv, (function()
 		types.float,
 		types.float,
 		function(f)
-			Push(Div(Flt2Int(LoadFlt(a)), Flt2Int(LoadFlt(b))))
+			Push(Div(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b))))
 		end
 	},{
 		types.int,
 		types.float,
 		function(f)
-			Push(Div(LoadInt(a), Flt2Int(LoadFlt(b))))
+			Push(Div(LoadInt(a), Flt64Int(LoadFlt(b))))
 		end
 	},{
 		types.float,
 		types.int,
 		function(f)
-			Push(Div(Flt2Int(LoadFlt(a)), LoadInt(b)))
+			Push(Div(Flt64Int(LoadFlt(a)), LoadInt(b)))
 		end
 	})
 end)())
 binmathop(bc.Pow,
 	function(f, a, b)
-		return Pow(Flt2Int(a), Flt2Int(b))
+		return Pow(Flt64Int(a), Flt64Int(b))
 	end,
 	function(f, a, b)
 		return Pow(a, b)
@@ -621,15 +629,15 @@ function binbitop(op, mop, metamethod)
 		},{
 			types.float,
 			types.float,
-			Push(mop(Flt2Int(LoadFlt(a)), Flt2Int(LoadFlt(b))))
+			Push(mop(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b))))
 		},{
 			types.int,
 			types.float,
-			Push(mop(LoadInt(a), Flt2Int(LoadFlt(b))))
+			Push(mop(LoadInt(a), Flt64Int(LoadFlt(b))))
 		},{
 			types.float,
 			types.int,
-			Push(mop(Flt2Int(LoadFlt(a)), LoadInt(b)))
+			Push(mop(Flt64Int(LoadFlt(a)), LoadInt(b)))
 		})
 	end)())
 end
@@ -646,7 +654,7 @@ mkOp(bc.BNot, (function()
 			Push(BNot64(LoadInt(a)))
 		},{
 			types.float,
-			Push(BNot64(Flt2Int(LoadFlt(a))))
+			Push(BNot64(Flt64Int(LoadFlt(a))))
 		},
 		CallMetaMethod('__bnot', a)
 	)

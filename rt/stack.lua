@@ -5,8 +5,7 @@ local alloc = require 'alloc'
 local buf, coro, vec = alloc.buf, alloc.coro, alloc.vec
 
 local util = require 'util'
--- local pushvec = util.pushvec
--- local extendvec = util.extendvec
+local extendvec, pushvec = util.extendvec, util.pushvec
 
 local tmppush = func(i32, void, function(f, o)
 	f:loadg(oluastack)
@@ -19,7 +18,7 @@ end)
 local tmppop = func(function(f)
 	f:loadg(oluastack)
 	f:i32load(coro.stack)
-	f:call(popvec)
+	f:call(util.popvec)
 	f:drop()
 end)
 
