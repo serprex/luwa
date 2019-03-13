@@ -124,6 +124,10 @@ local Add = mkMop('Add', {
 	arg = {'i32', 'i32'},
 	out = {'i32'},
 })
+local Sub = mkMop('Sub', {
+	arg = {'i32', 'i32'},
+	out = {'i32'},
+})
 local Or = mkMop('Or', {
 	arg = {'i32', 'i32'},
 	out = {'i32'},
@@ -137,14 +141,17 @@ local BNot64 = mkMop('BNot64', {
 	out = {'i64'},
 })
 local NegateInt = mkMop('NegateInt', {
+	alloc = true,
 	arg = {'obj'},
 	out = {'obj'},
 })
 local NegateFloat = mkMop('NegateFloat', {
+	alloc = true,
 	arg = {'obj'},
 	out = {'obj'},
 })
 local StrConcat = mkMop('StrConcat', {
+	alloc = true,
 	arg = {'obj','obj'},
 	out = {'obj'},
 })
@@ -153,6 +160,7 @@ local StrConcat = mkMop('StrConcat', {
 local If = mkMop('If', function(args)
 	local _then, _else = out(args[2]), args[3] and out(args[3])
 	assert(tyeq(_then, _else), "If's branches with unequal type")
+	assert(#_then < 2, "If's branches have excess results")
 	arg = { 'i32', { type = 'block', out = _then } }
 	if args[3] then
 		arg[3] = { type = 'block', out = _else }
