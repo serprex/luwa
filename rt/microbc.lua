@@ -216,6 +216,16 @@ local IntObjFromInt = mkMop('IntObjFromInt', {
 	arg = {'i32'},
 	out = {'obj'},
 })
+local IntObjFromInt64 = mkMop('IntObjFromInt64', {
+	alloc = true,
+	arg = {'i64'},
+	out = {'obj'},
+})
+local FltObjFromFlt = mkMop('FltObjFromFlt', {
+	alloc = true,
+	arg = {'f64'},
+	out = {'obj'},
+})
 local LoadStrLen = mkMop('LoadStrLen', {
 	arg = {'obj'},
 	out = {'i32'},
@@ -429,10 +439,10 @@ mkOp(bc.Neg, (function()
 	return Typeck({a},
 		{
 			types.int,
-			Push(NegateInt(a))
+			Push(IntObjFromInt64(Negate64(LoadInt(a))))
 		}, {
 			types.float,
-			Push(NegateFloat(a))
+			Push(FltObjFromFlt(Negate64f(LoadFlt(a))))
 		},
 		{
 			types.tbl,
@@ -453,7 +463,7 @@ mkOp(bc.TblAdd, (function()
 	local v = Pop()
 	local k = Seq(v, Pop())
 	local tbl = Seq(k, Pop())
-	return Seq(TblSet(tbl, k, v), Pop(), Pop())
+	return TblSet(tbl, k, v)
 end)())
 
 mkOp(bc.CmpEq, (function()
