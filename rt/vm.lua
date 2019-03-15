@@ -191,11 +191,72 @@ param0 = func(i32, function(f)
 	f:add()
 end)
 
-mopcomp = {}
-function defMop(opName, func)
+local mopcomp = {}
+local function defMop(opName, func)
 	mopcomp[microbc.mops[opName]] = func
 end
-function mkgenop(f, bc, pc, objbase)
+local function microTypeToWasmType(mty)
+	if not mty then
+		return void
+	elseif mty == 'i32' or mty == 'obj' then
+		return i32
+	elseif mty == 'i64' then
+		return i64
+	elseif mty == 'f32' then
+		return f32
+	elseif mty == 'f64' then
+		return f64
+	else
+		error("Cannot resolve wasm type for microbc type: ", mty)
+	end
+end
+local function resolvevoid(ctx, mop)
+	local s0 = #f.stack
+	mopcomp[mop.op](ctx.f, mop, ctx)
+	assert(s0 == #f.stack, 'resolvevoid had stack shift')
+end
+local function resolve(mty, ctx, mop)
+	local wty = microTypeToWasmType(mty)
+	if wty == void then
+		return resolvevoid(ctx, mop)
+	end
+	-- TODO when mty == 'obj', track on tempstack
+	local r = ctx.temps[mop]
+	if r then
+		f:load(r)
+	else
+		r = newreg(ctx, wty)
+		mopcomp[mop.op](ctx.f, mop, ctx)
+		-- assert we only added something of wty to stack
+		f:tee(r)
+		ctx.temps[mop] = r
+	end
+end
+local function resolvei32(ctx, mop)
+	return resolve('i32', ctx, mop)
+end
+local function resolvei64(ctx, mop)
+	return resolve('i64', ctx, mop)
+end
+local function resolvef32(ctx, mop)
+	return resolve('f32', ctx, mop)
+end
+local function resolvef64(ctx, mop)
+	return resolve('f64', ctx, mop)
+end
+local function resolveobj(ctx, mop)
+	return resolve('obj', ctx, mop)
+end
+local function resolvereg(ctx, mop)
+	local r = ctx.regs[mop]
+	if not r then
+		assert(mop.op == microbc.mops.NewReg)
+		r = newreg(ctx, i32)
+		ctx.regs[mop] = r
+	end
+	return r
+end
+local function mkgenop(f, bc, pc, objbase)
 	local ctx = {
 		f = f,
 		bc = bc,
@@ -225,9 +286,12 @@ defMop('Nop', function()
 end)
 defMop('Seq', function(f, mop, ctx)
 	for i=1, #mop-1 do
+		-- TODO Need to drop results of this
 		resolvevoid(ctx, mop[i])
 	end
-	resolve(ctx, mop[#mop])
+	-- TODO 'any' doesn't work, this gets resolved if we split Seq
+	-- TODO Seq Seq64 Seq32 Seq32f Seq64f SeqObj
+	resolve('any', ctx, mop[#mop])
 end)
 defMop('Int', function(f, mop)
 	f:i32(mop[1])
@@ -238,6 +302,16 @@ end)
 defMop('Load', function(f, mop, ctx)
 	resolvei32(ctx, mop[1])
 	f:i32load(mop[2] or 0)
+end)
+defMop('NewReg', function(f, mop, ctx)
+	error('Cannot resolve NewReg')
+end)
+defMop('StoreReg', function(f, mop, ctx)
+	resolvei32(ctx, mop[2])
+	f:store(resolvereg(mop[1]))
+end)
+defMop('LoadReg', function(f, mop, ctx)
+	f:load(resolvereg(mop[1]))
 end)
 defMop('LoadInt', function(f, mop, ctx)
 	resolveobj(ctx, mop[1])
@@ -405,21 +479,8 @@ end)
 defMop('If', function(f, mop, ctx)
 	resolvei32(ctx, mop[1])
 	local ifty = microbc.mops.If.sig(mop).out[1]
-	local wifty
-	if not ifty then
-		wifty = void
-	elseif ifty == 'i32' or ifty == 'obj' then
-		wifty = i32
-	elseif ifty == 'i64' then
-		wifty = i64
-	elseif ifty == 'f32' then
-		wifty = f32
-	elseif ifty == 'f64' then
-		wifty = f64
-	else
-		error("Cannot resolve wasm type for microbc type: ", ifty)
-	end
-	assert(mop[3] or ifty == void)
+	local wifty = microTypeToWasmType(ifty)
+	assert(mop[3] or wifty == void)
 	f:iff(wifty,
 		function()
 			resolve(ifty, ctx, mop[2])
@@ -428,6 +489,25 @@ defMop('If', function(f, mop, ctx)
 			resolve(ifty, ctx, mop[3])
 		end
 	)
+end)
+defMop('ForRange', function(f, mop, ctx)
+	local r = resolvereg(ctx, mop[1])
+	local rto = newreg(ctx, i32)
+	resolvei32(ctx, mop[2])
+	f:store(r)
+	resolvei32(ctx, mop[3])
+	f:store(rto)
+	f:loop(function(loop)
+		resolvevoid(ctx, mop[4])
+
+		f:load(r)
+		f:i32(1)
+		f:add()
+		f:tee(r)
+		f:load(rto)
+		f:ltu()
+		f:br(loop)
+	end)
 end)
 
 local eval = func(i32, function(f)

@@ -2,10 +2,7 @@ local alloc = require 'alloc'
 local types = alloc.types
 local mtypes = {}
 local mops = {}
-local mopmt = {}
-function mopmt:__call(op)
-	self.ops[#self.ops+1] = op
-end
+local ops = {}
 
 local function mkMop(op, sig)
 	local id = #mops+1
@@ -298,7 +295,6 @@ local Parallel = Seq
 local function Nil() return Int(0) end
 local function False() return Int(4) end
 local function True() return Int(8) end
-local ops = {}
 mkOp(bc.Nop, Nop())
 mkOp(bc.LoadNil, Push(Nil()))
 mkOp(bc.LoadFalse, Push(False()))
@@ -349,6 +345,7 @@ mkOp(bc.JifOrPop,
 mkOp(bc.LoadFunc, (function()
 	local func = CloneFunc(Const(Arg(1)))
 	return Seq(
+		func,
 		If(
 			Arg(0),
 			Store(
@@ -364,16 +361,18 @@ mkOp(bc.LoadVarg, (function()
 	local tmp = AllocateTemp(Arg(0))
 	local vlen = VargLen()
 	local vptr = VargPtr()
-	return If(
-		Lt(vlen, Arg(0)),
-		function(f)
-			local vlen4 = Mul(vlen, Int(4))
-			return Parallel(
-				MemCpy4(tmp, vptr, vlen4),
-				FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(4)))
+	return Seq(vptr,
+		If(
+			Lt(vlen, Arg(0)),
+			function(f)
+				local vlen4 = Mul(vlen, Int(4))
+				return Parallel(
+					MemCpy4(tmp, vptr, vlen4),
+					FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(4)))
 			)
-		end,
-		MemCpy4(tmp, vptr, Mul(Arg(0), Int(2)))
+			end,
+			MemCpy4(tmp, vptr, Mul(Arg(0), Int(2)))
+		)
 	)
 end)())
 mkOp(bc.AppendVarg, AppendRange(Pop(), VargPtr(), Arg(0)))
@@ -465,6 +464,12 @@ mkOp(bc.TblAdd, (function()
 	local tbl = Seq(k, Pop())
 	return TblSet(tbl, k, v)
 end)())
+mkOp(bc.TblSet, (function()
+	local k = Pop()
+	local tbl = Seq(k, Pop())
+	local v = Seq(tbl, Pop())
+	return TblSet(tbl, k, v)
+end)())
 
 mkOp(bc.CmpEq, (function()
 	local a = Pop()
@@ -501,7 +506,7 @@ mkOp(bc.CmpEq, (function()
 	)
 end)())
 
-function cmpop(op, cmpop, strlogic)
+local function cmpop(op, cmpop, strlogic)
 	mkOp(op, (function()
 		local a = Pop()
 		local b = Seq(a, Pop())
@@ -557,7 +562,7 @@ cmpop(bc.CmpLt, Lt)
 cmpop(bc.CmpGe, Ge)
 cmpop(bc.CmpGt, Gt)
 
-function binmathop(op, floatlogic, intlogic, metamethod)
+local function binmathop(op, floatlogic, intlogic, metamethod)
 	mkOp(op, (function()
 		local a = Pop()
 		local b = Seq(a, Pop())
@@ -581,7 +586,7 @@ function binmathop(op, floatlogic, intlogic, metamethod)
 		})
 	end)())
 end
-function binmathop_mono(op, mop, metamethod)
+local function binmathop_mono(op, mop, metamethod)
 	return binmathop(op, mop, mop, metamethod)
 end
 binmathop_mono(bc.Add, Add, '__add')
@@ -634,7 +639,7 @@ binmathop(bc.Pow,
 	end,
 	'__pow')
 binmathop_mono(bc.Mod, 'Mod', '__mod')
-function binbitop(op, mop, metamethod)
+local function binbitop(op, mop, metamethod)
 	mkOp(op, (function()
 		local a = Pop()
 		local b = Seq(a, Pop())
