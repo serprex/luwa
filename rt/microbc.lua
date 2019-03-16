@@ -4,166 +4,203 @@ local mtypes = {}
 local mops = {}
 local ops = {}
 
+local function out(ast)
+	if not ast.arg then
+		local mop = mops[ast.op]
+		local sig = mop.sig
+		local sigty = type(sig)
+		if sigty == 'function' then
+			sig = sig(ast)
+		end
+		ast.arg = sig.arg
+		ast.out = sig.out
+	end
+	return ast.out
+end
+local function verify(mop)
+	local arg = mop.arg
+	if not arg then
+		assert(#mop == 0, 'Argless constructor received args')
+	end
+	for i=1,#arg do
+		local a = arg[i]
+		if a ~= 'atom' then
+			assert(out(mop[i]) == a, 'Constructor arg type mismatch')
+		end
+	end
+end
 local function mkMop(op, sig)
 	local id = #mops+1
-	mops[id] = {
-		op = op,
-		sig = sig,
-	}
+	mops[id] = op
 	mops[op] = id
-	return function(f, ...)
-		return { op = id, ... }
+	if type(sig) == 'table' then
+		return function(...)
+			local node = { op = id, ... }
+			for k,v in pairs(sig) do
+				node[k] = v
+			end
+			verify(node)
+			return node
+		end
+	else
+		return function(...)
+			local node = { op = id, ... }
+			local meta = sig(node)
+			for k,v in pairs(meta) do
+				node[k] = v
+			end
+			verify(node)
+			return node
+		end
 	end
 end
 local function mkOp(op, f)
 	ops[op] = f
 end
-local function mkType(name, obj)
-	obj.name = name
-	mtypes[name] = obj
-	return obj
+local function GenericUnOp(args)
+	assert(#args == 1, 'GenericUnOp: expects 1 param')
+	local _a = out(args[1])
+	return {
+		arg = { _a },
+		out = _a,
+	}
 end
-mkType('Lint', { type = 'const', ltype = 'number', mtype = 'integer' })
-mkType('Lfloat', { type = 'const', ltype = 'number', mtype = 'float' })
-mkType('Lstr', { type = 'const', ltype = 'string' })
-mkType('Ltbl', { type = 'const', ltype = 'table' })
-mkType('int', { type = 'obj', otype = types.int })
-mkType('float', { type = 'obj', otype = types.float })
-mkType('single', { type = 'obj', otype = types.single })
-mkType('tbl', { type = 'obj', otype = types.tbl, layout = {
-	arr = 'vec',
-	hash = 'vec',
-	meta = {'single', 'tbl'},
-}})
-mkType('str', { type = 'obj', otype = types.str })
-mkType('vec', { type = 'obj', otype = types.vec })
-mkType('buf', { type = 'obj', otype = types.buf, layout = {
-	ptr = {'str', 'vec'},
-}})
-mkType('functy', { type = 'obj', otype = types.functy, layout = {
-	bc = 'str',
-	consts = {'single', 'vec'},
-	frees = {'single', 'vec'},
-}})
-mkType('coro', { type = 'obj', otype = types.coro, layout = {
-	caller = {'single', 'coro'},
-	stack = 'buf',
-	data = 'buf',
-}})
-mkType('i32', { type = 'i32' })
-mkType('i64', { type = 'i64' })
-mkType('f32', { type = 'f32' })
-mkType('f64', { type = 'f64' })
+local function GenericBinOp(args)
+	assert(#args == 2, 'GenericBinOp: expects 2 params')
+	local _a, _b = out(args[1]), out(args[2])
+	assert(_a == _b, 'GenericBinOp: received mixed types')
+	return {
+		arg = { _a, _b },
+		out = _a,
+	}
+end
 local Nop = mkMop('Nop', {})
+local Seq = mkMop('Seq', function(args)
+	arg = {}
+	for i=1,#args-1 do
+		arg[i] = out(arg[i])
+	end
+	return {
+		arg = arg,
+		out = out(args[#args]),
+	}
+end)
+local Void = mkMop('Void', function(args)
+	assert(#args == 1, 'Void expects 1 param')
+	return {
+		arg = {out(args[1])}
+	}
+end)
 local Int = mkMop('Int', {
-	arg = {'Lint'},
-	out = {'i32'},
+	arg = {'atom'},
+	out = 'i32',
+})
+local Int64 = mkMop('Int64', {
+	arg = {'atom'},
+	out = 'i64',
+})
+local Flt = mkMop('Flt', {
+	arg = {'atom'},
+	out = 'f32',
+})
+local Flt64 = mkMop('Flt64', {
+	arg = {'atom'},
+	out = 'f64',
+})
+local Str = mkMop('Str', {
+	arg = {'atom'},
+	out = 'obj',
 })
 local ToString = mkMop('ToString', {
 	alloc = true,
 	arg = {'obj'},
-	out = {'obj'},
-})
-local Int64 = mkMop('Int64', {
-	arg = {'Lint'},
-	out = {'i64'},
-})
-local Str = mkMop('Str', {
-	arg = {'Lstr'},
-	out = {'str'},
+	out = 'obj',
 })
 local Load = mkMop('Load', {
-	arg = {'i32', 'Lint'},
-	out = {'i32'},
+	arg = {'i32', 'atom'},
+	out = 'i32',
 })
 local LoadInt = mkMop('LoadInt', {
 	arg = {'obj'},
-	out = {'i64'},
+	out = 'i64',
 })
 local LoadFlt = mkMop('LoadFlt', {
 	arg = {'obj'},
-	out = {'f64'},
+	out = 'f64',
 })
 local Free = mkMop('Free', {
 	arg = {'i32'},
-	out = {'obj'},
+	out = 'obj',
 })
 local Const = mkMop('Const', {
 	arg = {'i32'},
-	out = {'i32'},
+	out = 'i32',
 })
 local Local = mkMop('Local', {
 	arg = {'i32'},
-	out = {'i32'},
+	out = 'i32',
 })
 local Param = mkMop('Param', {
 	arg = {'i32'},
-	out = {'i32'},
+	out = 'i32',
 })
 local Store = mkMop('Store', {
 	arg = { 'i32', 'i32' },
 })
 local Reg32 = mkMop('Reg32', {
-	out = {'r32'},
+	out = 'r32',
 })
 local LoadReg = mkMop('LoadReg', {
 	arg = { 'r32' },
-	out = { 'i32' }
+	out =  'i32' 
 })
 local StoreReg = mkMop('StoreReg', {
 	arg = { 'r32', 'i32' }
 })
-local Eq = mkMop('Eq', {
-	arg = { 'i32', 'i32' },
-	out = { 'i32' }
-})
-local Add = mkMop('Add', {
-	arg = {'i32', 'i32'},
-	out = {'i32'},
-})
-local Sub = mkMop('Sub', {
-	arg = {'i32', 'i32'},
-	out = {'i32'},
-})
+local Eq = mkMop('Eq', GenericBinOp)
+local Lt = mkMop('Lt', GenericBinOp)
+local Le = mkMop('Le', GenericBinOp)
+local Ge = mkMop('Ge', GenericBinOp)
+local Gt = mkMop('Gt', GenericBinOp)
+local Add = mkMop('Add', GenericBinOp)
+local Sub = mkMop('Sub', GenericBinOp)
+local Mul = mkMop('Mul', GenericBinOp)
+local Div = mkMop('Div', GenericBinOp)
+local BAnd = mkMop('BAnd', GenericBinOp)
+local BOr = mkMop('BOr', GenericBinOp)
+local BXor = mkMop('BXor', GenericBinOp)
+local Negate = mkMop('Negate', GenericUnOp)
 local Or = mkMop('Or', {
 	arg = {'i32', 'i32'},
-	out = {'i32'},
+	out = 'i32',
 })
 local And = mkMop('And', {
 	arg = {'i32', 'i32'},
-	out = {'i32'},
-})
-local BNot64 = mkMop('BNot64', {
-	arg = {'i64'},
-	out = {'i64'},
+	out = 'i32',
 })
 local NegateInt = mkMop('NegateInt', {
 	alloc = true,
 	arg = {'obj'},
-	out = {'obj'},
+	out = 'obj',
 })
 local NegateFloat = mkMop('NegateFloat', {
 	alloc = true,
 	arg = {'obj'},
-	out = {'obj'},
+	out = 'obj',
 })
 local StrConcat = mkMop('StrConcat', {
 	alloc = true,
 	arg = {'obj','obj'},
-	out = {'obj'},
+	out = 'obj',
 })
 -- TODO need to work out concept of 'deferred' block in arg sig
 -- ie we're mixing up idea of input vs argument
 local If = mkMop('If', function(args)
 	local _then, _else = out(args[2]), args[3] and out(args[3])
-	assert(tyeq(_then, _else), "If's branches with unequal type")
+	assert(_then == _else, "If's branches with unequal type")
 	assert(#_then < 2, "If's branches have excess results")
-	arg = { 'i32', { type = 'block', out = _then } }
-	if args[3] then
-		arg[3] = { type = 'block', out = _else }
-	end
 	return {
-		arg = arg,
+		arg = { 'i32', _then, _else },
 		out = _then,
 	}
 end)
@@ -171,24 +208,22 @@ local ForRange = mkMop('ForRange', {
 	arg = { 'r32', 'i32', 'i32', { type = 'block' } }
 })
 local Arg = mkMop('Arg', {
-	arg = { 'Lint' },
-	out = { 'i32' },
+	arg = { 'atom' },
+	out =  'i32' ,
 })
 local Push = mkMop('Push', {
 	arg = {'obj'},
-	out = {},
 })
 local Pop = mkMop('Pop', {
 	arg = {},
-	out = {'obj'},
+	out = 'obj',
 })
 local Peek = mkMop('Peek', {
 	arg = {},
-	out = {'obj'},
+	out = 'obj',
 })
 local SetPc = mkMop('SetPc', {
 	arg = {'i32'},
-	out = {},
 })
 local Truthy = mkMop('Truthy', {
 	arg = {'obj'},
@@ -197,35 +232,35 @@ local Truthy = mkMop('Truthy', {
 local Box = mkMop('Box', {
 	alloc = true,
 	arg = {'obj'},
-	out = {'obj'},
+	out = 'obj',
 })
 local CloneFunc = mkMop('CloneFunc', {
 	alloc = true,
 	arg = {'obj'},
-	out = {'obj'},
+	out = 'obj',
 })
 local ObjMetalessEq = mkMop('ObjMetalessEq', {
 	arg = {'obj', 'obj'},
-	out = {'i32'},
+	out = 'i32',
 })
 local IntObjFromInt = mkMop('IntObjFromInt', {
 	alloc = true,
 	arg = {'i32'},
-	out = {'obj'},
+	out = 'obj',
 })
 local IntObjFromInt64 = mkMop('IntObjFromInt64', {
 	alloc = true,
 	arg = {'i64'},
-	out = {'obj'},
+	out = 'obj',
 })
 local FltObjFromFlt = mkMop('FltObjFromFlt', {
 	alloc = true,
 	arg = {'f64'},
-	out = {'obj'},
+	out = 'obj',
 })
 local LoadStrLen = mkMop('LoadStrLen', {
 	arg = {'obj'},
-	out = {'i32'},
+	out = 'i32',
 })
 local Error = mkMop('Error', {
 	alloc = true,
@@ -233,35 +268,34 @@ local Error = mkMop('Error', {
 local Syscall = mkMop('Syscall', {
 	alloc = true,
 	arg = {'i32'},
-	out = {},
 })
 local Int64Flt = mkMop('Int64Flt', {
 	arg = {'i64'},
-	out = {'f64'},
+	out = 'f64',
 })
 local FltInt64 = mkMop('Flt64Int', {
 	arg = {'f64'},
-	out = {'i64'},
+	out = 'i64',
 })
 local Meta = mkMop('Meta', {
 	arg = {'obj'},
-	out = {'obj'},
+	out = 'obj',
 })
 local Type = mkMop('Type', {
 	arg = {'obj'},
-	out = {'i32'},
+	out = 'i32',
 })
 local IsTbl = mkMop('IsTbl', {
 	arg = {'obj'},
-	out = {'i32'},
+	out = 'i32',
 })
 local IsNumOrStr = mkMop('IsNumOrStr', {
 	arg = {'obj'},
-	out = {'i32'},
+	out = 'i32',
 })
 local TblGet = mkMop('TblGet', {
 	arg = {'obj', 'obj'},
-	out = {'obj'},
+	out = 'obj',
 })
 local TblSet = mkMop('TblSet', {
 	alloc = true,
@@ -269,12 +303,12 @@ local TblSet = mkMop('TblSet', {
 })
 local LoadTblLen = mkMop('LoadTblLen', {
 	arg = {'obj'},
-	out = {'i32'},
+	out = 'i32',
 })
 local NewVec = mkMop('NewVec', {
 	alloc = true,
 	arg = {'i32'},
-	out = {'obj'},
+	out = 'obj',
 })
 -- TODO CallMetaMethod
 -- TODO CallBinMetaMethod
@@ -282,7 +316,7 @@ local NewVec = mkMop('NewVec', {
 -- TODO MemCpy4
 local VargLen = mkMop('VargLen', {
 	arg = {},
-	out = {'i32'},
+	out = 'i32',
 })
 -- TODO VargPtr
 -- TODO AllocateTemp
@@ -291,7 +325,6 @@ local VargLen = mkMop('VargLen', {
 -- TODO LoadFuncParamc
 -- TODO WriteDataFrame
 -- TODO FillFromStack
-local Parallel = Seq
 local function Nil() return Int(0) end
 local function False() return Int(4) end
 local function True() return Int(8) end
@@ -366,7 +399,7 @@ mkOp(bc.LoadVarg, (function()
 			Lt(vlen, Arg(0)),
 			function(f)
 				local vlen4 = Mul(vlen, Int(4))
-				return Parallel(
+				return Seq(
 					MemCpy4(tmp, vptr, vlen4),
 					FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(4)))
 			)
@@ -387,7 +420,7 @@ mkOp(bc.Call, (function()
 	local n2 = ForRange(ri, Int(0), Arg(1), (function()
 		local rival = LoadReg(ri)
 		local newrollingbase = Add(LoadReg(rollingbase), Mul(LoadArg(rival), Int(4)))
-		return Parallel(
+		return Seq(
 			StoreReg(rollingbase, newrollingbase),
 			WriteDataFrame(
 				Add(baseframe, rival),
@@ -674,10 +707,10 @@ mkOp(bc.BNot, (function()
 	return Typeck({a},
 		{
 			types.int,
-			Push(BNot64(LoadInt(a)))
+			Push(BXor(LoadInt(a), Int64(-1)))
 		},{
 			types.float,
-			Push(BNot64(Flt64Int(LoadFlt(a))))
+			Push(BXor(Flt64Int(LoadFlt(a)), Int64(-1)))
 		},
 		CallMetaMethod('__bnot', a)
 	)
