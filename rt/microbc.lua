@@ -402,7 +402,7 @@ mkOp(bc.LoadVarg, (function()
 				return Seq(
 					MemCpy4(tmp, vptr, vlen4),
 					FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(4)))
-			)
+				)
 			end,
 			MemCpy4(tmp, vptr, Mul(Arg(0), Int(2)))
 		)
