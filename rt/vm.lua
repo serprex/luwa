@@ -323,7 +323,7 @@ local function genOp(ctx, op)
 			f:add()
 			f:store(ctx.pc.r)
 		end
-		f:br(scopes.nop)
+		f:br(scopes.exit)
 	end
 end
 
@@ -678,6 +678,7 @@ local eval = func(i32, function(f)
 		switchparams[#switchparams+1] = v
 		switchparams[#switchparams+1] = genOp(ctx, v)
 	end
+	switchparams[#switchparams+1] = 'exit'
 
 	genLocals(i32, ctx.regdef.i32)
 	genLocals(i64, ctx.regdef.i64)
