@@ -205,7 +205,7 @@ local If = mkMop('If', function(args)
 	}
 end)
 local ForRange = mkMop('ForRange', {
-	arg = { 'r32', 'i32', 'i32', { type = 'block' } }
+	arg = { 'r32', 'i32', 'i32', nil }
 })
 local Arg = mkMop('Arg', {
 	arg = { 'atom' },
@@ -305,6 +305,10 @@ local LoadTblLen = mkMop('LoadTblLen', {
 	arg = {'obj'},
 	out = 'i32',
 })
+local LoadFuncParamc = mkMop('LoadFuncParamc', {
+	arg = {'obj'},
+	out = 'i32',
+})
 local NewVec = mkMop('NewVec', {
 	alloc = true,
 	arg = {'i32'},
@@ -312,17 +316,23 @@ local NewVec = mkMop('NewVec', {
 })
 -- TODO CallMetaMethod
 -- TODO CallBinMetaMethod
--- TODO FillRange
--- TODO MemCpy4
+local FillRange = mkMop('FillRange', {
+	arg = {'i32', 'obj', 'i32'},
+})
+local MemCpy4 = mkMop('MemCpy4', {
+	arg = {'i32', 'i32', 'i32'},
+})
 local VargLen = mkMop('VargLen', {
 	arg = {},
 	out = 'i32',
 })
--- TODO VargPtr
+local VargPtr = mkMop('VargPtr', {
+	arg = {},
+	out = 'i32',
+})
 -- TODO AllocateTemp
 -- TODO BoolCall
 -- TODO Typeck
--- TODO LoadFuncParamc
 -- TODO WriteDataFrame
 -- TODO FillFromStack
 local function Nil() return Int(0) end
