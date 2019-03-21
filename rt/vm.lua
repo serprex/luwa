@@ -298,6 +298,12 @@ local function initreglife(ctx, ast)
 		ctx.reglife[ast] = data
 	end
 	data.usage = data.usage + 1
+	for i=1,#ast do
+		local ai = ast.arg[i]
+		if ai ~= 'atom' and ai ~= 'r32' then
+			initreglife(ctx, ast[i])
+		end
+	end
 end
 local function mkcgctx(f)
 	bc = {}
