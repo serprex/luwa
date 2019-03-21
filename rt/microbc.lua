@@ -223,6 +223,7 @@ local Peek = mkMop('Peek', {
 	out = 'obj',
 })
 local SetPc = mkMop('SetPc', {
+	exit = true,
 	arg = {'i32'},
 })
 local Truthy = mkMop('Truthy', {
@@ -333,6 +334,27 @@ local VargPtr = mkMop('VargPtr', {
 -- TODO AllocateTemp
 -- TODO BoolCall
 -- TODO Typeck
+local Typeck = mkMop('Typeck', function(args)
+	local a1 = args[1]
+	local alen = #args
+	assert(type(a1) == 'number', 'Typeck expects first param to be a number')
+	local arg = {'atom'}
+	local hasDefault = (alen-1)%a1 == 0
+	local out = out(args[#args])
+	assert(hasDefault or not out, 'Typeck without default expects no out type')
+	for i=2,alen,a1+1 do
+		arg[#arg+1] = out
+		if i ~= alen then
+			for j=0,a1-1 do
+				assert(type(args[i+j]) == 'number', 'Typeck expects type ids')
+			end
+		end
+	end
+	return {
+		arg = arg,
+		out = out,
+	}
+end)
 -- TODO WriteDataFrame
 -- TODO FillFromStack
 local function Nil() return Int(0) end
@@ -478,24 +500,19 @@ end)())
 
 mkOp(bc.Neg, (function()
 	local a = Pop()
-	return Typeck({a},
-		{
-			types.int,
-			Push(IntObjFromInt64(Negate64(LoadInt(a))))
-		}, {
-			types.float,
-			Push(FltObjFromFlt(Negate64f(LoadFlt(a))))
-		},
-		{
-			types.tbl,
-			(function()
-				local ameta = Meta(a)
-				If(ameta,
-					CallMetaMethod('__neg', ameta, a), -- TODO helper function this
-					Error()
-				)
-			end)(),
-		},
+	return Typeck(1, a,
+		types.int,
+		Push(IntObjFromInt64(Negate64(LoadInt(a)))),
+		types.float,
+		Push(FltObjFromFlt(Negate64f(LoadFlt(a)))),
+		types.tbl,
+		(function()
+			local ameta = Meta(a)
+			If(ameta,
+				CallMetaMethod('__neg', ameta, a), -- TODO helper function this
+				Error()
+			)
+		end)(),
 		Error()
 	)
 end)())
@@ -553,50 +570,40 @@ local function cmpop(op, cmpop, strlogic)
 	mkOp(op, (function()
 		local a = Pop()
 		local b = Seq(a, Pop())
-		return Typeck({a, b},
-			{
-				types.int,
-				types.int,
-				Push(If(
-					cmpop(LoadInt(a), LoadInt(b)),
-					True(), False()
-				))
-			},
-			{
-				types.float,
-				types.float,
-				Push(If(
-					cmpop(LoadFlt(a), LoadFlt(b)),
-					True(), False()
-				))
-			},
-			{
-				types.str,
-				types.str,
-				Push(If(
-					cmpop(StrCmp(a, b), Int(0)),
-					True(), False()
-				))
-			},
-			{
-				types.int,
-				types.float,
-				Push(If(
-					cmpop(Int64Flt(LoadInt(a)), LoadFlt(b)),
-					True(), False()
-				))
-			},
-			{
-				types.float,
-				types.int,
-				Push(If(
-					cmpop(LoadFlt(a), Int64Flt(LoadInt(b))),
-					True(), False()
-				))
-			},
-			function(f)
+		return Typeck(2, a, b,
+			types.int,
+			types.int,
+			Push(If(
+				cmpop(LoadInt(a), LoadInt(b)),
+				True(), False()
+			)),
+			types.float,
+			types.float,
+			Push(If(
+				cmpop(LoadFlt(a), LoadFlt(b)),
+				True(), False()
+			)),
+			types.str,
+			types.str,
+			Push(If(
+				cmpop(StrCmp(a, b), Int(0)),
+				True(), False()
+			)),
+			types.int,
+			types.float,
+			Push(If(
+				cmpop(Int64Flt(LoadInt(a)), LoadFlt(b)),
+				True(), False()
+			)),
+			types.float,
+			types.int,
+			Push(If(
+				cmpop(LoadFlt(a), Int64Flt(LoadInt(b))),
+				True(), False()
+			)),
+			(function()
 				-- TODO metamethod fallbacks, error otherwise
-			end
+			end)()
 		)
 	end)())
 end
@@ -609,24 +616,20 @@ local function binmathop(op, floatlogic, intlogic, metamethod)
 	mkOp(op, (function()
 		local a = Pop()
 		local b = Seq(a, Pop())
-		return Typeck({a, b},
-		{
+		return Typeck(2, a, b,
 			types.int,
 			types.int,
-			Push(intlogic(LoadInt(a), LoadInt(b)))
-		},{
+			Push(intlogic(LoadInt(a), LoadInt(b))),
 			types.float,
 			types.float,
-			Push(floatlogic(LoadFlt(a), LoadFlt(b)))
-		},{
+			Push(floatlogic(LoadFlt(a), LoadFlt(b))),
 			types.int,
 			types.float,
-			Push(floatlogic(Int64Flt(LoadInt(a)), LoadFlt(b)))
-		},{
+			Push(floatlogic(Int64Flt(LoadInt(a)), LoadFlt(b))),
 			types.float,
 			types.int,
 			Push(floatlogic(LoadFlt(a), Int64Flt(LoadInt(b))))
-		})
+		)
 	end)())
 end
 local function binmathop_mono(op, mop, metamethod)
@@ -646,32 +649,20 @@ binmathop(bc.Div,
 mkOp(bc.IDiv, (function()
 	local a = Pop()
 	local b = Seq(a, Pop())
-	return Typeck({a, b},
-	{
+	return Typeck(2, a, b,
 		types.int,
 		types.int,
-		function(f)
-			Push(Div(LoadInt(a), LoadInt(b)))
-		end
-	},{
+		Push(Div(LoadInt(a), LoadInt(b))),
 		types.float,
 		types.float,
-		function(f)
-			Push(Div(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b))))
-		end
-	},{
+		Push(Div(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b)))),
 		types.int,
 		types.float,
-		function(f)
-			Push(Div(LoadInt(a), Flt64Int(LoadFlt(b))))
-		end
-	},{
+		Push(Div(LoadInt(a), Flt64Int(LoadFlt(b)))),
 		types.float,
 		types.int,
-		function(f)
-			Push(Div(Flt64Int(LoadFlt(a)), LoadInt(b)))
-		end
-	})
+		Push(Div(Flt64Int(LoadFlt(a)), LoadInt(b)))
+	)
 end)())
 binmathop(bc.Pow,
 	function(f, a, b)
@@ -686,25 +677,21 @@ local function binbitop(op, mop, metamethod)
 	mkOp(op, (function()
 		local a = Pop()
 		local b = Seq(a, Pop())
-		return Typeck({a, b},
-		{
+		-- TODO assert floats are integer compatible
+		return Typeck(2, a, b,
 			types.int,
 			types.int,
-			Push(mop(LoadInt(a), LoadInt(b)))
-			-- TODO assert floats are integer compatible
-		},{
+			Push(mop(LoadInt(a), LoadInt(b))),
 			types.float,
 			types.float,
-			Push(mop(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b))))
-		},{
+			Push(mop(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b)))),
 			types.int,
 			types.float,
-			Push(mop(LoadInt(a), Flt64Int(LoadFlt(b))))
-		},{
+			Push(mop(LoadInt(a), Flt64Int(LoadFlt(b)))),
 			types.float,
 			types.int,
 			Push(mop(Flt64Int(LoadFlt(a)), LoadInt(b)))
-		})
+		)
 	end)())
 end
 binbitop(bc.BAnd, BAnd, '__band')
@@ -714,14 +701,11 @@ binbitop(bc.Shr, Shr, '__shr')
 binbitop(bc.Shl, Shl, '__shl')
 mkOp(bc.BNot, (function()
 	local a = Pop()
-	return Typeck({a},
-		{
-			types.int,
-			Push(BXor(LoadInt(a), Int64(-1)))
-		},{
-			types.float,
-			Push(BXor(Flt64Int(LoadFlt(a)), Int64(-1)))
-		},
+	return Typeck(1, a,
+		types.int,
+		Push(BXor(LoadInt(a), Int64(-1))),
+		types.float,
+		Push(BXor(Flt64Int(LoadFlt(a)), Int64(-1))),
 		CallMetaMethod('__bnot', a)
 	)
 end)())
@@ -729,12 +713,10 @@ end)())
 mkOp(bc.Concat, (function()
 	local b = Pop()
 	local a = Seq(b, Pop())
-	return Typeck({a, b},
-		{
-			types.str,
-			types.str,
-			Push(StrConcat(a, b))
-		},
+	return Typeck(2, a, b,
+		types.str,
+		types.str,
+		Push(StrConcat(a, b)),
 		If(
 			And(IsNumOrStr(a), IsNumOrStr(b)),
 			Push(StrConcat(ToString(a), ToString(b))),

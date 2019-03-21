@@ -250,10 +250,20 @@ local function resolve(ctx, ast)
 	end
 	-- TODO when mty == 'obj', track on tempstack
 	local r = ctx.temps[ast]
+	local reglife = ctx.reglife[ast]
+	local rcount = reglife.rcount + 1
+	local lastuse = rcount == reglife.usage
+	reglife.rcount = rcount
+	if lastuse then
+		-- TODO mark register dead, ie reusable
+	end
 	if r then
 		cg(ctx, function(f)
 			f:load(r.r)
 		end)
+	elseif lastuse then
+		-- When declaration is same as last use, no need to juggle registers
+		mopcomp[ast.op](ast, ctx)
 	else
 		resolvefirst(ctx, ast)
 		cg(ctx, function(f)
@@ -281,6 +291,14 @@ local function resolvereg(ctx, mop)
 	end
 	return r
 end
+local function initreglife(ctx, ast)
+	local data = ctx.reglife[ast]
+	if not data then
+		data = { usage = 0, rcount = 0 }
+		ctx.reglife[ast] = data
+	end
+	data.usage = data.usage + 1
+end
 local function mkcgctx(f)
 	bc = {}
 	pc = {}
@@ -302,13 +320,14 @@ local function mkcgctx(f)
 		framebase = framebase,
 	}, ctxmt)
 end
-
 local function genOp(ctx, op)
 	local subctx = setmetatable({
+		reglife = {},
 		regs = {},
 		temps = {},
 		code = {},
 	}, ctx)
+	initreglife(ctx, microbc.ops[op])
 	resolvevoid(microbc.ops[op], subctx)
 	return function(scopes)
 		local f = ctx.f
@@ -498,9 +517,16 @@ defMop('Push', function(mop, ctx)
 		f:call(tmppush)
 	end)
 end)
-defMop('Pop', function(mop)
+defMop('Pop', function(mop, ctx)
 	cg(ctx, function(f)
 		f:call(tmppop)
+	end)
+end)
+defMop('SetPc', function(mop, ctx)
+	resolve(ctx, mop[1])
+	cg(function(f, scopes)
+		f:store(ctx.pc.r)
+		f:br(scopes.exit)
 	end)
 end)
 defMop('Arg', function(mop, ctx)
