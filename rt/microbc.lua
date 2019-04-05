@@ -337,12 +337,15 @@ local VargPtr = mkMop('VargPtr', {
 local Typeck = mkMop('Typeck', function(args)
 	local a1 = args[1]
 	local alen = #args
-	assert(type(a1) == 'number', 'Typeck expects first param to be a number')
+	assert(type(a1) == 'number' and a1>0, 'Typeck expects first param to be a positive number')
 	local arg = {'atom'}
-	local hasDefault = (alen-1)%a1 == 0
+	for i=2,a1+1 do
+		arg[i] = 'obj'
+	end
+	local hasDefault = (alen - 1) % (a1 + 1) == 0
 	local out = out(args[#args])
 	assert(hasDefault or not out, 'Typeck without default expects no out type')
-	for i=2,alen,a1+1 do
+	for i=a1+2,alen,a1+1 do
 		arg[#arg+1] = out
 		if i ~= alen then
 			for j=0,a1-1 do

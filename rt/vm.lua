@@ -252,6 +252,7 @@ local function resolve(ctx, ast)
 	local r = ctx.temps[ast]
 	local reglife = ctx.reglife[ast]
 	local rcount = reglife.rcount + 1
+	assert(rcount <= reglife.usage, 'AST node resolved too many times')
 	local lastuse = rcount == reglife.usage
 	reglife.rcount = rcount
 	if lastuse then
@@ -741,6 +742,45 @@ defMop('ForRange', function(mop, ctx)
 			f:ltu()
 			f:br(loop)
 		end)
+	end)
+end)
+defMop('Typeck', function(mop, ctx)
+	local a1 = mop[1]
+	local alen = #mop
+	local hasDefault = (alen - 1) % (a1 + 1) == 0
+	local rs = {}
+	for i=1,a1 do
+		rs[i] = newreg(ctx, 'i32')
+		resolve(ctx, mop[i+1])
+		cg(ctx, function(f)
+			f:i32load8u(obj.type)
+			f:store(rs[i].r)
+		end)
+	end
+	local rthunks = {}
+	for i=a1+2,alen,a1+1 do
+		rthunks[i] = resolvethunk(ctx, mop[i])
+	end
+	local wty = microTypeToWasmType(mop.out)
+	cg(function(f)
+		local function rec(i)
+			if i < alen then
+				return function()
+					for j=1,a1 do
+						f:load(rs[j].r)
+						f:i32(mop[i+j-1])
+						f:eq()
+						if j > 1 then
+							f:band()
+						end
+					end
+					f:iff(wty, rthunks[i], rec(i+a1))
+				end
+			elseif i == alen then
+				return rthunks[i]
+			end
+		end
+		rec(a1+2)
 	end)
 end)
 
