@@ -315,8 +315,23 @@ local NewVec = mkMop('NewVec', {
 	arg = {'i32'},
 	out = 'obj',
 })
--- TODO CallMetaMethod
--- TODO CallBinMetaMethod
+local function CallSignature(args)
+	local arg = {}
+	for i=1,#args do
+		arg[i] = 'obj'
+	end
+	return { arg = arg }
+end
+local function CallMetaSignature(args)
+	local arg = { 'atom' }
+	for i=2,#args do
+		arg[i] = 'obj'
+	end
+	return { arg = arg }
+end
+local CallMetaMethod = mkMop('CallMetaMethod', CallMetaSignature)
+local CallBinMetaMethod = mkMop('CallBinMetaMethod', CallMetaSignature)
+local CallBool = mkMop('CallBool', CallSignature)
 local FillRange = mkMop('FillRange', {
 	arg = {'i32', 'obj', 'i32'},
 })
@@ -331,9 +346,12 @@ local VargPtr = mkMop('VargPtr', {
 	arg = {},
 	out = 'i32',
 })
--- TODO AllocateTemp
--- TODO BoolCall
--- TODO Typeck
+-- AllocateTemp's result should not live through an allocation barrier
+local AllocateTemp = mkMop('AllocateTemp', {
+	arg = {'i32'},
+	out = 'i32',
+})
+-- TODO AllocateDataFrames
 local Typeck = mkMop('Typeck', function(args)
 	local a1 = args[1]
 	local alen = #args
@@ -359,7 +377,9 @@ local Typeck = mkMop('Typeck', function(args)
 	}
 end)
 -- TODO WriteDataFrame
--- TODO FillFromStack
+local FillFromStack = mkMop('FillFromStack', {
+	arg = {'obj', 'i32'},
+})
 local function Nil() return Int(0) end
 local function False() return Int(4) end
 local function True() return Int(8) end
@@ -425,7 +445,6 @@ mkOp(bc.LoadFunc, (function()
 	)
 end)())
 mkOp(bc.LoadVarg, (function()
-	-- TODO AllocateTemp points inside an object, needs special book keeping over allocation barriers
 	local tmp = AllocateTemp(Arg(0))
 	local vlen = VargLen()
 	local vptr = VargPtr()
@@ -439,7 +458,7 @@ mkOp(bc.LoadVarg, (function()
 					FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(4)))
 				)
 			end,
-			MemCpy4(tmp, vptr, Mul(Arg(0), Int(2)))
+			MemCpy4(tmp, vptr, Mul(Arg(0), Int(4)))
 		)
 	)
 end)())
@@ -492,8 +511,8 @@ mkOp(bc.Len, (function()
 			(function()
 				local ameta = Meta(a)
 				If(ameta,
-					function(f) CallMetaMethod('__len', ameta, a) end, -- TODO helper function this
-					function(f) Push(IntObjFromInt(LoadTblLen(a))) end
+					CallMetaMethod('__len', ameta, a), -- TODO helper function this
+					Push(IntObjFromInt(LoadTblLen(a)))
 				)
 			end)(),
 			Error()
@@ -555,7 +574,6 @@ mkOp(bc.CmpEq, (function()
 						local bmteq = TblGet(bmt, Str('__eq'))
 						If(
 							Eq(amteq, bmteq),
-							-- TODO call as boolret
 							BoolCall(amteq, a, b),
 							-- CALL META
 							Push(False())
@@ -709,7 +727,7 @@ mkOp(bc.BNot, (function()
 		Push(BXor(LoadInt(a), Int64(-1))),
 		types.float,
 		Push(BXor(Flt64Int(LoadFlt(a)), Int64(-1))),
-		CallMetaMethod('__bnot', a)
+		CallMetaMethod('__bnot', Meta(a), a)
 	)
 end)())
 
@@ -733,7 +751,7 @@ mkOp(bc.Idx, (function()
 	local a = Seq(b, Pop())
 	local ameta = Meta(a)
 	return If(ameta,
-		CallMetaMethod('__index', a, b),
+		CallMetaMethod('__index', ameta, a, b),
 		If(IsTbl(a),
 			TblGet(a, b),
 			Error()
