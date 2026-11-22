@@ -1052,7 +1052,7 @@ defMop('Syscall', function(mop, ctx)
 			_fn_info = std.fn_info,
 			_frame = std.frame,
 			_seterrfns = std.seterrfns,
-			select = std.select,
+			select = { sw = std.select },
 			error = { sw = std.error },
 			type = { sw = std.type },
 			rawget = std.rawget,

@@ -31,6 +31,7 @@ local function Assembler()
 			float = {},
 			string = {},
 			table = {},
+			['function'] = {},
 		},
 		names = {},
 		bc = {},
@@ -880,6 +881,18 @@ emitValueSwitch = {
 		return 1
 	end),
 	emit0(function(self, node, outputs) -- 6 ...
+		if self.vargname then
+			-- with a named vararg table t, ... is t[1..t.n]: call the prelude's helper on t
+			self:push(bc.LoadConst, self:const(assert(_vargunpack, 'no vararg table helper')))
+			self:loadname(self.vargname)
+			self.desc = nil
+			if outputs == -1 then
+				return { 1, descs = { false, call = true }, line = self.curline }
+			end
+			self:push(bc.Call, outputs, 1, 1)
+			self:opname({ false, call = true })
+			return outputs
+		end
 		if outputs == -1 then
 			return { varg = true }
 		else
@@ -997,6 +1010,7 @@ visitScope = {
 		asm.scopes = self.scopes
 		asm.names = self.names
 		asm.isdotdotdot = isvarg
+		asm.vargname = vargname
 		asm.fname = self.funcname
 		self.funcname = nil
 		asm.linedefined = node.line
@@ -1009,7 +1023,8 @@ visitScope = {
 				asm:name(names[i].arg, true)
 			end
 			if vargname then
-				asm:name(vargname.arg)
+				-- the vararg table's name is read-only
+				asm:name(vargname.arg).attrib = 'const'
 				asm:usename(vargname)
 			end
 			scopeNode(asm, node, ast.Block)

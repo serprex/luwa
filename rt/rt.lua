@@ -120,6 +120,7 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	'invalid operation', 'cannot resume dead coroutine', 'cannot resume non-suspended coroutine',
 	'attempt to yield from outside a coroutine', 'bad argument #1 to resume (coroutine expected)',
 	'<no error object>', "bad argument #1 to 'type' (value expected)",
+	"bad argument #1 to 'select' (number expected)", "bad argument #1 to 'select' (index out of range)",
 	-- runtime error kinds, given to the prelude's error function
 	'index', 'arith', 'bitwise', 'concat', 'compare', 'len', 'xpcall', 'defined',
 	-- begin _luwa fields

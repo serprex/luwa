@@ -2324,7 +2324,16 @@ local function fakereq(s)
 	end
 	return fs
 end
+-- In a function with a named vararg table t, ... reads t[1..t.n]. bcgen emits calls to this
+local function vargunpack(t)
+	local n = _rawget(t, 'n')
+	if math_type(n) ~= 'integer' or n < 0 or n > 0x3fffffff then
+		error("vararg table has no proper 'n'", 2)
+	end
+	return table_unpack(t, 1, n)
+end
 fakereqenv = {
+	_vargunpack = vargunpack,
 	assert = _assert,
 	-- compile errors carry their own position
 	error = rawerror,

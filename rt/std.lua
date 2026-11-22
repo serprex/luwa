@@ -311,10 +311,14 @@ local ishash = func(V, i32, function(f, v)
 end)
 
 -- select('#', ...) pushes the vararg count. select(n, ...) pushes the varargs from n on,
--- negative n counts from the end
--- TODO bad n should raise an error, it traps for now
-local std_select = func(function(f)
+-- negative n counts from the end. Returns the pc to run next, like type, so bad n can raise
+local std_select = func(i32, i32, function(f, nextpc)
 	local n, cnt, len = f:locals(i32, 3)
+	local function throw(msg)
+		f:loadg(GS[msg])
+		f:call(frame.throw)
+		f:ret()
+	end
 	f:call(vargc)
 	f:store(cnt)
 	loadparam(f, 0)
@@ -324,11 +328,12 @@ local std_select = func(function(f)
 		f:i64extendu()
 		f:call(newi64)
 		f:call(tmppush)
+		f:load(nextpc)
 		f:ret()
 	end)
 
 	-- n = index of first vararg to return, from 0
-	intparam(f, 0, function() f:unreachable() end)
+	intparam(f, 0, function() throw("bad argument #1 to 'select' (number expected)") end)
 	f:tee(n)
 	f:i32(0)
 	f:lts()
@@ -345,7 +350,7 @@ local std_select = func(function(f)
 	f:i32(0)
 	f:lts()
 	f:iff(function()
-		f:unreachable()
+		throw("bad argument #1 to 'select' (index out of range)")
 	end)
 	f:load(n)
 	f:load(cnt)
@@ -374,6 +379,7 @@ local std_select = func(function(f)
 		f:load(cnt)
 		f:call(scopy)
 	end)
+	f:load(nextpc)
 end)
 
 -- string.byte(s, i=1, j=i): push the bytes s[i..j] as integers. Negative i, j count from the end
