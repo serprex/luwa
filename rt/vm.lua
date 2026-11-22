@@ -829,6 +829,7 @@ callmop('MakeClosure', frame.makeclosure)
 callmop('VargPushN', frame.loadvarg)
 callmop('AppendN', frame.appendn)
 callmop('AppendVarg', frame.appendvarg)
+callmop('VargCount', frame.vargc)
 defMop('IdxSelf', function(mop, ctx)
 	cg(ctx, function(f)
 		f:loadg(frame.idxself)
@@ -997,7 +998,7 @@ defMop('Syscall', function(mop, ctx)
 			pcall = { sw = std.pcall },
 			select = std.select,
 			error = { sw = std.error },
-			type = std.type,
+			type = { sw = std.type },
 			rawget = std.rawget,
 			rawset = std.rawset,
 			next = std.next,

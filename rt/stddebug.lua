@@ -18,8 +18,7 @@ local debug_getmetatable = func(function(f)
 	f:call(tmppush)
 end)
 
--- debug.setmetatable(v, mt): tables & strings only, mt must be a table
--- TODO nil mt
+-- debug.setmetatable(v, mt): tables & strings only, mt must be a table or nil
 local debug_setmetatable = func(function(f)
 	local ty = f:locals(i32)
 	f:i32(1)
@@ -27,6 +26,11 @@ local debug_setmetatable = func(function(f)
 	f:call(typeof)
 	f:i32(types.tbl)
 	f:ne()
+	f:i32(1)
+	f:call(param)
+	f:refisnull()
+	f:eqz()
+	f:band()
 	f:iff(function()
 		f:unreachable()
 	end)

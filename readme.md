@@ -6,6 +6,8 @@ I'll try avoid my usual stream of consciousness here, instead that's at [my devl
 
 [`main.js`](main.js) is nodejs entrypoint
 
+Luwa targets Lua 5.5. `scripts/test.js` has small cases, `scripts/suite.js` runs the official 5.5.1 test suite in `lua-5.5.1-tests/` file by file
+
 WASM runtime is in `rt/`. [`rt/make.lua`](rt/make.lua) is luwa-agnostic macro-assembler logic. [`mkrt.lua`](rt/mkrt.lua) produces an `rt.wasm` which [`rt.js`](rt.js) interfaces
 
 Objects are [WasmGC](https://github.com/WebAssembly/gc) structs & arrays, the engine collects them. See [`rt/alloc.lua`](rt/alloc.lua)

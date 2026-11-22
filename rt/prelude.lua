@@ -149,6 +149,30 @@ function string.pack(fmt, ...)
 	end
 	return string_char(table_unpack(out))
 end
+-- Size of what string.pack makes, alignment ignored like pack
+function string.packsize(fmt)
+	local size, i, n = 0, 1, #fmt
+	while i <= n do
+		local c, sz
+		i, c, sz = packopt(fmt, i)
+		if packsizes[c] then
+			size = size + ((c == 105 or c == 73) and sz > 0 and sz or packsizes[c])
+		elseif c == 100 or c == 110 then -- d n
+			size = size + 8
+		elseif c == 102 then -- f
+			size = size + 4
+		elseif c == 99 then -- c
+			size = size + sz
+		elseif c == 120 then -- x
+			size = size + 1
+		elseif c == 115 or c == 122 then -- s z
+			_error("bad argument #1 to 'packsize' (variable-length format)")
+		elseif not (c == 60 or c == 61 or c == 62 or c == 33 or c == 32 or c == 88) then -- < = > ! space X
+			_error("invalid format option '" .. string_char(c) .. "'")
+		end
+	end
+	return size
+end
 function string.unpack(fmt, s, pos)
 	pos = pos or 1
 	if pos < 0 then
@@ -554,6 +578,17 @@ local function posrelat(i, len)
 	end
 end
 
+-- the wasm string.char wraps values outside 0-255, so check them here
+function string.char(...)
+	local t = { ... }
+	for i = 1, _select('#', ...) do
+		local c = tointeger(t[i])
+		if not c or c < 0 or c > 255 then
+			_error("bad argument #" .. i .. " to 'char' (" .. (c and "value out of range" or "number has no integer representation") .. ")")
+		end
+	end
+	return string_char(...)
+end
 function string.rep(s, n, sep)
 	if n <= 0 then
 		return ''
@@ -1366,6 +1401,16 @@ utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
 function table.pack(...)
 	return { n = _select('#', ...), ... }
 end
+-- The engine sizes tables itself, so this only checks the args
+function table.create(narr, nrec)
+	nrec = nrec or 0
+	_assert(math_type(narr) == 'integer', "bad argument #1 to 'create' (number has no integer representation)")
+	_assert(math_type(nrec) == 'integer', "bad argument #2 to 'create' (number has no integer representation)")
+	_assert(narr >= 0 and narr <= 0x7fffffff, "bad argument #1 to 'create' (out of range)")
+	_assert(nrec >= 0 and nrec <= 0x7fffffff, "bad argument #2 to 'create' (out of range)")
+	_assert(nrec <= 1 << 30, "table overflow")
+	return {}
+end
 function table.insert(list, ...)
 	local n = _select('#', ...)
 	if n == 1 then
@@ -1689,9 +1734,22 @@ function coroutine.wrap(f)
 		return coro_wrap_handler(co_resume(c, ...))
 	end
 end
-function coroutine.isyieldable()
-	local a, ismain = co_running()
-	return not ismain
+-- the wasm status traps on a non coroutine, so check here
+local co_status = coroutine.status
+function coroutine.status(co)
+	if _type(co) ~= 'thread' then
+		_error("bad argument #1 to 'status' (coroutine expected)")
+	end
+	return co_status(co)
+end
+-- prelude runs on the main coroutine, so this is it
+local co_main = co_running()
+function coroutine.isyieldable(co)
+	if co == nil then
+		local a, ismain = co_running()
+		return not ismain
+	end
+	return co ~= co_main
 end
 
 function print(...)
@@ -1701,6 +1759,36 @@ function print(...)
 		t[i] = _tostring((_select(i, ...)))
 	end
 	host('write', 1, table.concat(t, '\t', 1, n) .. '\n')
+end
+
+-- The wasm engine owns the GC, so this only answers like Lua would
+local gcopts = { collect = 0, stop = 0, restart = 0, count = 0.0, step = true, isrunning = true }
+local gcmode = 'incremental'
+local gcparams = { minormul = 20, majorminor = 50, minormajor = 70, pause = 200, stepmul = 200, stepsize = 13 }
+function collectgarbage(opt, name, value)
+	opt = opt or 'collect'
+	-- changing mode gives the mode before
+	if opt == 'incremental' or opt == 'generational' then
+		local prev = gcmode
+		gcmode = opt
+		return prev
+	end
+	-- param gives the value before, & sets it when value is given
+	if opt == 'param' then
+		local prev = gcparams[name]
+		if prev == nil then
+			_error("bad argument #2 to 'collectgarbage' (invalid option '" .. _tostring(name) .. "')")
+		end
+		if value ~= nil then
+			gcparams[name] = value
+		end
+		return prev
+	end
+	local r = gcopts[opt]
+	if r == nil then
+		_error("bad argument #1 to 'collectgarbage' (invalid option '" .. _tostring(opt) .. "')")
+	end
+	return r
 end
 
 function pairs(t)

@@ -32,6 +32,12 @@ local function tokenarg(ch)
 	end
 end
 local name, number, slit = tokenarg(lex._ident), tokenarg(lex._number), tokenarg(lex._string)
+-- 'global' lexes as a name, so it still works as one where it can't start a declaration
+local function kwglobal(str, i, res, ri, vals)
+	if sb(str, i) == lex._ident and vals[su('<i4', str, i+1)+1] == 'global' then
+		return i+5, ri
+	end
+end
 local function seq(rules)
 	return function(str, i, res, ri, vals)
 		for xi=1,#rules do
@@ -129,10 +135,12 @@ local function V(name)
 		return G[name](...)
 	end
 end
-local Block, Stat, Var, ExpOr, ExpAnd, Exp, Prefix, Args, Funcbody, Table, Field, Binop, Unop, Value, Index, Suffix, SuffixI, SuffixC =
-	V"Block", V"Stat", V"Var", V"ExpOr", V"ExpAnd", V"Exp", V"Prefix", V"Args", V"Funcbody", V"Table", V"Field", V"Binop", V"Unop", V"Value", V"Index", V"Suffix", V"SuffixI", V"SuffixC"
+local Block, Stat, Var, ExpOr, ExpAnd, Exp, Prefix, Args, Funcbody, Table, Field, Binop, Unop, Value, Index, Suffix, SuffixI, SuffixC, Attrib =
+	V"Block", V"Stat", V"Var", V"ExpOr", V"ExpAnd", V"Exp", V"Prefix", V"Args", V"Funcbody", V"Table", V"Field", V"Binop", V"Unop", V"Value", V"Index", V"Suffix", V"SuffixI", V"SuffixC", V"Attrib"
 local Explist = seq{ExpOr, m(seq{zlex._comma, ExpOr})}
 local Namelist = seq{name, m(seq{zlex._comma, name})}
+-- an attrib before the first name applies to every name
+local Attnamelist = seq{p(Attrib), name, p(Attrib), m(seq{zlex._comma, name, p(Attrib)})}
 local Varlist = seq{Var, m(seq{zlex._comma, Var})}
 local Fieldsep = o{zlex._comma, zlex._semi}
 local Call = seq{p(seq{zlex._colon, name}), Args}
@@ -153,15 +161,19 @@ G = {
 		seq{zlex._for, Namelist, zlex._in, Explist, zlex._do, Block, zlex._end},
 		seq{zlex._function, name, m(seq{zlex._dot, name}), m(seq{slex._colon, name}), Funcbody},
 		seq{zlex._local, zlex._function, name, Funcbody},
-		seq{zlex._local, Namelist, p(seq{zlex._set, Explist})}
+		seq{zlex._local, Attnamelist, p(seq{zlex._set, Explist})},
+		seq{kwglobal, zlex._function, name, Funcbody},
+		seq{kwglobal, p(Attrib), zlex._mul},
+		seq{kwglobal, Attnamelist, p(seq{zlex._set, Explist})}
 	)},
+	Attrib = sf(ast.Attrib, seq{zlex._lt, name, zlex._gt}),
 	Var = of(ast.Var, seq{Prefix, SuffixI}, name),
 	ExpOr = sf(ast.ExpOr, seq{ExpAnd, m(seq{zlex._or, ExpAnd})}),
 	ExpAnd = sf(ast.ExpAnd, seq{Exp, m(seq{zlex._and, Exp})}),
 	Exp = of(ast.Exp, seq{Unop, Exp}, seq{Value, p(seq{Binop, Exp})}),
 	Prefix = of(ast.Prefix, name, seq{zlex._pl, ExpOr, zlex._pr}),
 	Args = of(ast.Args, seq{zlex._pl, p(Explist), zlex._pr}, Table, slit),
-	Funcbody = sf(ast.Funcbody, seq{zlex._pl, p(o{slex._dotdotdot, seq{Namelist, p(seq{zlex._comma, slex._dotdotdot})}}), zlex._pr, Block, zlex._end}),
+	Funcbody = sf(ast.Funcbody, seq{zlex._pl, p(o{seq{slex._dotdotdot, p(name)}, seq{Namelist, p(seq{zlex._comma, slex._dotdotdot, p(name)})}}), zlex._pr, Block, zlex._end}),
 	Table = sf(ast.Table, seq{zlex._cl, p(seq{Field, m(seq{Fieldsep, Field}), p(Fieldsep)}), zlex._cr}),
 	Field = of(ast.Field, seq{Sexp, zlex._set, ExpOr}, seq{name, zlex._set, ExpOr}, ExpOr),
 	Binop = of(ast.Binop,

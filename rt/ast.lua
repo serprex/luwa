@@ -15,4 +15,5 @@ return {
 	Suffix = 14,
 	ExpOr = 15,
 	ExpAnd = 16,
+	Attrib = 17,
 }

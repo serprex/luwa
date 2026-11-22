@@ -28,7 +28,14 @@ end
 -- error(msg): unwind to the nearest pcall, see frame.throw. Returns the pc to run next
 -- TODO level, & adding the position to string messages
 local std_error = func(i32, i32, function(f, nextpc)
+	-- error() or error(nil) raises this string, like Lua 5.5
 	loadparam(f, 0)
+	f:refisnull()
+	f:iff(V, function()
+		f:loadg(GS['<no error object>'])
+	end, function()
+		loadparam(f, 0)
+	end)
 	f:call(frame.throw)
 end)
 
@@ -584,8 +591,17 @@ local std_vec_new = func(function(f)
 	f:call(tmppush)
 end)
 
-local std_type = func(function(f)
+-- type(v): declared with no params & varargs, so type() with no args can raise.
+-- Returns the pc to run next, like error
+local std_type = func(i32, i32, function(f, nextpc)
 	local a = f:locals(V)
+	f:call(vargc)
+	f:eqz()
+	f:iff(function()
+		f:loadg(GS["bad argument #1 to 'type' (value expected)"])
+		f:call(frame.throw)
+		f:ret()
+	end)
 	f:block(R.str, function(res)
 		f:switch(function()
 			loadparam(f, 0)
@@ -619,6 +635,7 @@ local std_type = func(function(f)
 		f:loadg(GS.thread)
 	end)
 	f:call(tmppush)
+	f:load(nextpc)
 end)
 
 -- _luwa.lexgen(src): token string & value vec

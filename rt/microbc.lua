@@ -437,6 +437,11 @@ mkMop('AppendN', {
 	alloc = true,
 	arg = {'i32'},
 })
+-- How many varargs this frame got
+mkMop('VargCount', {
+	stmt = true,
+	out = 'i32',
+})
 -- Like AppendN, with varargs after the n values
 mkMop('AppendVarg', {
 	alloc = true,
@@ -705,6 +710,7 @@ end)
 op(bc.LoadFunc, function(b) b:Push(b:MakeClosure(LoadConst(Arg(1)), Arg(0))) end)
 op(bc.LoadVarg, function(b) b:VargPushN(Arg(0)) end)
 op(bc.AppendVarg, function(b) b:AppendVarg(Arg(0)) end)
+op(bc.VargCount, function(b) b:Push(b:IntObjFromInt(b:VargCount())) end)
 op(bc.Append, function(b) b:AppendN(Arg(0)) end)
 op(bc.Call, function(b) b:CallChain('norm', false) end)
 op(bc.CallVarg, function(b) b:CallChain('norm', true) end)

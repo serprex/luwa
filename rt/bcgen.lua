@@ -88,9 +88,34 @@ function asmmeta:name(n, isparam)
 	return newscope
 end
 
-function asmmeta:usename(node)
+-- Declare a global name, or with n = '*' the default for names not declared.
+-- names['*'] is nil (all names are global), { strict = true } (names must be declared), or a global * declaration
+function asmmeta:globaldecl(n, decl)
+	if n ~= '*' and not self.names['*'] then
+		self:globaldecl('*', { strict = true })
+	end
+	decl.prev = self.names[n]
+	decl.global = true
+	self.scopes[#self.scopes+1] = n
+	self.names[n] = decl
+end
+
+local function consterr(n)
+	error("attempt to assign to const variable '" .. n .. "'")
+end
+-- isstore: node is assigned to, so check it isn't const
+function asmmeta:usename(node, isstore)
 	local name = self.names[node.arg]
-	if name then
+	if not name then
+		name = self.names['*']
+		if name and name.strict then
+			error("variable '" .. node.arg .. "' not declared")
+		end
+	end
+	if name and isstore and name.attrib then
+		consterr(node.arg)
+	end
+	if name and not name.global then
 		self.namety[node] = name
 	else
 		name = assert(self.names._ENV)
@@ -232,6 +257,28 @@ local function selectIdent(node)
 	return n
 end
 
+-- An attnamelist's names as { name = ident, attrib = 'const' or 'close' or nil }
+local function attnames(node)
+	local list, all = {}
+	for i=1, #node do
+		local c = node[i]
+		if c.type == -1 and c.val == lex._ident then
+			list[#list+1] = { name = c, attrib = all }
+		elseif c.type == ast.Attrib then
+			local a = selectIdent(c).arg
+			if a ~= 'const' and a ~= 'close' then
+				error("unknown attribute '" .. a .. "'")
+			end
+			if #list == 0 then
+				all = a
+			else
+				list[#list].attrib = a
+			end
+		end
+	end
+	return list
+end
+
 local unOps = { bc.Neg, bc.Not, bc.Len, bc.BNot }
 local binOps = { bc.Add, bc.Sub, bc.Mul, bc.Div, bc.IDiv, bc.Pow, bc.Mod,
 	bc.BAnd, bc.BXor, bc.BOr, bc.Shr, bc.Shl, bc.Concat,
@@ -320,15 +367,22 @@ scopeStatSwitch = {
 		scopeNode(self, node, ast.Args)
 	end,
 	function(self, node, block) -- 3 label
+		-- a name can be reused in other blocks, not in this block or one around it
 		local name = selectIdent(node).arg
-		if self.labelscope[name] then
-			error('Duplicate label', name)
+		local sc = self.scopes
+		while sc do
+			local ls = self.labelscope[sc]
+			if ls and ls[name] then
+				error("label '" .. name .. "' already defined")
+			end
+			sc = sc.prev
 		end
-		if block[#block] == node then
-			self.labelscope[name] = self.scopes.prev
-		else
-			self.labelscope[name] = self.scopes
+		local ls = self.labelscope[self.scopes]
+		if not ls then
+			ls = {}
+			self.labelscope[self.scopes] = ls
 		end
+		ls[name] = node
 	end,
 	nop, -- 4 break
 	function(self, node) -- 5 goto
@@ -363,7 +417,7 @@ scopeStatSwitch = {
 		self:scope(function()
 			scopeNodes(self, node, ast.ExpOr)
 			local name = selectIdent(node)
-			self:name(name.arg)
+			self:name(name.arg).attrib = 'const'
 			self:usename(name)
 			scopeNode(self, node, ast.Block)
 		end)
@@ -371,15 +425,23 @@ scopeStatSwitch = {
 	function(self, node) -- 11 generic for
 		self:scope(function()
 			scopeNodes(self, node, ast.ExpOr)
+			-- only the first name is read only in 5.5
+			local first = true
 			for i, name in selectIdents(node) do
-				self:name(name.arg)
+				local n = self:name(name.arg)
+				if first then
+					n.attrib = 'const'
+					first = false
+				end
 				self:usename(name)
 			end
 			scopeNode(self, node, ast.Block)
 		end)
 	end,
 	function(self, node) -- 12 func
-		self:usename(selectIdent(node))
+		local i, first = nextIdent(node, 1)
+		-- function f() assigns f, function a.f() doesn't assign a
+		self:usename(first, not nextIdent(node, i) and not hasToken(node, lex._colon))
 		scopeNode(self, node, ast.Funcbody, hasToken(node, lex._colon))
 	end,
 	function(self, node) -- 13 local func
@@ -390,9 +452,41 @@ scopeStatSwitch = {
 	end,
 	function(self, node) -- 14 locals=exps
 		scopeNodes(self, node, ast.ExpOr)
-		for i, name in selectIdents(node) do
-			self:name(name.arg)
-			self:usename(name)
+		local closes = 0
+		for i, v in ipairs(attnames(node)) do
+			-- TODO <close> is only read only for now, __close isn't called
+			if v.attrib == 'close' then
+				closes = closes + 1
+				if closes > 1 then
+					error('multiple to-be-closed variables in local list')
+				end
+			end
+			self:name(v.name.arg).attrib = v.attrib
+			self:usename(v.name)
+		end
+	end,
+	function(self, node) -- 15 global func
+		local name = selectIdent(node)
+		self:globaldecl(name.arg, {})
+		self:usename(name)
+		scopeNode(self, node, ast.Funcbody)
+	end,
+	function(self, node) -- 16 global *
+		local attrib = selectNode(node, ast.Attrib)
+		attrib = attrib and selectIdent(attrib).arg
+		if attrib and attrib ~= 'const' then
+			error(attrib == 'close' and 'global variables cannot be to-be-closed' or "unknown attribute '" .. attrib .. "'")
+		end
+		self:globaldecl('*', { attrib = attrib })
+	end,
+	function(self, node) -- 17 globals=exps
+		scopeNodes(self, node, ast.ExpOr)
+		for i, v in ipairs(attnames(node)) do
+			if v.attrib == 'close' then
+				error('global variables cannot be to-be-closed')
+			end
+			self:globaldecl(v.name.arg, { attrib = v.attrib })
+			self:usename(v.name)
 		end
 	end,
 }
@@ -455,8 +549,7 @@ emitStatSwitch = {
 		end)
 	end,
 	function(self, node) -- 3 label
-		local name = selectIdent(node)
-		self.labels[name.arg] = #self.bc
+		self.labels[node] = #self.bc
 	end,
 	function(self, node) -- 4 break
 		assert(self.breaks, "break outside of loop")
@@ -466,15 +559,16 @@ emitStatSwitch = {
 	function(self, node) -- 5 goto
 		local name = selectIdent(node)
 		local namei = name.arg
-		local gotosc = self.gotoscope[node]
-		local labelsc = self.labelscope[namei]
-		while gotosc ~= labelsc do
-			gotosc = gotosc.prev
-			if not gotosc then
-				error('goto ' .. tostring(namei) .. ' jumps out of scope')
-			end
+		-- the nearest label of that name in this block or one around it
+		local sc, label = self.gotoscope[node]
+		while sc and not label do
+			label = self.labelscope[sc] and self.labelscope[sc][namei]
+			sc = sc.prev
 		end
-		self.gotos[#self.bc+2] = namei
+		if not label then
+			error("no visible label '" .. namei .. "' for goto")
+		end
+		self.gotos[#self.bc+2] = label
 		self:push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 6 do-end
@@ -646,6 +740,26 @@ emitStatSwitch = {
 			self:declname(vars[i])
 		end
 	end,
+	function(self, node) -- 15 global func
+		-- TODO error if the global is already defined
+		emitNode(self, node, ast.Funcbody)
+		self:storename(selectIdent(node))
+	end,
+	nop, -- 16 global *
+	function(self, node) -- 17 globals=exps
+		-- without = the globals keep their values
+		if selectNode(node, ast.ExpOr) then
+			-- TODO error if a global is already defined
+			local vars = {}
+			for i, v in selectIdents(node) do
+				vars[#vars+1] = v
+			end
+			emitExplist(self, node, #vars)
+			for i=#vars,1,-1 do
+				self:storename(vars[i])
+			end
+		end
+	end,
 }
 local function emit0(fn)
 	return function(self, node, outputs)
@@ -741,7 +855,7 @@ visitScope = {
 			scopeNodes(self, node, ast.Suffix)
 			scopeNode(self, node, ast.Index)
 		else
-			self:usename(selectIdent(node))
+			self:usename(selectIdent(node), true)
 		end
 	end,
 	[ast.Exp] = function(self, node)
@@ -764,14 +878,24 @@ visitScope = {
 		end
 	end,
 	[ast.Funcbody] = function(self, node, isMeth)
-		local names = {}
-		for i, n in selectIdents(node) do
-			names[#names+1] = n
+		-- names before ... are params, a name after it (5.5 `...t`) gets a table of the varargs
+		local names, vargname, isvarg = {}
+		for i=1, #node do
+			local c = node[i]
+			if c.type == -1 and c.val == lex._dotdotdot then
+				isvarg = true
+			elseif c.type == -1 and c.val == lex._ident then
+				if isvarg then
+					vargname = c
+				else
+					names[#names+1] = c
+				end
+			end
 		end
 		local asm = Assembler()
 		asm.scopes = self.scopes
 		asm.names = self.names
-		asm.isdotdotdot = hasToken(node, lex._dotdotdot)
+		asm.isdotdotdot = isvarg
 		asm:scope(function()
 			if isMeth then
 				asm:name('self', true)
@@ -779,9 +903,22 @@ visitScope = {
 			for i=1,#names do
 				asm:name(names[i].arg, true)
 			end
+			if vargname then
+				asm:name(vargname.arg)
+				asm:usename(vargname)
+			end
 			scopeNode(asm, node, ast.Block)
 		end)
 		asm:genBoxPrologue()
+		if vargname then
+			-- t = { n = number of varargs, ... }
+			asm:push(bc.TblNew)
+			asm:push(bc.LoadConst, asm:const('n'))
+			asm:push(bc.VargCount)
+			asm:push(bc.TblAdd)
+			asm:push(bc.AppendVarg, 0)
+			asm:declname(vargname)
+		end
 		emitNode(asm, node, ast.Block)
 		asm:synth()
 		-- Capture exactly asm's frees in index order. This includes frees only

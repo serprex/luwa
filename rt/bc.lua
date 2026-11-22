@@ -62,4 +62,5 @@ return {
 	Append = 60,
 	BoxLocal = 61,
 	LoadFunc = 62,
+	VargCount = 63,
 }
