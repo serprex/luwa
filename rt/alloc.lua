@@ -32,11 +32,12 @@ local i32s = M.array(M.mut(i32), { name = 'i32s' })
 local obj = M.struct({ { i8, name = 'type' } }, { name = 'obj', final = false })
 local int = M.struct({ { i8, name = 'type' }, { i64, name = 'val' } }, { name = 'int', super = obj })
 local float = M.struct({ { i8, name = 'type' }, { f64, name = 'val' } }, { name = 'float', super = obj })
--- hash is 0 until worked out
+-- hash & id are 0 until worked out. id is only for %p on long strings
 local str = M.struct({
 	{ i8, name = 'type' },
 	{ i32, mut = true, name = 'hash' },
 	{ M.ref(bytes), name = 'bytes' },
+	{ i32, mut = true, name = 'id' },
 }, { name = 'str', super = obj })
 -- Fixed size list of values. Lua code sees it from the lexer & _luwa.vec_new
 local vec = M.struct({
@@ -166,6 +167,7 @@ local newstr = func(i32, M.ref(str), function(f, sz)
 	f:i32(0)
 	f:load(sz)
 	f:arraynewdefault(bytes)
+	f:i32(0)
 	f:structnew(str)
 end)
 local strfrombytes = func(M.refnull(bytes), M.ref(str), function(f, b)
@@ -173,6 +175,7 @@ local strfrombytes = func(M.refnull(bytes), M.ref(str), function(f, b)
 	f:i32(0)
 	f:load(b)
 	f:refasnonnull()
+	f:i32(0)
 	f:structnew(str)
 end)
 

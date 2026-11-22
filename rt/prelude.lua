@@ -721,6 +721,7 @@ do
 	set(117, function(c) return c >= 65 and c <= 90 end) -- u
 	set(119, function(c) return isalpha(c) or isdigit(c) end) -- w
 	set(120, function(c) return isdigit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102) end) -- x
+	set(122, function(c) return c == 0 end) -- z, old name for byte 0
 end
 local function matchclass(c, cl)
 	local upper = cl >= 65 and cl <= 90
@@ -1073,7 +1074,9 @@ function string.gmatch(s, p, init)
 	end
 end
 function string.gsub(s, p, repl, maxn)
-	s = s .. ''
+	if _type(s) ~= 'string' then
+		s = s .. ''
+	end
 	p = p .. ''
 	local rty = _type(repl)
 	if rty == 'number' then
@@ -1091,6 +1094,7 @@ function string.gsub(s, p, repl, maxn)
 	end
 	local out = {}
 	local s1, copyfrom, n, lastmatch = 1, 1, 0, nil
+	local changed = false
 	setstate(s, p)
 	while n < maxn do
 		mlevel = 0
@@ -1141,7 +1145,10 @@ function string.gsub(s, p, repl, maxn)
 			setstate(s, p)
 			if not v then
 				v = whole
-			elseif _type(v) == 'number' then
+			else
+				changed = true
+			end
+			if _type(v) == 'number' then
 				v = v .. ''
 			elseif _type(v) ~= 'string' then
 				_error('invalid replacement value (a ' .. _type(v) .. ')')
@@ -1158,6 +1165,9 @@ function string.gsub(s, p, repl, maxn)
 		if anchor then
 			break
 		end
+	end
+	if not changed then
+		return s, n
 	end
 	out[#out + 1] = string_sub(s, copyfrom)
 	return table.concat(out), n
@@ -1308,7 +1318,7 @@ function string.format(fmt, ...)
 				end
 			elseif conv == 112 then -- p
 				local ty = _type(arg)
-				if ty == 'table' or ty == 'function' or ty == 'thread' then
+				if ty == 'table' or ty == 'function' or ty == 'thread' or ty == 'string' then
 					out[#out + 1] = hexid(arg)
 				else
 					out[#out + 1] = '(null)'

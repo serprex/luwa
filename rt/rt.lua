@@ -200,6 +200,7 @@ local initstatics = func(function(f)
 			f:i32(s[3])
 			f:i32(s[4])
 			f:arraynewdata(bytes, blobdata)
+			f:i32(0)
 			f:structnew(str)
 		elseif kind == 'integer' then
 			f:i32(types.int)
