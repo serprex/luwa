@@ -170,7 +170,7 @@ local LoadFlt = mkMop('LoadFlt', {
 })
 local Free = mkMop('Free', {
 	arg = {'i32'},
-	out = 'obj',
+	out = 'i32',
 })
 local Const = mkMop('Const', {
 	arg = {'i32'},
@@ -186,6 +186,22 @@ local Param = mkMop('Param', {
 })
 local Store = mkMop('Store', {
 	arg = { 'i32', 'i32' },
+})
+-- Value in a slot of a vec, given the slot's address from Param/Local/Const/Free
+local LoadSlot = mkMop('LoadSlot', {
+	arg = {'i32'},
+	out = 'obj',
+})
+local StoreSlot = mkMop('StoreSlot', {
+	arg = {'i32', 'obj'},
+})
+-- Value inside a box (a vec of length 1)
+local Unbox = mkMop('Unbox', {
+	arg = {'obj'},
+	out = 'obj',
+})
+local SetBox = mkMop('SetBox', {
+	arg = {'obj', 'obj'},
 })
 local Reg32 = mkMop('Reg32', {
 	out = 'r32',
@@ -499,20 +515,20 @@ mkOp(bc.Nop, Nop())
 mkOp(bc.LoadNil, Push(Nil()))
 mkOp(bc.LoadFalse, Push(False()))
 mkOp(bc.LoadTrue, Push(True()))
-mkOp(bc.LoadParam, Push(Load(Param(Arg(0)))))
-mkOp(bc.StoreParam, Store(Param(Arg(0)), Pop()))
-mkOp(bc.LoadLocal, Push(Load(Local(Arg(0)))))
-mkOp(bc.StoreLocal, Store(Local(Arg(0)), Pop()))
-mkOp(bc.LoadFree, Push(Load(Free(Arg(0)))))
-mkOp(bc.LoadFreeBox, Push(Load(Load(Free(Arg(0))))))
-mkOp(bc.StoreFreeBox, Store(Load(Free(Arg(0))), Pop()))
-mkOp(bc.LoadParamBox, Push(Load(Load(Param(Arg(0))))))
-mkOp(bc.StoreParamBox, Store(Load(Param(Arg(0))), Pop()))
+mkOp(bc.LoadParam, Push(LoadSlot(Param(Arg(0)))))
+mkOp(bc.StoreParam, StoreSlot(Param(Arg(0)), Pop()))
+mkOp(bc.LoadLocal, Push(LoadSlot(Local(Arg(0)))))
+mkOp(bc.StoreLocal, StoreSlot(Local(Arg(0)), Pop()))
+mkOp(bc.LoadFree, Push(LoadSlot(Free(Arg(0)))))
+mkOp(bc.LoadFreeBox, Push(Unbox(LoadSlot(Free(Arg(0))))))
+mkOp(bc.StoreFreeBox, SetBox(LoadSlot(Free(Arg(0))), Pop()))
+mkOp(bc.LoadParamBox, Push(Unbox(LoadSlot(Param(Arg(0))))))
+mkOp(bc.StoreParamBox, SetBox(LoadSlot(Param(Arg(0))), Pop()))
 mkOp(bc.BoxParam, Store(Param(0), Box(Param(Arg(0)))))
 mkOp(bc.BoxLocal, Store(Local(0), Box(Nil())))
-mkOp(bc.LoadLocalBox, Push(Load(Load(Local(Arg(0)), vec.base))))
-mkOp(bc.StoreLocalBox, Store(Load(Local(Arg(0)), vec.base), Pop()))
-mkOp(bc.LoadConst, Push(Load(Const(Arg(0)), vec.base)))
+mkOp(bc.LoadLocalBox, Push(Unbox(LoadSlot(Local(Arg(0))))))
+mkOp(bc.StoreLocalBox, SetBox(LoadSlot(Local(Arg(0))), Pop()))
+mkOp(bc.LoadConst, Push(LoadSlot(Const(Arg(0)))))
 mkOp(bc.Pop, Pop())
 mkOp(bc.Syscall, Syscall(Arg(0)))
 mkOp(bc.Jmp, SetPc(Arg(0)))
@@ -638,23 +654,17 @@ mkOp(bc.Neg, (function()
 		Push(IntObjFromInt64(Negate(LoadInt(a)))),
 		types.float,
 		Push(FltObjFromFlt(Negate(LoadFlt(a)))),
-		types.tbl,
-		(function()
-			local ameta = Meta(a)
-			return If(ameta,
-				CallMetaMethod('__neg', ameta, a), -- TODO helper function this
-				Error()
-			)
-		end)(),
+		-- TODO __neg, CallMetaMethod has no codegen yet
 		Error()
 	)
 end)())
 
 mkOp(bc.TblNew, Push(NewTbl()))
+-- Table stays on the stack, constructors keep adding to it
 mkOp(bc.TblAdd, (function()
 	local v = Pop()
 	local k = Seq(v, Pop())
-	local tbl = Seq(k, Pop())
+	local tbl = Seq(k, Peek())
 	return TblSet(tbl, k, v)
 end)())
 mkOp(bc.TblSet, (function()
@@ -820,7 +830,8 @@ mkOp(bc.BNot, (function()
 		Push(NumObj(BXor(LoadInt(a), Int64(-1)))),
 		types.float,
 		Push(NumObj(BXor(Flt64Int(LoadFlt(a)), Int64(-1)))),
-		CallMetaMethod('__bnot', Meta(a), a)
+		-- TODO __bnot, CallMetaMethod has no codegen yet
+		Error()
 	)
 end)())
 

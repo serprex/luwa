@@ -180,11 +180,11 @@ FFI.prototype.obj2js = function(h) {
 FFI.prototype.evalWait = function() {
 	return new Promise(resolve =>
 		(function core(mod) {
-			if (mod.eval()) {
-				resolve();
-			} else {
-				setTimeout(core, 0, mod);
+			// setTimeout waits at least 1ms, so run many steps per wait
+			for (let i = 0; i < 1000; i++) {
+				if (mod.eval()) return resolve();
 			}
+			setTimeout(core, 0, mod);
 		})(this.mod)
 	);
 }

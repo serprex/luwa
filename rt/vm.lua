@@ -414,6 +414,33 @@ defMop('Load', function(mop, ctx)
 		f:i32load(mop[2] or 0)
 	end)
 end)
+-- Slots & boxes are vecs, values start at vec.base
+defMop('LoadSlot', function(mop, ctx)
+	resolve(ctx, mop[1])
+	cg(ctx, function(f)
+		f:i32load(vec.base)
+	end)
+end)
+defMop('Unbox', function(mop, ctx)
+	resolve(ctx, mop[1])
+	cg(ctx, function(f)
+		f:i32load(vec.base)
+	end)
+end)
+defMop('StoreSlot', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:i32store(vec.base)
+	end)
+end)
+defMop('SetBox', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:i32store(vec.base)
+	end)
+end)
 defMop('Obj', function(mop, ctx)
 	cg(ctx, function(f)
 		f:i32(mop[1])
@@ -513,6 +540,11 @@ defMop('TblGet', function(mop, ctx)
 		f:call(tblget)
 	end)
 end)
+defMop('NewTbl', function(mop, ctx)
+	cg(ctx, function(f)
+		f:call(newtbl)
+	end)
+end)
 defMop('TblSet', function(mop, ctx)
 	resolve(ctx, mop[1])
 	resolve(ctx, mop[2])
@@ -595,7 +627,7 @@ defMop('Arg', function(mop, ctx)
 end)
 defMop('Const', function(mop, ctx)
 	cg(ctx, function(f)
-		f:load(ctx.objbase)
+		f:load(ctx.objbase.r)
 		f:i32load(objframe.consts)
 	end)
 	resolve(ctx, mop[1])
@@ -607,7 +639,7 @@ defMop('Const', function(mop, ctx)
 end)
 defMop('Free', function(mop, ctx)
 	cg(ctx, function(f)
-		f:load(ctx.objbase)
+		f:load(ctx.objbase.r)
 		f:i32load(objframe.frees)
 	end)
 	resolve(ctx, mop[1])
@@ -620,7 +652,7 @@ end)
 defMop('Local', function(mop, ctx)
 	cg(ctx, function(f)
 		f:call(loadframebase)
-		f:i32load32u(dataframe.base)
+		f:i32load(dataframe.base)
 		f:call(loadframebase)
 		f:i32load16u(dataframe.locals)
 		f:add()
@@ -733,6 +765,23 @@ local function binop(name, emit)
 	end)
 end
 binop('Sub', function(f) f:sub() end)
+defMop('Negate', function(mop, ctx)
+	if isfloat(mop[1].out) then
+		resolve(ctx, mop[1])
+		cg(ctx, function(f)
+			f:neg()
+		end)
+	else
+		-- ints have no neg op: 0 - x
+		cg(ctx, function(f)
+			f:i64(0)
+		end)
+		resolve(ctx, mop[1])
+		cg(ctx, function(f)
+			f:sub()
+		end)
+	end
+end)
 binop('Mul', function(f) f:mul() end)
 binop('Div', function(f, isflt)
 	if isflt then
@@ -1037,6 +1086,28 @@ local microready = {
 	[ops.CmpLt] = true,
 	[ops.CmpGe] = true,
 	[ops.CmpGt] = true,
+	[ops.Jif] = true,
+	[ops.JifNot] = true,
+	[ops.JifOrPop] = true,
+	[ops.JifNotOrPop] = true,
+	[ops.BNot] = true,
+	[ops.LoadConst] = true,
+	[ops.LoadLocal] = true,
+	[ops.StoreLocal] = true,
+	[ops.LoadParam] = true,
+	[ops.StoreParam] = true,
+	[ops.LoadFree] = true,
+	[ops.LoadFreeBox] = true,
+	[ops.StoreFreeBox] = true,
+	[ops.LoadParamBox] = true,
+	[ops.StoreParamBox] = true,
+	[ops.LoadLocalBox] = true,
+	[ops.StoreLocalBox] = true,
+	[ops.Neg] = true,
+	[ops.Add] = true,
+	[ops.TblSet] = true,
+	[ops.TblAdd] = true,
+	[ops.TblNew] = true,
 }
 local eval = func(i32, function(f)
 	local a, b, c, d, e,
@@ -1080,16 +1151,23 @@ local eval = func(i32, function(f)
 	}
 	local ctx = mkcgctx(f, L)
 
-	-- Keep legacy order: a handler can only branch to labels after it
-	local arms = vmlegacy(f, L)
+	-- microbc ops only branch to nop, so they go first.
+	-- Legacy keeps its order: a handler can only branch to labels after it
 	local switchparams = {}
+	local microops = {}
+	for op in pairs(microready) do
+		microops[#microops+1] = op
+	end
+	table.sort(microops)
+	for _, op in ipairs(microops) do
+		switchparams[#switchparams+1] = op
+		switchparams[#switchparams+1] = genOp(ctx, op)
+	end
+	local arms = vmlegacy(f, L)
 	for i=1,#arms,2 do
-		local label, arm = arms[i], arms[i+1]
-		if microready[label] then
-			arm = genOp(ctx, label)
-		end
-		switchparams[i] = label
-		switchparams[i+1] = arm
+		assert(not microready[arms[i]], 'vmlegacy still has a handler for a microbc op')
+		switchparams[#switchparams+1] = arms[i]
+		switchparams[#switchparams+1] = arms[i+1]
 	end
 	switchparams[#switchparams+1] = 'nop'
 
