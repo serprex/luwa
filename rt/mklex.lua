@@ -1,39 +1,23 @@
 #!/usr/bin/env lua
+-- Builds scripts/lex.wasm: just the lexer, for scripts/luac-lex.js at build time
+-- (rt.wasm can't be built yet, it holds the prelude's bytecode)
 package.path = 'rt/?.lua;' .. package.path
 local M = require 'make'
 
-BOOTRT = function() end
-
-local _stack = require 'stack'
-local _table = require '_table'
-local _rt = require 'rt'
-local _alloc = require 'alloc'
-local _gc = require 'gc'
 local _lex = require '_lex'
-local _env = require 'env'
+local _js = require 'jsapi'
+
+local lex = M.func(V, { V, V }, function(f, s)
+	f:load(s)
+	f:refcast(require('alloc').R.str)
+	f:call(_lex.lex)
+end)
 
 local mod = M.mod()
-local function export(obj, ...)
-	for i=1, select('#', ...) do
-		local name = select(i, ...)
-		mod:export(name, obj[name])
-	end
+mod:export('lex', lex)
+for _, name in ipairs{ 'typeof', 'newstr', 'strlen', 'strget', 'strset', 'intval', 'fltval', 'veclen', 'vecget' } do
+	mod:export(name, _js[name])
 end
-local function import(obj, ...)
-	for i=1, select('#', ...) do
-		mod:import(obj[select(i, ...)])
-	end
-end
-export(_stack, 'tmppush', 'tmppop', 'nthtmp', 'setnthtmp')
-export(_alloc, 'newi64', 'newf64', 'newtbl', 'newstr', 'newvec', 'newvec1',
-	'newstrbuf', 'newvecbuf', 'newfunc', 'newcoro')
-export(_gc, 'gcmark')
-export(_lex, 'lex')
-export(_env, 'genesis')
-import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos', 'tan',
-	'asin', 'acos', 'atan', 'atan2', 'exp', 'log')
-mod:data(_rt.image)
 local chunks = mod:compile()
 
 io.open('scripts/lex.wasm', 'w'):write(table.unpack(chunks)):close()
-

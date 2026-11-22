@@ -147,7 +147,7 @@ local Flt64 = mkMop('Flt64', {
 	arg = {'atom'},
 	out = 'f64',
 })
--- A constant object pointer, like NIL/FALSE/TRUE
+-- A constant value: NIL, FALSE or TRUE
 local Obj = mkMop('Obj', {
 	arg = {'atom'},
 	out = 'obj',
@@ -170,11 +170,6 @@ mkMop('ToString', {
 	arg = {'obj'},
 	out = 'obj',
 })
-mkMop('Load', {
-	stmt = true,
-	arg = {'i32', 'atom'},
-	out = 'i32',
-})
 local LoadInt = mkMop('LoadInt', {
 	arg = {'int'},
 	out = 'i64',
@@ -182,10 +177,6 @@ local LoadInt = mkMop('LoadInt', {
 local LoadFlt = mkMop('LoadFlt', {
 	arg = {'float'},
 	out = 'f64',
-})
-mkMop('Store', {
-	stmt = true,
-	arg = { 'i32', 'i32' },
 })
 -- Slots of the current function. Index comes first, value to store second
 -- Local/Param live on the lua stack, Free/Const in the function's vecs

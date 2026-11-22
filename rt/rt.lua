@@ -1,21 +1,21 @@
+-- Globals, imports, and the static objects: strings, numbers & functions the runtime and prelude need.
+-- Statics are made by initstatics (run by genesis) from passive data, each one goes in its own global.
+-- GS[s] / GN.integer[pack] / GN.float[pack] / GF[name] are those globals
 local M = require 'make'
 local func, global = M.func, M.global
 local importfunc = M.importfunc
-local i32, i64, f32, f64 = M.i32, M.i64, M.f32, M.f64
 
 local alloc = require 'alloc'
-local types, str, functy, allocsizef = alloc.types, alloc.str, alloc.functy, alloc.allocsizef
+local types, R, str, bytes, vals, int, float, functy =
+	alloc.types, alloc.R, alloc.str, alloc.bytes, alloc.vals, alloc.int, alloc.float, alloc.functy
 
-NIL = 0
-FALSE = 8
-TRUE = 16
-otmp = M.global(i32, true)
-oluastack = M.global(i32, true)
-ostrmt = M.global(i32, true)
-markbit = M.global(i32, true)
-idcount = M.global(i32, true)
+-- microbc's Obj atoms
+NIL = 'nil'
+FALSE = 'false'
+TRUE = 'true'
 
-local memory = M.importmemory('', 'm', 1)
+oluastack = M.global(R.coro, true)
+ostrmt = M.global(R.tbl, true)
 
 GN = {
 	integer = {},
@@ -31,102 +31,61 @@ local function doboot()
 		'./rt/ast.lua', './rt/bc.lua', './rt/lex.lua'))
 end
 
-function getGC(n)
-	return GN[math.type(n)][n]
-end
-local function addHeader(base, mem, ty)
-	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', base+#mem), 1, 4)
-	mem[#mem+1] = ty
-end
-local function addString(base, mem, s)
-	addHeader(base, mem, types.str)
-	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', #s), 1, 4)
-	mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
-	for j = 1,#s do
-		mem[#mem+1] = string.byte(s, j)
+-- Static object list, in creation order: { kind, global, data... }
+local statics = {}
+-- All string & bytecode bytes, a passive data segment
+local blob = {}
+local function addbytes(s)
+	local off = #blob
+	for j = 1, #s do
+		blob[#blob+1] = s:byte(j)
 	end
-	for j = #s+1,allocsizef(str.base + #s)-str.base do
-		mem[#mem+1] = 0
-	end
+	return off
 end
-local function addNumber(base, mem, n)
+local function addString(s)
+	if not GS[s] then
+		local g = global(R.str, true)
+		GS[s] = g
+		statics[#statics+1] = { 'str', g, addbytes(s), #s }
+	end
+	return GS[s]
+end
+local function addNumber(n)
 	local ty = math.type(n)
 	assert(ty, 'Non numeric addNumber')
-	local lty, bin
-	if ty == 'integer' then
-		lty, bin = types.int, string.pack('<i8', n)
-	else
-		lty, bin = types.float, string.pack('<d', n)
-	end
+	local bin = ty == 'integer' and string.pack('<i8', n) or string.pack('<d', n)
 	if not GN[ty][bin] then
-		GN[ty][bin] = base + #mem
-		addHeader(base, mem, lty)
-		mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4],
-			mem[#mem+5],mem[#mem+6],mem[#mem+7],mem[#mem+8] = string.byte(bin, 1, 8)
-		mem[#mem+1],mem[#mem+2],mem[#mem+3] = 0,0,0
+		local g = global(ty == 'integer' and R.int or R.float, true)
+		GN[ty][bin] = g
+		statics[#statics+1] = { ty, g, n }
 	end
 	return GN[ty][bin]
 end
-local function addStatics(base, mem, ...)
-	local fid = 0
+local function addStatics(...)
 	for i = 1,select('#', ...) do
-		local s, sbase = select(i, ...), base + #mem
+		local s = select(i, ...)
 		local st = type(s)
 		while st == 'function' do
 			s = s()
 			st = type(s)
 		end
 		if st == 'string' then
-			if not GS[s] then
-				GS[s] = sbase
-				addString(base, mem, s)
-			end
+			addString(s)
 		elseif st == 'number' then
-			addNumber(base, mem, s)
-		elseif #s == 2 then
-			local name, snty = s[1], math.type(s[2])
-			assert(snty, '2-pair assumes numeric')
-			GN[ty][name] = addNumber(base, mem, s[2])
+			addNumber(s)
 		else -- { funcname, paramc, isdotdotdot, bc, consts?, localc? }
-			fid = fid - 1
-			GF[s[1]] = sbase
-			addHeader(base, mem, types.functy)
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', fid),1,4)
-			if s[3] then
-				mem[#mem+1] = 1
-			else
-				mem[#mem+1] = 0
-			end
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', sbase+functy.sizeof),1,4)
-			local vbase = #mem
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = 0,0,0,0
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s[6] or 0),1,4)
-			mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s[2]),1,4)
-			mem[#mem+1],mem[#mem+2] = 0,0
-			assert(base+#mem == sbase+functy.sizeof)
-			addString(base, mem, s[4])
-			local s5 = s[5]
-			if s5 then
-				mem[vbase+1],mem[vbase+2],mem[vbase+3],mem[vbase+4] = string.byte(string.pack('<i4', base+#mem),1,4)
-				addHeader(base, mem, types.vec)
-				mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', #s5),1,4)
-				for i=1, #s5 do
-					local s5i = assert(s5[i](), 'Got falsy value from s5')
-					mem[#mem+1],mem[#mem+2],mem[#mem+3],mem[#mem+4] = string.byte(string.pack('<i4', s5i),1,4)
-				end
-				while (base+#mem&7) ~= 0 do
-					mem[#mem+1] = 0
+			local g = global(R.functy, true)
+			GF[s[1]] = g
+			local consts
+			if s[5] then
+				consts = {}
+				for j = 1, #s[5] do
+					consts[j] = assert(s[5][j](), 'Got falsy value from consts')
 				end
 			end
+			statics[#statics+1] = { 'fn', g, s[2], s[3], addbytes(s[4]), #s[4], consts, s[6] or 0 }
 		end
 	end
-	HEAPBASE = base + #mem
-	assert((HEAPBASE&7) == 0)
-	while mem[#mem] == 0 do
-		mem[#mem] = nil
-	end
-	return base, mem
 end
 
 -- Builtins below are tiny hand written bytecode, built from bc.lua so opcode numbers stay in sync
@@ -141,14 +100,7 @@ local RET = string.char(bc.Return)
 
 local Version = 'Luwa ' .. io.open('package.json'):read('a'):gmatch('"version": "([%d.]*)"')()
 
-local image = M.data(memory, addStatics(4, {
-	-- nil
-	2, 0, 0, 0,
-	-- false
-	8, 0, 0, 0, 2, 0, 0, 0,
-	-- true
-	16, 0, 0, 0, 2, 1, 0, 0,
-}, 'float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file', 'closed file',
+addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file', 'closed file',
 	'nil', 'number', 'string', 'boolean', 'table', 'function', 'thread', 'userdata',
 	'b', 't', 'bt', 'n', 'a', 'l', 'L', 'r', 'w', 'r+', 'w+', 'a+',
 	'set', 'cur', 'end', 'no', 'full', 'line', 'exit', 'signal',
@@ -162,7 +114,7 @@ local image = M.data(memory, addStatics(4, {
 	'rawget', 'rawset', 'rawlen', 'rawequal', 'next',
 	'create', 'resume', 'yield', 'running', 'status',
 	'abs', 'ceil', 'floor', 'sin', 'cos', 'tan', 'asin', 'acos', 'exp', 'log', 'atan',
-	'byte', 'char',
+	'byte', 'char', 'load',
 	'_VERSION', Version,
 	-- begin _luwa fields
 	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc', 'lpeg',
@@ -216,15 +168,58 @@ local image = M.data(memory, addStatics(4, {
 	{'_random', 0, false, SYS'_random' .. RET},
 	{'string_byte', 3, false, SYS'string_byte' .. RET},
 	{'string_char', 0, true, SYS'string_char' .. RET},
-	(BOOTRT or doboot)()
-))
+	(BOOTRT or doboot)())
 
-heaptip = global(i32, true, HEAPBASE)
+local blobdata = M.passivedata(blob)
 
-local igcfix = importfunc('', 'gcfix')
-local igcmark = importfunc('', 'gcmark')
+-- Make every static object & put it in its global
+local initstatics = func(function(f)
+	for idx, s in ipairs(statics) do
+		local kind, g = s[1], s[2]
+		if kind == 'str' then
+			f:i32(types.str)
+			f:i32(0)
+			f:i32(s[3])
+			f:i32(s[4])
+			f:arraynewdata(bytes, blobdata)
+			f:structnew(str)
+		elseif kind == 'integer' then
+			f:i32(types.int)
+			f:i64(s[3])
+			f:structnew(int)
+		elseif kind == 'float' then
+			f:i32(types.float)
+			f:f64(s[3])
+			f:structnew(float)
+		else
+			local paramc, isdotdotdot, off, len, consts, localc = s[3], s[4], s[5], s[6], s[7], s[8]
+			f:i32(types.functy)
+			-- static functions get ids below 0, so they never clash with nextid's
+			f:i32(idx - #statics - 1)
+			f:i32(isdotdotdot and 1 or 0)
+			f:i32(off)
+			f:i32(len)
+			f:arraynewdata(bytes, blobdata)
+			if consts then
+				for j = 1, #consts do
+					f:loadg(consts[j])
+				end
+				f:arraynewfixed(vals, #consts)
+			else
+				f:refnull(vals)
+			end
+			f:refnull(vals)
+			f:i32(localc)
+			f:i32(paramc)
+			f:structnew(functy)
+		end
+		f:storeg(g)
+	end
+end)
+
 local echo = importfunc('', 'echo', i32, i32)
-local echoptr = importfunc('', 'echoptr', i32, i32)
+-- Print any value, for debugging & error messages
+local echoobj = importfunc('', 'echoobj', V, void)
 local sin = importfunc('', 'sin', f64, f64)
 local cos = importfunc('', 'cos', f64, f64)
 local tan = importfunc('', 'tan', f64, f64)
@@ -237,34 +232,10 @@ local exp = importfunc('', 'exp', f64, f64)
 local log = importfunc('', 'log', f64, f64)
 local pow = importfunc('', 'pow', f64, f64, f64)
 
-local setluastack = func(i32, void, function(f, x)
-	f:load(x)
-	f:storeg(oluastack)
-end)
-local getluastack = func(i32, function(f)
-	f:loadg(oluastack)
-end)
-
-local echodrop = func(i32, void, function(f, x)
-	f:load(x)
-	f:call(echo)
-	f:drop()
-end)
-
-local echodrop2 = func(i32, i32, i32, function(f, x, y)
-	f:load(x)
-	f:load(y)
-	f:call(echodrop)
-	f:call(echo)
-end)
-
 return {
-	memory = memory,
-	image = image,
-	igcfix = igcfix,
-	igcmark = igcmark,
+	initstatics = initstatics,
 	echo = echo,
-	echoptr = echoptr,
+	echoobj = echoobj,
 	sin = sin,
 	cos = cos,
 	tan = tan,
@@ -276,9 +247,5 @@ return {
 	exp = exp,
 	log = log,
 	pow = pow,
-	setluastack = setluastack,
-	getluastack = getluastack,
-	echodrop = echodrop,
-	echodrop2 = echodrop2,
 	Version = Version,
 }

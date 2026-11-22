@@ -2,69 +2,69 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
-local vec, coro, newtbl, newcoro, newvecbuf = alloc.vec, alloc.coro, alloc.newtbl, alloc.newcoro, alloc.newvecbuf
+local R, coro, newtbl, newcoro = alloc.R, alloc.coro, alloc.newtbl, alloc.newcoro
 
 local stack = require 'stack'
 local nthtmp, tmppush, tmppop = stack.nthtmp, stack.tmppush, stack.tmppop
 
 local _table = require '_table'
-local tblget, tblset = _table.tblget, _table.tblset
+local tblset = _table.tblset
 
 local vm = require 'vm'
 local rt = require 'rt'
+local frame = require 'frame'
 
-local addkv2env = func(i32, i32, void, function(f, k, v)
-	f:call(param0)
-	f:i32load(vec.base)
-	f:load(k)
-	f:load(v)
-	f:call(tblset)
-end)
+-- t[k] = v, t is param n of the prelude: 0 is _ENV, 1 is _luwa
+local function addkv(n)
+	return func(V, V, void, function(f, k, v)
+		f:i32(n)
+		f:call(frame.param)
+		f:refcast(R.tbl)
+		f:load(k)
+		f:load(v)
+		f:call(tblset)
+	end)
+end
+local addkv2env = addkv(0)
+local addkv2luwa = addkv(1)
 
-local addkv2luwa = func(i32, i32, void, function(f, k, v)
-	f:call(param0)
-	f:i32load(vec.base + 4)
-	f:load(k)
-	f:load(v)
-	f:call(tblset)
-end)
-
-local addkv2top = func(i32, i32, void, function(f, k, v)
-	f:i32(4)
+-- top of stack[k] = v
+local addkv2top = func(V, V, void, function(f, k, v)
+	f:i32(1)
 	f:call(nthtmp)
+	f:refcast(R.tbl)
 	f:load(k)
 	f:load(v)
 	f:call(tblset)
 end)
 
+-- Make the main coro & the static objects
 local genesis = func(function(f)
-	local a = f:locals(i32, 1)
-
 	f:call(newcoro)
 	f:storeg(oluastack)
-	f:i32(32)
-	f:call(newvecbuf)
-	f:store(a)
+	f:i32(64)
+	f:call(alloc.newstack)
+	f:storeg(gstack)
 	f:loadg(oluastack)
-	f:load(a)
-	f:i32store(coro.stack)
+	f:loadg(gstack)
+	f:structset(coro, 'stack')
+	f:call(rt.initstatics)
 end)
 
-local initPrelude = func(i32, function(f)
-	local a = f:locals(i32)
-
+-- Sets up the prelude to run, returns _ENV. eval then runs the prelude
+local initPrelude = func(R.tbl, function(f)
 	local function addfun(fn, ...)
 		for i=1,select('#', ...),2 do
 			local k, v = select(i, ...)
-			f:i32(k)
-			f:i32(v)
+			f:loadg(k)
+			f:loadg(v)
 			f:call(fn)
 		end
 	end
 
 	local function addmod(name, ...)
 		if select('#', ...) == 0 then
-			f:i32(name)
+			f:loadg(name)
 			f:call(newtbl)
 			f:call(addkv2env)
 		else
@@ -72,15 +72,16 @@ local initPrelude = func(i32, function(f)
 			f:call(tmppush)
 			for i=1,select('#', ...),2 do
 				local k, v = select(i, ...)
-				f:i32(k)
-				f:i32(v)
+				f:loadg(k)
+				f:loadg(v)
 				f:call(addkv2top)
 			end
-			f:i32(name)
-			f:i32(4)
+			f:loadg(name)
+			f:i32(1)
 			f:call(nthtmp)
 			f:call(addkv2env)
 			f:call(tmppop)
+			f:drop()
 		end
 	end
 
@@ -90,7 +91,7 @@ local initPrelude = func(i32, function(f)
 	f:call(newtbl)
 	f:call(tmppush)
 
-	f:i32(GF.prelude0)
+	f:loadg(GF.prelude0)
 	f:call(vm.init)
 
 	addfun(addkv2env,
@@ -157,8 +158,9 @@ local initPrelude = func(i32, function(f)
 	addmod(GS.table)
 	addmod(GS.utf8)
 
-	f:call(param0)
-	f:i32load(vec.base)
+	f:i32(0)
+	f:call(frame.param)
+	f:refcast(R.tbl)
 end)
 
 return {

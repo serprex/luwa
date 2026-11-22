@@ -3,20 +3,16 @@ package.path = 'rt/?.lua;' .. package.path
 local M = require 'make'
 
 local _stack = require 'stack'
-local _table = require '_table'
 local _rt = require 'rt'
 local _vm = require 'vm'
-local _alloc = require 'alloc'
-local _gc = require 'gc'
-local _lex = require '_lex'
 local _env = require 'env'
+local _js = require 'jsapi'
 
 local mod = M.mod()
 local function export(obj, ...)
-	print(obj, ...)
 	for i=1, select('#', ...) do
 		local name = select(i, ...)
-		mod:export(name, obj[name])
+		mod:export(name, assert(obj[name], name))
 	end
 end
 local function import(obj, ...)
@@ -24,21 +20,13 @@ local function import(obj, ...)
 		mod:import(obj[select(i, ...)])
 	end
 end
-export(_stack, 'tmppush', 'tmppop', 'tmpclear', 'nthtmp', 'setnthtmp')
-export(_table, 'tblget', 'tblset')
-export(_rt, 'getluastack', 'setluastack')
-export(_vm, 'init', 'eval')
-export(_alloc, 'newi64', 'newf64', 'newtbl', 'newstr', 'newvec', 'newvec1',
-	'newstrbuf', 'newvecbuf', 'newfunc', 'newcoro')
-export(_gc, 'gcmark')
--- for tests & debugging: force a collection
-mod:export('gccollect', gccollect)
-export(_lex, 'lex')
-export(_env, 'genesis', 'initPrelude')
-import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos', 'tan',
+import(_rt, 'echo', 'echoobj', 'sin', 'cos', 'tan',
 	'asin', 'acos', 'atan', 'atan2', 'random', 'exp', 'log', 'pow')
-mod:data(_rt.image)
+export(_stack, 'tmppush', 'tmppop', 'tmpclear', 'nthtmp', 'stacklen')
+export(_vm, 'init', 'eval')
+export(_env, 'genesis', 'initPrelude')
+export(_js, 'typeof', 'newstr', 'newtbl', 'newi64', 'newf64', 'strlen', 'strget', 'strset',
+	'intval', 'fltval', 'veclen', 'vecget', 'tblnext', 'tblmeta', 'tblget', 'tblset')
 local chunks = mod:compile()
 
 io.open('rt.wasm', 'w'):write(table.unpack(chunks)):close()
-

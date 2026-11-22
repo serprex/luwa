@@ -30,3 +30,6 @@ jobs:
 
       - name: test
         run: node scripts/test.js
+
+      - name: make.lua gc test
+        run: node scripts/maketest.js

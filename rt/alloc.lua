@@ -1,61 +1,20 @@
+-- Object layout on WasmGC. The engine owns objects, so refs held in locals stay valid across allocation.
+-- A Lua value is V, a nullable eqref: nil is null, false/true are i31 0/1,
+-- everything else is a struct under $obj. Its first field is a type id, so code can switch on it
 local M = require 'make'
 local func = M.func
+local i8 = M.i8
 
 local types = {
 	int = 0,
 	float = 1,
-	single = 2,
+	single = 2, -- nil, false, true. Not a struct, typeof gives this
 	tbl = 3,
 	str = 4,
 	vec = 5,
-	buf = 6,
+	buf = 6, -- unused, buffers aren't Lua values now
 	functy = 7,
 	coro = 8,
-}
-local obj = {
-	gc = 0,
-	type = 4,
-}
-local single = {
-	val = 5,
-	sizeof = 8,
-}
-local num = {
-	val = 5,
-	sizeof = 16,
-}
-local tbl = {
-	id = 5,
-	len = 9,
-	hlen = 13,
-	arr = 17, -- vec
-	hash = 21, -- vec
-	meta = 25, -- tbl?
-	sizeof = 32,
-}
-local str = {
-	len = 5,
-	hash = 9,
-	base = 13,
-}
-local vec = {
-	len = 5,
-	base = 9,
-}
-local buf = {
-	len = 5,
-	ptr = 9, -- vec|str
-	sizeof = 16,
-}
-local functy = {
-	id = 5,
-	isdotdotdot = 9,
-	bc = 10, -- str
-	consts = 14, -- vec?
-	frees = 18, -- vec?
-	localc = 22,
-	paramc = 26,
-	sizeof = 32,
 }
 local corostate = {
 	dead = 0,
@@ -63,399 +22,251 @@ local corostate = {
 	live = 2,
 	wait = 3,
 }
-local coro = {
-	id = 5,
-	state = 9,
-	caller = 10, -- coro?
-	stack = 14, -- buf
-	data = 18, -- buf
-	sizeof = 24,
+
+V = M.eqref
+
+local bytes = M.array(M.mut(i8), { name = 'bytes' })
+local vals = M.array(M.mut(V), { name = 'vals' })
+local i32s = M.array(M.mut(i32), { name = 'i32s' })
+
+local obj = M.struct({ { i8, name = 'type' } }, { name = 'obj', final = false })
+local int = M.struct({ { i8, name = 'type' }, { i64, name = 'val' } }, { name = 'int', super = obj })
+local float = M.struct({ { i8, name = 'type' }, { f64, name = 'val' } }, { name = 'float', super = obj })
+-- hash is 0 until worked out
+local str = M.struct({
+	{ i8, name = 'type' },
+	{ i32, mut = true, name = 'hash' },
+	{ M.ref(bytes), name = 'bytes' },
+}, { name = 'str', super = obj })
+-- Fixed size list of values. Lua code sees it from the lexer & _luwa.vec_new
+local vec = M.struct({
+	{ i8, name = 'type' },
+	{ M.ref(vals), name = 'arr' },
+}, { name = 'vec', super = obj })
+-- Objects hashed by identity get an id, wasm has no addresses
+local idobj = M.struct({ { i8, name = 'type' }, { i32, name = 'id' } }, { name = 'idobj', super = obj, final = false })
+-- Hash only for now: hash holds key, value pairs. hlen counts used pairs
+local tbl = M.struct(nil, { name = 'tbl', super = idobj })
+tbl:define{
+	{ i8, name = 'type' },
+	{ i32, name = 'id' },
+	{ i32, mut = true, name = 'len' },
+	{ i32, mut = true, name = 'hlen' },
+	{ M.ref(vals), mut = true, name = 'hash' },
+	{ M.refnull(tbl), mut = true, name = 'meta' },
+}
+local functy = M.struct({
+	{ i8, name = 'type' },
+	{ i32, name = 'id' },
+	{ i8, mut = true, name = 'isdotdotdot' },
+	{ M.refnull(bytes), mut = true, name = 'bc' },
+	{ M.refnull(vals), mut = true, name = 'consts' },
+	{ M.refnull(vals), mut = true, name = 'frees' },
+	{ i32, mut = true, name = 'localc' },
+	{ i32, mut = true, name = 'paramc' },
+}, { name = 'functy', super = idobj })
+-- Growable lists: the Lua value stack, and the call frames (8 i32s each, see frame.lua)
+local stack = M.struct({
+	{ i32, mut = true, name = 'len' },
+	{ M.ref(vals), mut = true, name = 'arr' },
+}, { name = 'stack' })
+local frames = M.struct({
+	{ i32, mut = true, name = 'len' },
+	{ M.ref(i32s), mut = true, name = 'arr' },
+}, { name = 'frames' })
+local coro = M.struct(nil, { name = 'coro', super = idobj })
+coro:define{
+	{ i8, name = 'type' },
+	{ i32, name = 'id' },
+	{ i8, mut = true, name = 'state' },
+	{ M.refnull(coro), mut = true, name = 'caller' },
+	{ M.refnull(stack), mut = true, name = 'stack' },
+	{ M.refnull(frames), mut = true, name = 'data' },
+}
+-- Captured variable, stored in a local's slot. Not a Lua value
+local box = M.struct({ { V, mut = true, name = 'val' } }, { name = 'box' })
+
+-- Nullable ref of each type, what locals & fields use
+local R = {
+	bytes = M.refnull(bytes),
+	vals = M.refnull(vals),
+	i32s = M.refnull(i32s),
+	obj = M.refnull(obj),
+	int = M.refnull(int),
+	float = M.refnull(float),
+	str = M.refnull(str),
+	vec = M.refnull(vec),
+	idobj = M.refnull(idobj),
+	tbl = M.refnull(tbl),
+	functy = M.refnull(functy),
+	stack = M.refnull(stack),
+	frames = M.refnull(frames),
+	coro = M.refnull(coro),
+	box = M.refnull(box),
 }
 
--- Set true to collect garbage when out of memory, instead of only growing memory
-USEGC = false
-
-local function allocsizef(x)
-	return x+(-x&7)
+-- Constant values, emitted inline
+local function lnil(f)
+	f:refnull(M.heap.eq)
+end
+local function lfalse(f)
+	f:i32(0)
+	f:refi31()
+end
+local function ltrue(f)
+	f:i32(1)
+	f:refi31()
+end
+-- i32 0 or 1 on the stack to false or true
+local function lbool(f)
+	f:refi31()
 end
 
-local allocsize = func(i32, i32, function(f, sz)
-	f:i32(0)
-	f:load(sz)
-	f:sub()
-	f:i32(7)
-	f:band()
-	f:load(sz)
-	f:add()
-end)
+idcount = M.global(i32, true)
 
+-- idcount += 1, return it
 local nextid = func(i32, function(f)
-	f:loadg(idcount)
 	f:loadg(idcount)
 	f:i32(1)
 	f:add()
 	f:storeg(idcount)
+	f:loadg(idcount)
 end)
 
-local newobj = func(i32, i32, i32, function(f, sz, t)
-	local p, ht = f:locals(i32, 2)
-	f:loadg(heaptip)
-	f:tee(p)
-	f:load(sz)
-	f:add()
-	f:tee(ht)
-	f:i32(16)
-	f:shru()
-	f:currentmemory()
-	f:geu()
-	f:iff(function()
-		-- GC is off for now: it has bugs, & the plan is to move to WasmGC.
-		-- Without it we just grow memory below
-		if USEGC then
-			f:call(gccollect)
-		end
-
-		f:loadg(heaptip)
-		f:tee(p)
-		f:load(sz)
-		f:add()
-		f:storeg(heaptip)
-		f:loadg(heaptip)
-		f:i32(16)
-		f:shru()
-		f:tee(sz)
-		f:currentmemory()
-		f:geu()
-		f:iff(function()
-			f:load(sz)
-			f:currentmemory()
-			f:sub()
-			f:i32(1)
-			f:add()
-			f:growmemory()
-			f:drop()
-		end)
-	end, function()
-		f:load(ht)
-		f:storeg(heaptip)
+-- Type id of any value
+local typeof = func(V, i32, function(f, o)
+	f:block(M.ref(obj), function(isobj)
+		f:load(o)
+		f:broncast(isobj, V, M.ref(obj))
+		f:drop()
+		f:i32(types.single)
+		f:ret()
 	end)
-	-- store header to p
-	f:load(p)
-	f:loadg(markbit)
-	f:i32store(obj.gc)
-	f:load(p)
-	f:load(t)
-	f:i32store8(obj.type)
-	f:load(p)
+	f:structget(obj, 'type', false)
 end)
 
-local newi64 = func(i64, i32, function(f, x)
-	local p = f:locals(i32)
-	f:i32(16)
+local newi64 = func(i64, M.ref(int), function(f, x)
 	f:i32(types.int)
-	f:call(newobj)
-	f:tee(p)
 	f:load(x)
-	f:i64store(num.val)
-	f:load(p)
+	f:structnew(int)
 end)
 
-local newf64 = func(f64, i32, function(f, x)
-	local p = f:locals(i32)
-	f:i32(16)
+local newf64 = func(f64, M.ref(float), function(f, x)
 	f:i32(types.float)
-	f:call(newobj)
-	f:tee(p)
 	f:load(x)
-	f:f64store(num.val)
-	f:load(p)
+	f:structnew(float)
 end)
 
-local newvec = func(i32, i32, function(f, sz)
-	local p, n = f:locals(i32, 2)
-	f:i32(9)
-	f:load(sz)
-	f:add()
-	f:call(allocsize)
-	f:i32(types.vec)
-	f:call(newobj)
-	f:tee(p)
-	f:load(sz)
-	f:i32store(vec.len)
-
-	-- need to start with (sz - n)%8 == 0
-	f:load(sz)
-	f:i32(4)
-	f:band()
-	f:iff(function()
-		f:load(p)
-		f:i32(NIL)
-		f:i32store(vec.base)
-		f:i32(4)
-		f:store(n)
-	end)
-
-	f:loop(i32, function(loop) -- fill vec with references to nil
-		f:load(p)
-		f:load(n)
-		f:load(sz)
-		f:eq()
-		f:brif(f)
-		f:load(n)
-		f:add()
-		f:i64(0)
-		f:i64store(vec.base)
-
-		f:load(n)
-		f:i32(8)
-		f:add()
-		f:store(n)
-		f:br(loop)
-	end)
-end)
-
-local newvec1 = func(i32, i32, function(f, val)
-	local p, n = f:locals(i32, 2)
-	f:load(val)
-	f:storeg(otmp)
-
-	f:i32(16)
-	f:i32(types.vec)
-	f:call(newobj)
-	f:tee(p)
-	f:i32(4)
-	f:i32store(vec.len)
-
-	f:load(p)
-	f:loadg(otmp)
-	f:i32store(vec.base)
-
-	f:load(p)
-end)
-
-local newtbl = func(i32, function(f)
-	local p = f:locals(i32)
-	f:i32(32)
-	f:i32(types.tbl)
-	f:call(newobj)
-	f:storeg(otmp)
-
-	f:loadg(otmp)
-	f:call(nextid)
-	f:i32store(tbl.id)
-
-	assert(tbl.hlen == tbl.len + 4)
-	f:loadg(otmp) -- len, hlen = 0
-	f:i64(0)
-	f:i64store(tbl.len)
-
-	assert(tbl.hash == tbl.arr + 4)
-	-- Need to set arr/hash before alloc in case of gc
-	f:loadg(otmp) -- arr, hash = nil
-	f:i64(0)
-	f:i64store(tbl.arr)
-
-	f:loadg(otmp) -- meta = nil
-	f:i32(NIL)
-	f:i32store(tbl.meta)
-
-	f:loadg(otmp) -- arr = newvec(4*4)
-	f:i32(16)
-	f:call(newvec)
-	f:i32store(tbl.arr)
-
-	f:loadg(otmp) -- hash = newvec(4*8)
-	f:i32(32)
-	f:call(newvec)
-	f:i32store(tbl.hash)
-
-	f:loadg(otmp)
-end)
-
-local newstr = func(i32, i32, function(f, sz)
-	local p = f:locals(i32)
-	f:i32(13)
-	f:load(sz)
-	f:add()
-	f:call(allocsize)
+-- String of sz zero bytes
+local newstr = func(i32, M.ref(str), function(f, sz)
 	f:i32(types.str)
-	f:call(newobj)
-	f:tee(p)
-	f:load(sz)
-	f:i32store(str.len)
-	f:load(p)
 	f:i32(0)
-	f:i32store(str.hash)
-
-	f:load(p)
 	f:load(sz)
-	f:add()
-	f:store(sz)
-
-	f:switch(function()
-		f:load(sz)
-		f:i32(7)
-		f:band()
-	end, 8-str.base-7&7, function(scopes)
-		f:load(sz)
-		f:i32(0)
-		f:i32store(str.base)
-		f:load(sz)
-		f:i32(4)
-		f:add()
-		f:store(sz)
-		f:br(scopes[8-str.base-3&7])
-	end, 8-str.base-6&7, function(scopes)
-		f:load(sz)
-		f:i32(0)
-		f:i32store(str.base)
-		f:load(sz)
-		f:i32(0)
-		f:i32store16(str.base + 4)
-		f:br(scopes.sb7)
-	end, 8-str.base-5&7, function(scopes)
-		f:load(sz)
-		f:i32(0)
-		f:i32store(str.base)
-		f:load(sz)
-		f:i32(0)
-		f:i32store8(str.base + 4)
-		f:br(scopes.sb7)
-	end, 8-str.base-4&7, function(scopes)
-		f:load(sz)
-		f:i32(0)
-		f:i32store(str.base)
-		f:br(scopes.sb7)
-	end, 8-str.base-3&7, function(scopes)
-		f:load(sz)
-		f:i32(0)
-		f:i32store16(str.base)
-		f:load(sz)
-		f:i32(0)
-		f:i32store8(str.base + 2)
-		f:br(scopes.sb7)
-	end, 8-str.base-2&7, function(scopes)
-		f:load(sz)
-		f:i32(0)
-		f:i32store16(str.base)
-		f:br(scopes.sb7)
-	end, 8-str.base-1&7, function(scopes)
-		f:load(sz)
-		f:i32(0)
-		f:i32store8(str.base)
-	end, 8-str.base&7, 'sb7')
-	f:load(p)
+	f:arraynewdefault(bytes)
+	f:structnew(str)
 end)
-
-local newbuf = func(i32, function(f)
-	local p = f:locals(i32)
-	f:i32(buf.sizeof)
-	f:i32(types.buf)
-	f:call(newobj)
-	f:tee(p)
-	f:loadg(otmp)
-	f:i32store(buf.ptr)
-
-	f:load(p)
+local strfrombytes = func(M.refnull(bytes), M.ref(str), function(f, b)
+	f:i32(types.str)
 	f:i32(0)
-	f:i32store(buf.len)
-
-	f:load(p)
+	f:load(b)
+	f:refasnonnull()
+	f:structnew(str)
 end)
 
-local newstrbuf = func(i32, i32, function(f, sz)
+-- vec of sz nils
+local newvec = func(i32, M.ref(vec), function(f, sz)
+	f:i32(types.vec)
 	f:load(sz)
-	f:call(newstr)
-	f:storeg(otmp)
-	f:call(newbuf)
+	f:arraynewdefault(vals)
+	f:structnew(vec)
 end)
 
-local newvecbuf = func(i32, i32, function(f, sz)
-	f:load(sz)
-	f:call(newvec)
-	f:storeg(otmp)
-	f:call(newbuf)
+local newtbl = func(M.ref(tbl), function(f)
+	f:i32(types.tbl)
+	f:call(nextid)
+	f:i32(0)
+	f:i32(0)
+	-- 4 pairs
+	f:i32(8)
+	f:arraynewdefault(vals)
+	f:refnull(tbl)
+	f:structnew(tbl)
 end)
 
-local newfunc = func(i32, function(f)
-	local a = f:locals(i32)
-
-	f:i32(functy.sizeof)
+local newfunc = func(M.ref(functy), function(f)
 	f:i32(types.functy)
-	f:call(newobj)
-	f:tee(a)
 	f:call(nextid)
-	f:i32store(functy.id)
-
-	assert(functy.consts == functy.bc + 4)
-	f:load(a)
-	f:i64(0)
-	f:i64store(functy.bc)
-
-	assert(functy.localc == functy.frees + 4)
-	f:load(a)
-	f:i64(0)
-	f:i64store(functy.frees)
-
-	f:load(a)
 	f:i32(0)
-	f:i32store(functy.paramc)
-
-	f:load(a)
+	f:refnull(bytes)
+	f:refnull(vals)
+	f:refnull(vals)
+	f:i32(0)
+	f:i32(0)
+	f:structnew(functy)
 end)
 
-local newcoro = func(i32, function(f)
-	local a = f:locals(i32)
+local newstack = func(i32, M.ref(stack), function(f, sz)
+	f:i32(0)
+	f:load(sz)
+	f:arraynewdefault(vals)
+	f:structnew(stack)
+end)
+local newframes = func(i32, M.ref(frames), function(f, sz)
+	f:i32(0)
+	f:load(sz)
+	f:arraynewdefault(i32s)
+	f:structnew(frames)
+end)
 
-	f:i32(coro.sizeof)
+local newcoro = func(M.ref(coro), function(f)
 	f:i32(types.coro)
-	f:call(newobj)
-	f:tee(a)
 	f:call(nextid)
-	f:i32store(coro.id)
-
-	f:load(a)
 	f:i32(corostate.wait)
-	f:i32store8(coro.state)
+	f:refnull(coro)
+	f:refnull(stack)
+	f:refnull(frames)
+	f:structnew(coro)
+end)
 
-	f:load(a)
-	f:i32(NIL)
-	f:i32store(coro.caller)
-
-	assert(coro.data == coro.stack + 4)
-	f:load(a)
-	f:i64(0)
-	f:i64store(coro.stack)
-
-	f:load(a)
+local newbox = func(V, M.ref(box), function(f, v)
+	f:load(v)
+	f:structnew(box)
 end)
 
 return {
 	types = types,
+	corostate = corostate,
+	bytes = bytes,
+	vals = vals,
+	i32s = i32s,
 	obj = obj,
-	single = single,
-	num = num,
-	int = num,
-	float = num,
-	tbl = tbl,
+	int = int,
+	float = float,
 	str = str,
 	vec = vec,
-	buf = buf,
+	idobj = idobj,
+	tbl = tbl,
 	functy = functy,
-	corostate = corostate,
+	stack = stack,
+	frames = frames,
 	coro = coro,
-	allocsizef = allocsizef,
-	allocsize = allocsize,
+	box = box,
+	R = R,
+	lnil = lnil,
+	lfalse = lfalse,
+	ltrue = ltrue,
+	lbool = lbool,
 	nextid = nextid,
-	newobj = newobj,
+	typeof = typeof,
 	newi64 = newi64,
 	newf64 = newf64,
-	newtbl = newtbl,
 	newstr = newstr,
+	strfrombytes = strfrombytes,
 	newvec = newvec,
-	newvec1 = newvec1,
-	newstrbuf = newstrbuf,
-	newvecbuf = newvecbuf,
+	newtbl = newtbl,
 	newfunc = newfunc,
+	newstack = newstack,
+	newframes = newframes,
 	newcoro = newcoro,
+	newbox = newbox,
 }

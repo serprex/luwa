@@ -8,7 +8,7 @@ I'll try avoid my usual stream of consciousness here, instead that's at [my devl
 
 WASM runtime is in `rt/`. [`rt/make.lua`](rt/make.lua) is luwa-agnostic macro-assembler logic. [`mkrt.lua`](rt/mkrt.lua) produces an `rt.wasm` which [`rt.js`](rt.js) interfaces
 
-GC is a LISP2 compacting GC. GC performance is a low priority given WASM GC RFC. See [`rt/gc.lua`](rt/gc.lua)
+Objects are [WasmGC](https://github.com/WebAssembly/gc) structs & arrays, the engine collects them. See [`rt/alloc.lua`](rt/alloc.lua)
 
 VM needs to be reentrant. Currently running coroutine is oluastack. Builtins which call functions work by returning after setting up a necessary callstack. See [`rt/vm.lua`](rt/vm.lua)
 

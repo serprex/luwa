@@ -1,0 +1,95 @@
+-- Small exports so JS can make & look at values. JS holds refs directly, the engine keeps them alive
+local M = require 'make'
+local func = M.func
+
+local alloc = require 'alloc'
+local R, str, bytes, int, float, vec = alloc.R, alloc.str, alloc.bytes, alloc.int, alloc.float, alloc.vec
+
+local strlen = func(V, i32, function(f, s)
+	f:load(s)
+	f:refcast(R.str)
+	f:structget(str, 'bytes')
+	f:arraylen()
+end)
+local strget = func(V, i32, i32, function(f, s, i)
+	f:load(s)
+	f:refcast(R.str)
+	f:structget(str, 'bytes')
+	f:load(i)
+	f:arrayget(bytes, false)
+end)
+-- Strings are only changed before anything else sees them, by newstr's caller
+local strset = func(V, i32, i32, void, function(f, s, i, b)
+	f:load(s)
+	f:refcast(R.str)
+	f:structget(str, 'bytes')
+	f:load(i)
+	f:load(b)
+	f:arrayset(bytes)
+end)
+local intval = func(V, i64, function(f, x)
+	f:load(x)
+	f:refcast(M.ref(int))
+	f:structget(int, 'val')
+end)
+local fltval = func(V, f64, function(f, x)
+	f:load(x)
+	f:refcast(M.ref(float))
+	f:structget(float, 'val')
+end)
+local veclen = func(V, i32, function(f, x)
+	f:load(x)
+	f:refcast(R.vec)
+	f:structget(vec, 'arr')
+	f:arraylen()
+end)
+local vecget = func(V, i32, V, function(f, x, i)
+	f:load(x)
+	f:refcast(R.vec)
+	f:structget(vec, 'arr')
+	f:load(i)
+	f:arrayget(alloc.vals)
+end)
+local tblnext = func(V, V, { V, V }, function(f, t, k)
+	f:load(t)
+	f:refcast(R.tbl)
+	f:load(k)
+	f:call(require('_table').tblnext)
+end)
+local tblmeta = func(V, V, function(f, t)
+	f:load(t)
+	f:refcast(R.tbl)
+	f:structget(alloc.tbl, 'meta')
+end)
+local tblget = func(V, V, V, function(f, t, k)
+	f:load(t)
+	f:refcast(R.tbl)
+	f:load(k)
+	f:call(require('_table').tblget)
+end)
+local tblset = func(V, V, V, void, function(f, t, k, v)
+	f:load(t)
+	f:refcast(R.tbl)
+	f:load(k)
+	f:load(v)
+	f:call(require('_table').tblset)
+end)
+
+return {
+	typeof = alloc.typeof,
+	newstr = alloc.newstr,
+	newtbl = alloc.newtbl,
+	newi64 = alloc.newi64,
+	newf64 = alloc.newf64,
+	strlen = strlen,
+	strget = strget,
+	strset = strset,
+	intval = intval,
+	fltval = fltval,
+	veclen = veclen,
+	vecget = vecget,
+	tblnext = tblnext,
+	tblmeta = tblmeta,
+	tblget = tblget,
+	tblset = tblset,
+}

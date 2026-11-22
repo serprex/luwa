@@ -2,156 +2,45 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
-local types, obj, num, str, vec, buf, tbl, functy, coro, allocsizef, nextid, newobj, newi64, newf64, newstrbuf, newvec, newvec1, newtbl =
-	alloc.types, alloc.obj, alloc.num, alloc.str, alloc.vec, alloc.buf, alloc.tbl, alloc.functy, alloc.coro,
-	alloc.allocsizef, alloc.nextid, alloc.newobj, alloc.newi64, alloc.newf64, alloc.newstrbuf, alloc.newvec, alloc.newvec1, alloc.newtbl
+local types, R, typeof, tbl, str, int, float, vals, bytes, functy, box, coro, stack, frames =
+	alloc.types, alloc.R, alloc.typeof, alloc.tbl, alloc.str, alloc.int, alloc.float, alloc.vals, alloc.bytes,
+	alloc.functy, alloc.box, alloc.coro, alloc.stack, alloc.frames
+local lnil, lfalse, ltrue = alloc.lnil, alloc.lfalse, alloc.ltrue
 
 local _table = require '_table'
 local tblget, tblset, tbllen = _table.tblget, _table.tblset, _table.tbllen
 
-local stack = require 'stack'
-local tmppush, tmppop, nthtmp, setnthtmp, extendtmp =
-	stack.tmppush, stack.tmppop, stack.nthtmp, stack.setnthtmp, stack.extendtmp
+local _stack = require 'stack'
+local tmppush, tmppop, nthtmp, extendtmp, stacklen, sget, sset, df, fget, fset =
+	_stack.tmppush, _stack.tmppop, _stack.nthtmp, _stack.extendtmp, _stack.stacklen, _stack.sget, _stack.sset,
+	_stack.df, _stack.fget, _stack.fset
 
 local _string = require '_string'
 local _obj = require 'obj'
 
 local ops = require 'bc'
 
-local util = require 'util'
-
 local rt = require 'rt'
 local microbc = require 'microbc'
 
 local frame = require 'frame'
-local dataframe, objframe, calltypes = frame.dataframe, frame.objframe, frame.calltypes
+local objframe, calltypes, getf, setf = frame.objframe, frame.calltypes, frame.getf, frame.setf
 
-local init = func(i32, void, function(f, fn)
-	-- Transition oluastack to having a stack frame from fn
-	-- Assumes stack was previously setup
-
-	local a, stsz, newstsz = f:locals(i32, 3)
-
+-- Start running fn on the running coro, its args are what's on the stack.
+-- The frame is type init, so returning from fn ends eval
+local init = func(V, void, function(f, fnv)
+	f:i32(df.sizeof * 8)
+	f:call(alloc.newframes)
+	f:storeg(gframes)
 	f:loadg(oluastack)
-	f:i32load(coro.stack)
-	f:i32load(buf.len)
-	f:store(stsz)
-
-	f:load(fn)
-	f:call(tmppush)
-
-	f:i32(dataframe.sizeof * 9)
-	f:call(newstrbuf)
-	f:tee(a)
-
-	f:loadg(oluastack)
-	f:load(a)
-	f:i32store(coro.data)
-
-	f:load(a)
-	f:i32(dataframe.sizeof)
-	f:i32store(buf.len)
-
-	f:i32load(buf.ptr)
-	f:tee(a)
-	f:i32(calltypes.init)
-	f:i32store8(dataframe.type)
-
-	assert(dataframe.base == dataframe.pc + 4)
-	f:load(a)
-	f:i64(0)
-	f:i64store(dataframe.pc)
-
-	assert(dataframe.retb == dataframe.dotdotdot + 2)
-	f:load(a)
-	f:i32(4)
-	f:i32store(dataframe.dotdotdot)
-
-	f:load(a)
-	f:i32(-1)
-	f:i32store16(dataframe.retc)
-
-	f:load(a)
-	f:load(stsz)
-	f:i32store16(dataframe.locals)
-
-	f:load(a)
-	f:load(stsz)
-	f:i32(4)
-	f:call(nthtmp)
-	f:tee(fn)
-	f:i32load(functy.localc)
-	f:i32(2)
-	f:shl()
-	f:add()
-	f:tee(newstsz)
-	f:loadg(oluastack)
-	f:i32load(coro.stack)
-	f:i32load(buf.len)
-	f:i32(4)
-	f:sub()
-	f:add()
-	f:i32store16(dataframe.frame)
-
-	f:load(newstsz)
-	f:i32(objframe.sizeof)
-	f:add()
-	f:call(extendtmp)
-
-	f:i32(4)
-	f:store(fn)
-	f:loop(function(loop)
-		f:loadg(oluastack)
-		f:i32load(coro.stack)
-		f:i32load(buf.ptr)
-		f:load(stsz)
-		f:add()
-		f:load(fn)
-		f:add()
-		f:i64(0)
-		f:i64store(vec.base)
-
-		f:load(fn)
-		f:i32(8)
-		f:add()
-		f:tee(fn)
-		f:load(newstsz)
-		f:ltu()
-		f:brif(loop)
-	end)
-
-	f:loadg(oluastack)
-	f:i32load(coro.stack)
-	f:i32load(buf.ptr)
-	f:load(stsz)
-	f:add()
-	f:i32load(vec.base)
-	f:tee(fn)
-
-	f:call(tmppop)
-
-	f:i32load(functy.bc)
-	f:i32(objframe.tmpbc)
-	f:call(setnthtmp)
-
-	f:load(fn)
-	f:i32load(functy.consts)
-	f:i32(objframe.tmpconsts)
-	f:call(setnthtmp)
-
-	f:load(fn)
-	f:i32load(functy.frees)
-	f:i32(objframe.tmpfrees)
-	f:call(setnthtmp)
-end)
-
-param0 = func(i32, function(f)
-	f:call(loadframebase)
-	f:i32load(dataframe.base)
-	f:loadg(oluastack)
-	f:i32load(coro.stack)
-	f:i32load(buf.ptr)
-	f:add()
+	f:loadg(gframes)
+	f:structset(coro, 'data')
+	f:call(_stack.fpush)
+	setf(f, 'type', function() f:i32(calltypes.init) end)
+	setf(f, 'retc', function() f:i32(frame.RETALL) end)
+	f:load(fnv)
+	f:refcast(R.functy)
+	f:call(frame.framefor)
 end)
 
 local mopcomp = {}
@@ -166,11 +55,11 @@ local microTypeToWasmTypeTable = {
 	i64 = i64,
 	f32 = f32,
 	f64 = f64,
-	obj = i32,
-	int = i32,
-	float = i32,
-	str = i32,
-	tbl = i32,
+	obj = V,
+	int = R.int,
+	float = R.float,
+	str = R.str,
+	tbl = R.tbl,
 }
 local function microTypeToWasmType(mty)
 	if mty then
@@ -192,8 +81,13 @@ end
 -- Ops never run at the same time, so each op numbers its registers from 1 & they're shared between ops
 local function newreg(ctx, mty)
 	local wty = microTypeToWasmType(mty)
-	local rtbl = assert(ctx.regdef[wty], "Invalid register type")
-	local n = ctx.regn[wty] + 1
+	local rtbl = ctx.regdef[wty]
+	if not rtbl then
+		rtbl = {}
+		ctx.regdef[wty] = rtbl
+		ctx.regtys[#ctx.regtys+1] = wty
+	end
+	local n = (ctx.regn[wty] or 0) + 1
 	ctx.regn[wty] = n
 	local r = rtbl[n]
 	if not r then
@@ -334,17 +228,13 @@ end
 local function mkcgctx(f, L)
 	return {
 		f = f,
-		regdef = {
-			[i32] = {},
-			[i64] = {},
-			[f32] = {},
-			[f64] = {},
-		},
+		regdef = {},
+		regtys = {},
 		bc = { r = L.bc },
 		pc = { r = L.pc },
 		base = { r = L.base },
 		objbase = { r = L.objbase },
-		framebase = { r = L.framebase },
+		locbase = { r = L.locbase },
 	}
 end
 local function genOp(ctx, op)
@@ -357,7 +247,7 @@ local function genOp(ctx, op)
 		inline = inline,
 		temps = {},
 		code = {},
-		regn = { [i32] = 0, [i64] = 0, [f32] = 0, [f64] = 0 },
+		regn = {},
 	}, { __index = ctx })
 	-- Bytes of bytecode args, mops that leave the op early need it to find the next op
 	local argoffset = argsize(blk)
@@ -379,9 +269,15 @@ local function genOp(ctx, op)
 	end
 end
 
--- Narrowing an object's type changes nothing in linear memory
+-- Narrow an object's type: a cast, which can't fail where microbc uses it
 defMop('As', function(mop, ctx)
 	resolve(ctx, mop[1])
+	local t = microTypeToWasmType(mop[2])
+	if t ~= V then
+		cg(ctx, function(f)
+			f:refcast(t)
+		end)
+	end
 end)
 defMop('Int', function(mop, ctx)
 	cg(ctx, function(f)
@@ -403,41 +299,40 @@ defMop('Flt64', function(mop, ctx)
 		f:f64(mop[1])
 	end)
 end)
-defMop('Load', function(mop, ctx)
-	resolve(ctx, mop[1])
-	cg(ctx, function(f)
-		f:i32load(mop[2] or 0)
-	end)
-end)
--- Boxes are vecs, value is at vec.base
 defMop('Unbox', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load(vec.base)
+		f:refcast(R.box)
+		f:structget(box, 'val')
 	end)
 end)
 defMop('SetBox', function(mop, ctx)
 	resolve(ctx, mop[1])
+	cg(ctx, function(f)
+		f:refcast(R.box)
+	end)
 	resolve(ctx, mop[2])
 	cg(ctx, function(f)
-		f:i32store(vec.base)
+		f:structset(box, 'val')
 	end)
 end)
+local objconst = { [NIL] = lnil, [FALSE] = lfalse, [TRUE] = ltrue }
 defMop('Obj', function(mop, ctx)
+	local emit = assert(objconst[mop[1]], 'Obj: unknown constant')
 	cg(ctx, function(f)
-		f:i32(mop[1])
+		emit(f)
 	end)
 end)
 defMop('Type', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load8u(obj.type)
+		f:call(typeof)
 	end)
 end)
 defMop('IsTbl', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load8u(obj.type)
+		f:call(typeof)
 		f:i32(types.tbl)
 		f:eq()
 	end)
@@ -446,7 +341,7 @@ defMop('IsNumOrStr', function(mop, ctx)
 	local r = newreg(ctx, 'i32')
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load8u(obj.type)
+		f:call(typeof)
 		f:tee(r.r)
 		f:i32(types.float)
 		f:leu()
@@ -459,25 +354,26 @@ end)
 defMop('LoadInt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i64load(num.val)
+		f:structget(int, 'val')
 	end)
 end)
 defMop('LoadFlt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:f64load(num.val)
+		f:structget(float, 'val')
 	end)
 end)
 defMop('LoadStrLen', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load(str.len)
+		f:structget(str, 'bytes')
+		f:arraylen()
 	end)
 end)
 defMop('Meta', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load(tbl.meta)
+		f:structget(tbl, 'meta')
 	end)
 end)
 defMop('LoadTblLen', function(mop, ctx)
@@ -496,7 +392,8 @@ end)
 defMop('LoadFuncParamc', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load(functy.paramc)
+		f:refcast(R.functy)
+		f:structget(functy, 'paramc')
 	end)
 end)
 defMop('TblGet', function(mop, ctx)
@@ -508,7 +405,7 @@ defMop('TblGet', function(mop, ctx)
 end)
 defMop('NewTbl', function(mop, ctx)
 	cg(ctx, function(f)
-		f:call(newtbl)
+		f:call(alloc.newtbl)
 	end)
 end)
 defMop('TblSet', function(mop, ctx)
@@ -522,26 +419,26 @@ end)
 defMop('Box', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:call(newvec1)
+		f:call(alloc.newbox)
 	end)
 end)
 defMop('IntObjFromInt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
 		f:i64extends()
-		f:call(newi64)
+		f:call(alloc.newi64)
 	end)
 end)
 defMop('IntObjFromInt64', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:call(newi64)
+		f:call(alloc.newi64)
 	end)
 end)
 defMop('FltObjFromFlt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:call(newf64)
+		f:call(alloc.newf64)
 	end)
 end)
 defMop('Flt64Int', function(mop, ctx)
@@ -564,14 +461,12 @@ defMop('Push', function(mop, ctx)
 end)
 defMop('Pop', function(mop, ctx)
 	cg(ctx, function(f)
-		f:loadg(oluastack)
-		f:i32load(coro.stack)
-		f:call(util.popvec)
+		f:call(tmppop)
 	end)
 end)
 defMop('Peek', function(mop, ctx)
 	cg(ctx, function(f)
-		f:i32(4)
+		f:i32(1)
 		f:call(nthtmp)
 	end)
 end)
@@ -587,76 +482,63 @@ defMop('Arg', function(mop, ctx)
 	cg(ctx, function(f)
 		f:load(ctx.bc.r)
 		f:load(ctx.pc.r)
-		f:add()
-		f:i32load(str.base + mop[1] * 4)
+		if mop[1] > 0 then
+			f:i32(mop[1] * 4)
+			f:add()
+		end
+		f:call(frame.bcarg)
 	end)
 end)
--- Slot address helpers: each emits the address of slot 0, slots are 4 bytes apart
-local function constbase(ctx, f)
-	f:load(ctx.objbase.r)
-	f:i32load(objframe.consts)
-end
-local function freebase(ctx, f)
-	f:load(ctx.objbase.r)
-	f:i32load(objframe.frees)
-end
-local function localbase(ctx, f)
-	f:call(loadframebase)
-	f:i32load(dataframe.base)
-	f:call(loadframebase)
-	f:i32load16u(dataframe.locals)
-	f:add()
-	f:loadg(oluastack)
-	f:i32load(coro.stack)
-	f:i32load(buf.ptr)
-	f:add()
-end
-local function parambase(ctx, f)
-	f:call(param0)
-end
--- Address of slot mop[1], from base
-local function slotaddr(ctx, mop, base)
-	cg(ctx, function(f)
-		base(ctx, f)
-	end)
-	resolve(ctx, mop[1])
-	cg(ctx, function(f)
-		f:i32(4)
-		f:mul()
-		f:add()
-	end)
-end
-local function defSlotLoad(name, base)
+-- Slot n of the function's consts or frees, vecs in the objframe
+local function defVecSlot(name, which)
 	defMop(name, function(mop, ctx)
-		slotaddr(ctx, mop, base)
 		cg(ctx, function(f)
-			f:i32load(vec.base)
+			f:load(ctx.objbase.r)
+			f:i32(which)
+			f:add()
+			f:call(sget)
+			f:refcast(R.vals)
+		end)
+		resolve(ctx, mop[1])
+		cg(ctx, function(f)
+			f:arrayget(vals)
 		end)
 	end)
 end
--- Address is computed before the value, fine while GC is off
-local function defSlotStore(name, base)
-	defMop(name, function(mop, ctx)
-		slotaddr(ctx, mop, base)
+defVecSlot('LoadConst', objframe.consts)
+defVecSlot('LoadFree', objframe.frees)
+-- Stack slot n, from base (params) or locbase (locals)
+local function defStackSlot(lname, sname, basereg)
+	defMop(lname, function(mop, ctx)
+		cg(ctx, function(f)
+			f:load(ctx[basereg].r)
+		end)
+		resolve(ctx, mop[1])
+		cg(ctx, function(f)
+			f:add()
+			f:call(sget)
+		end)
+	end)
+	defMop(sname, function(mop, ctx)
+		cg(ctx, function(f)
+			f:load(ctx[basereg].r)
+		end)
+		resolve(ctx, mop[1])
+		cg(ctx, function(f)
+			f:add()
+		end)
 		resolve(ctx, mop[2])
 		cg(ctx, function(f)
-			f:i32store(vec.base)
+			f:call(sset)
 		end)
 	end)
 end
-defSlotLoad('LoadConst', constbase)
-defSlotLoad('LoadFree', freebase)
-defSlotLoad('LoadLocal', localbase)
-defSlotStore('StoreLocal', localbase)
-defSlotLoad('LoadParam', parambase)
-defSlotStore('StoreParam', parambase)
+defStackSlot('LoadLocal', 'StoreLocal', 'locbase')
+defStackSlot('LoadParam', 'StoreParam', 'base')
 defMop('Truthy', function(mop, ctx)
-	-- Could be a macroop
 	resolve(ctx, mop[1])
-	-- nil & false are the only values below TRUE
 	cg(ctx, function(f)
-		f:i32(TRUE)
-		f:geu()
+		f:call(_obj.truthy)
 	end)
 end)
 defMop('Eq', function(mop, ctx)
@@ -916,9 +798,9 @@ defMop('Error', function(mop, ctx)
 	end)
 end)
 defMop('Str', function(mop, ctx)
-	local s = assert(GS[mop[1]], 'Str: string missing from rt image')
+	local s = assert(GS[mop[1]], 'Str: string missing from rt statics')
 	cg(ctx, function(f)
-		f:i32(s)
+		f:loadg(s)
 	end)
 end)
 defMop('And', function(mop, ctx)
@@ -950,7 +832,7 @@ callmop('ObjMetalessEq', _obj.eq)
 callmop('MetaGet', frame.metaget)
 callmop('BinMeta', frame.binmeta)
 callmop('IdxWalk', frame.idxwalk)
-callmop('StrConcat', frame.strconcat)
+callmop('StrConcat', _string.strconcat)
 callmop('MakeClosure', frame.makeclosure)
 callmop('VargPushN', frame.loadvarg)
 callmop('AppendN', frame.appendn)
@@ -1052,7 +934,7 @@ defMop('Typeck', function(mop, ctx)
 		rs[i] = newreg(ctx, 'i32')
 		resolve(ctx, mop[i])
 		cg(ctx, function(f)
-			f:i32load8u(obj.type)
+			f:call(typeof)
 			f:store(rs[i].r)
 		end)
 	end
@@ -1100,19 +982,8 @@ defMop('Syscall', function(mop, ctx)
 		local stddebug = require 'stddebug'
 		local stdmath = require 'stdmath'
 
-		-- Store the 2nd param into field `field` of the function in the 1st param
-		local function fnset(field, store, value)
-			return function()
-				f:call(param0)
-				f:i32load(vec.base)
-				f:call(param0)
-				f:i32load(vec.base + 4)
-				if value then value() end
-				store(f, field)
-			end
-		end
 		local function pushnil()
-			f:i32(NIL)
+			lnil(f)
 			f:call(tmppush)
 		end
 
@@ -1157,25 +1028,16 @@ defMop('Syscall', function(mop, ctx)
 			_iosetvbuf = 'nyi',
 			_fn_set_localc = std.fn_set_localc,
 			_fn_set_paramc = std.fn_set_paramc,
-			_fn_set_isdotdotdot = fnset(functy.isdotdotdot, f.i32store8, function()
-				-- truthy: not nil or false
-				f:i32(TRUE)
-				f:geu()
-			end),
-			_fn_set_bc = fnset(functy.bc, f.i32store),
-			_fn_set_frees = fnset(functy.frees, f.i32store),
-			_fn_set_consts = fnset(functy.consts, f.i32store),
+			_fn_set_isdotdotdot = std.fn_set_isdotdotdot,
+			_fn_set_bc = std.fn_set_bc,
+			_fn_set_frees = std.fn_set_frees,
+			_fn_set_consts = std.fn_set_consts,
 			_vec_new = std.vec_new,
 			_fn_new = std.fn_new,
-			_lex = function()
-				f:call(param0)
-				f:i32load(vec.base)
-				f:call(tmppush)
-				f:call(require('_lex').lex)
-			end,
+			_lex = std.lexgen,
 			_random = function()
 				f:call(rt.random)
-				f:call(newf64)
+				f:call(alloc.newf64)
 				f:call(tmppush)
 			end,
 		}
@@ -1200,40 +1062,22 @@ defMop('Syscall', function(mop, ctx)
 		f:switch(function()
 			f:load(ctx.bc.r)
 			f:load(ctx.pc.r)
+			f:arrayget(bytes, false)
+			f:load(ctx.pc.r)
 			f:i32(1)
 			f:add()
-			f:tee(ctx.pc.r)
-			f:add()
-			f:i32load8u(str.base - 1)
+			f:store(ctx.pc.r)
 		end, table.unpack(cases))
 		f:unreachable()
 	end)
 end)
 
-local function genLocals(f, wty, regdef)
-	if #regdef > 0 then
-		local rs = table.pack(f:locals(wty, #regdef))
-		for i=1,#regdef do
-			regdef[i].r = rs[i]
-		end
-	end
-end
 local eval = func(i32, function(f)
-	local a, framebase, objbase, base, bc, pc = f:locals(i32, 6)
-
-	local function loadframe()
-		f:call(loadframebase)
-		f:tee(framebase)
-		f:i32load(dataframe.base)
-		f:store(base)
-
-		f:load(framebase)
-		f:i32load(dataframe.pc)
-		f:store(pc)
-	end
+	local base, objbase, locbase, pc = f:locals(i32, 4)
+	local bc = f:locals(R.bytes)
 
 	local L = {
-		framebase = framebase, objbase = objbase, base = base, bc = bc, pc = pc,
+		base = base, objbase = objbase, locbase = locbase, bc = bc, pc = pc,
 	}
 	local ctx = mkcgctx(f, L)
 
@@ -1260,57 +1104,46 @@ local eval = func(i32, function(f)
 	end
 
 	-- Registers microbc asked for during genOp
-	genLocals(f, i32, ctx.regdef[i32])
-	genLocals(f, i64, ctx.regdef[i64])
-	genLocals(f, f32, ctx.regdef[f32])
-	genLocals(f, f64, ctx.regdef[f64])
+	for _, wty in ipairs(ctx.regtys) do
+		local regdef = ctx.regdef[wty]
+		local rs = table.pack(f:locals(wty, #regdef))
+		for i=1,#regdef do
+			regdef[i].r = rs[i]
+		end
+	end
 
-	loadframe()
+	getf(f, 'base')
+	f:tee(base)
+	getf(f, 'locals')
+	f:add()
+	f:store(locbase)
+	f:load(base)
+	getf(f, 'frame')
+	f:add()
+	f:tee(objbase)
+	f:call(sget)
+	f:refcast(R.bytes)
+	f:store(bc)
+	getf(f, 'pc')
+	f:store(pc)
 
 	f:switch(function(scopes)
-		-- baseptr = ls.obj.ptr + base
-		-- bc = baseptr.bc
 		-- switch bc[pc++]
-		f:call(loadframebase)
-		f:tee(framebase)
-		f:i32load16u(dataframe.frame)
-		f:load(base)
-		f:add()
-		f:loadg(oluastack)
-		f:i32load(coro.stack)
-		f:i32load(buf.ptr)
-		f:add()
-		f:tee(objbase)
-		f:i32load(objframe.bc)
-		f:tee(bc)
+		f:load(bc)
 		f:load(pc)
-		f:call(rt.echo)
+		f:arrayget(bytes, false)
+		f:load(pc)
 		f:i32(1)
 		f:add()
-		f:tee(pc)
-		f:add()
-		f:i32load8u(str.base - 1)
-		f:call(rt.echo)
+		f:store(pc)
 	end, table.unpack(switchparams))
 
-	-- check whether to yield (for now we'll yield after each instruction)
-	f:loadg(oluastack)
-	f:i32load(coro.data)
-	f:tee(a)
-	f:i32load(buf.ptr)
-	f:load(a)
-	f:i32load(buf.len)
-	f:add()
-	f:i32(dataframe.sizeof)
-	f:sub()
-	f:load(pc)
-	f:i32store(dataframe.pc)
-
+	-- for now we return to the host after each instruction
+	setf(f, 'pc', function() f:load(pc) end)
 	f:i32(0)
 end)
 
 return {
-	dataframe = dataframe,
 	objframe = objframe,
 	calltypes = calltypes,
 	init = init,
