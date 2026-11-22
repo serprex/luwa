@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      # build scripts run as `lua`, so install Lua 5.5 from source
+      - name: install lua
+        run: |
+          curl -sSfL https://www.lua.org/ftp/lua-5.5.1.tar.gz | tar xz
+          make -C lua-5.5.1 linux
+          sudo make -C lua-5.5.1 install
+          lua -v
+
+      - name: install ninja
+        run: sudo apt-get install -y ninja-build
+
+      - name: build
+        run: ninja
+
+      - name: test
+        run: node scripts/test.js

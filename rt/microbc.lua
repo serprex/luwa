@@ -168,32 +168,32 @@ local LoadFlt = mkMop('LoadFlt', {
 	arg = {'obj'},
 	out = 'f64',
 })
-local Free = mkMop('Free', {
-	arg = {'i32'},
-	out = 'i32',
-})
-local Const = mkMop('Const', {
-	arg = {'i32'},
-	out = 'i32',
-})
-local Local = mkMop('Local', {
-	arg = {'i32'},
-	out = 'i32',
-})
-local Param = mkMop('Param', {
-	arg = {'i32'},
-	out = 'i32',
-})
 local Store = mkMop('Store', {
 	arg = { 'i32', 'i32' },
 })
--- Value in a slot of a vec, given the slot's address from Param/Local/Const/Free
-local LoadSlot = mkMop('LoadSlot', {
+-- Slots of the current function. Index comes first, value to store second
+-- Local/Param live on the lua stack, Free/Const in the function's vecs
+local LoadLocal = mkMop('LoadLocal', {
 	arg = {'i32'},
 	out = 'obj',
 })
-local StoreSlot = mkMop('StoreSlot', {
+local StoreLocal = mkMop('StoreLocal', {
 	arg = {'i32', 'obj'},
+})
+local LoadParam = mkMop('LoadParam', {
+	arg = {'i32'},
+	out = 'obj',
+})
+local StoreParam = mkMop('StoreParam', {
+	arg = {'i32', 'obj'},
+})
+local LoadFree = mkMop('LoadFree', {
+	arg = {'i32'},
+	out = 'obj',
+})
+local LoadConst = mkMop('LoadConst', {
+	arg = {'i32'},
+	out = 'obj',
 })
 -- Value inside a box (a vec of length 1)
 local Unbox = mkMop('Unbox', {
@@ -487,23 +487,20 @@ mkOp(bc.Nop, Nop())
 mkOp(bc.LoadNil, Push(Nil()))
 mkOp(bc.LoadFalse, Push(False()))
 mkOp(bc.LoadTrue, Push(True()))
-mkOp(bc.LoadParam, Push(LoadSlot(Param(Arg(0)))))
-mkOp(bc.StoreParam, StoreSlot(Param(Arg(0)), Pop()))
-mkOp(bc.LoadLocal, Push(LoadSlot(Local(Arg(0)))))
-mkOp(bc.StoreLocal, StoreSlot(Local(Arg(0)), Pop()))
-mkOp(bc.LoadFree, Push(LoadSlot(Free(Arg(0)))))
-mkOp(bc.LoadFreeBox, Push(Unbox(LoadSlot(Free(Arg(0))))))
-mkOp(bc.StoreFreeBox, SetBox(LoadSlot(Free(Arg(0))), Pop()))
-mkOp(bc.LoadParamBox, Push(Unbox(LoadSlot(Param(Arg(0))))))
-mkOp(bc.StoreParamBox, SetBox(LoadSlot(Param(Arg(0))), Pop()))
-mkOp(bc.BoxParam, (function()
-	local slot = Param(Arg(0))
-	return StoreSlot(slot, Box(LoadSlot(slot)))
-end)())
-mkOp(bc.BoxLocal, StoreSlot(Local(Arg(0)), Box(Nil())))
-mkOp(bc.LoadLocalBox, Push(Unbox(LoadSlot(Local(Arg(0))))))
-mkOp(bc.StoreLocalBox, SetBox(LoadSlot(Local(Arg(0))), Pop()))
-mkOp(bc.LoadConst, Push(LoadSlot(Const(Arg(0)))))
+mkOp(bc.LoadParam, Push(LoadParam(Arg(0))))
+mkOp(bc.StoreParam, StoreParam(Arg(0), Pop()))
+mkOp(bc.LoadLocal, Push(LoadLocal(Arg(0))))
+mkOp(bc.StoreLocal, StoreLocal(Arg(0), Pop()))
+mkOp(bc.LoadFree, Push(LoadFree(Arg(0))))
+mkOp(bc.LoadFreeBox, Push(Unbox(LoadFree(Arg(0)))))
+mkOp(bc.StoreFreeBox, SetBox(LoadFree(Arg(0)), Pop()))
+mkOp(bc.LoadParamBox, Push(Unbox(LoadParam(Arg(0)))))
+mkOp(bc.StoreParamBox, SetBox(LoadParam(Arg(0)), Pop()))
+mkOp(bc.BoxParam, StoreParam(Arg(0), Box(LoadParam(Arg(0)))))
+mkOp(bc.BoxLocal, StoreLocal(Arg(0), Box(Nil())))
+mkOp(bc.LoadLocalBox, Push(Unbox(LoadLocal(Arg(0)))))
+mkOp(bc.StoreLocalBox, SetBox(LoadLocal(Arg(0)), Pop()))
+mkOp(bc.LoadConst, Push(LoadConst(Arg(0))))
 mkOp(bc.Pop, Pop())
 mkOp(bc.Syscall, Syscall())
 mkOp(bc.Jmp, SetPc(Arg(0)))
@@ -533,7 +530,7 @@ mkOp(bc.JifNotOrPop,
 		SetPc(Arg(0))
 	)
 )
-mkOp(bc.LoadFunc, Push(MakeClosure(LoadSlot(Const(Arg(1))), Arg(0))))
+mkOp(bc.LoadFunc, Push(MakeClosure(LoadConst(Arg(1)), Arg(0))))
 mkOp(bc.LoadVarg, VargPushN(Arg(0)))
 mkOp(bc.AppendVarg, AppendVarg(Arg(0)))
 mkOp(bc.Append, AppendN(Arg(0)))
