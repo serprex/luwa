@@ -1066,7 +1066,8 @@ function asmmeta:genBoxPrologue()
 	end
 	local pastlocal = {}
 	for k,v in pairs(self.namety) do
-		if v.free and v.func == self and not pastlocal[v] then
+		-- params were boxed above
+		if v.free and v.func == self and not v.isparam and not pastlocal[v] then
 			pastlocal[v] = true
 			self:push(bc.BoxLocal, self:nameidx(v))
 		end

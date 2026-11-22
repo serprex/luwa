@@ -642,6 +642,27 @@ fakereqenv = {
 local astgen = fakereq('astgen')
 local bcgen = fakereq('bcgen')
 
+-- Make a function object from bcgen's output.
+-- Nested functions are bcgen tables in consts, turn those into function objects too.
+-- LoadFunc copies these and fills in frees
+local function asm2fn(asm)
+	local fn = _luwa.fn_new()
+	_luwa.fn_set_localc(fn, #asm.locals)
+	_luwa.fn_set_paramc(fn, #asm.params)
+	_luwa.fn_set_isdotdotdot(fn, asm.isdotdotdot)
+	_luwa.fn_set_bc(fn, string_char(table_unpack(asm.bc)))
+	local consts = {}
+	for i=1, #asm.consts do
+		local c = asm.consts[i]
+		if type(c) == 'table' then
+			c = asm2fn(c)
+		end
+		consts[i] = c
+	end
+	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(consts)))
+	return fn
+end
+
 local function _load(src, name, mode, env)
 	-- TODO function names
 	local lx, vals = _luwa.lexgen(src)
@@ -650,14 +671,8 @@ local function _load(src, name, mode, env)
 	end
 	-- TODO use _pcall once vm has pcall & error unwinding. Until then a parse error aborts
 	local root = astgen(lx, vals)
-	local bcg = bcgen(root)
-	local fn = _luwa.fn_new()
-	_luwa.fn_set_localc(fn, #bcg.locals)
-	_luwa.fn_set_paramc(fn, #bcg.params)
-	_luwa.fn_set_isdotdotdot(fn, true)
-	_luwa.fn_set_bc(fn, string_char(table_unpack(bcg.bc)))
+	local fn = asm2fn(bcgen(root))
 	_luwa.fn_set_frees(fn, _luwa.vec_new(env or _ENV))
-	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
 	-- compiled chunks take _ENV as their first param, like the prelude does
 	-- TODO make _ENV the chunk's first free instead, saving this extra call
 	env = env or _ENV
