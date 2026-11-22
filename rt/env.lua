@@ -130,6 +130,9 @@ local initPrelude = func(R.tbl, function(f)
 		GS.random, GF._random,
 		GS.objid, GF._objid,
 		GS.upvalid, GF._upvalid,
+		GS.upval, GF._upval,
+		GS.fdepth, GF._fdepth,
+		GS.slot, GF._slot,
 		GS.reinterp, GF._reinterp,
 		GS.host, GF._host)
 

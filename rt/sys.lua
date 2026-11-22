@@ -51,4 +51,7 @@ return {
 	'_frame',
 	'_seterrfns',
 	'_upvalid',
+	'_upval',
+	'_fdepth',
+	'_slot',
 }

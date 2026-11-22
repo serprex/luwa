@@ -154,6 +154,9 @@ end)
 -- that can't be called. Until they're set errors are 'invalid operation' & calls of non functions trap
 local errfn = M.global(V, true)
 local callerrfn = M.global(V, true)
+-- tbcfn(msg, depth) closes to-be-closed variables after a pcall catches msg, giving the error to return.
+-- Also set by seterrfns
+local tbcfn = M.global(V, true)
 -- set while unwinding with the result of an xpcall handler, so the handler isn't called again
 local nohandler = M.global(i32, true)
 
@@ -653,6 +656,13 @@ local makeclosure = func(V, i32, V, function(f, protov, n)
 	f:structnew(functy)
 end)
 
+-- Most frames a coro can have, & how many more an error handler gets after a stack overflow.
+-- Past those the error is "error in error handling", like C Lua
+local MAXFRAMES, EXTRAFRAMES = 200000, 2000
+-- set from a stack overflow until the stack is well below the limit again
+local overflowing = M.global(i32, true)
+local throw -- below, callchain raises with it
+
 -- Call op family. Bytecode args from pc: retc, n, then n arg counts, outermost call first.
 -- Stack holds f1 args1.. f2 args2.. ... fn argsn.., the innermost call runs first.
 -- Outer calls get frames now (type call) & are set up as each inner one returns
@@ -684,6 +694,54 @@ local function mkcallchain(varg)
 			f:i32(2)
 			f:shl()
 			f:add()
+		end)
+
+		-- too many frames: raise "stack overflow" with the prelude's errfn, which gets extra frames
+		f:loadg(gframes)
+		f:structget(alloc.frames, 'len')
+		f:tee(cnt)
+		f:i32(df.sizeof * MAXFRAMES)
+		f:geu()
+		f:iff(function()
+			f:load(cnt)
+			f:i32(df.sizeof * (MAXFRAMES + EXTRAFRAMES))
+			f:geu()
+			f:loadg(errfn)
+			f:refisnull()
+			f:bor()
+			f:iff(function()
+				f:loadg(GS['error in error handling'])
+				f:call(throw)
+				f:ret()
+			end)
+		end)
+		-- the first time past the limit. Calls after that use the extra frames
+		f:load(cnt)
+		f:i32(df.sizeof * MAXFRAMES)
+		f:geu()
+		f:loadg(overflowing)
+		f:eqz()
+		f:band()
+		f:iff(function()
+			f:i32(1)
+			f:storeg(overflowing)
+			f:loadg(errfn)
+			f:call(tmppush)
+			f:loadg(GS.overflow)
+			f:call(tmppush)
+			f:i32(1)
+			f:i32(calltypes.norm)
+			f:i32(0)
+			getf(f, 'pc')
+			f:call(callmeta)
+			f:ret()
+		end)
+		f:load(cnt)
+		f:i32(df.sizeof * (MAXFRAMES - EXTRAFRAMES))
+		f:ltu()
+		f:iff(function()
+			f:i32(0)
+			f:storeg(overflowing)
 		end)
 
 		-- off = where the outermost function sits
@@ -816,7 +874,7 @@ end)
 
 -- Raise an error with value msg. Unwinds to the nearest pcall in this coro & makes it return false, msg.
 -- With no pcall a coroutine dies & its resume returns false, msg. Returns the pc to run next
-local throw = func(V, i32, function(f, msg)
+throw = func(V, i32, function(f, msg)
 	local ty, base, off = f:locals(i32, 3)
 	local arr = f:locals(R.i32s)
 	-- Find what catches it without popping anything. When that's an xpcall, call its handler
@@ -911,10 +969,35 @@ local throw = func(V, i32, function(f, msg)
 			f:i32(1)
 			f:sub()
 			f:call(setstacklen)
+			f:call(fpop)
+			f:loadg(tbcfn)
+			f:refisnull()
+			f:iff(function()
+				f:load(msg)
+				f:call(tmppush)
+				getf(f, 'pc')
+				f:ret()
+			end)
+			-- msg is tbcfn(msg, frames left), called on top of pcall's frame so __close sees pcall as its caller
+			f:loadg(tbcfn)
+			f:call(tmppush)
 			f:load(msg)
 			f:call(tmppush)
-			f:call(fpop)
-			getf(f, 'pc')
+			f:loadg(gframes)
+			f:structget(alloc.frames, 'len')
+			f:i32(df.sizeof)
+			f:divu()
+			f:i64extendu()
+			f:call(newi64)
+			f:call(tmppush)
+			f:i32(calltypes.norm)
+			f:call(stacklen)
+			f:i32(2)
+			f:sub()
+			f:i32(1)
+			f:call(pushframe)
+			f:call(setupframe)
+			f:i32(0)
 			f:ret()
 		end)
 		f:load(ty)
@@ -940,6 +1023,14 @@ local throw = func(V, i32, function(f, msg)
 			f:i32(corostate.dead)
 			f:call(coroback)
 			f:ret()
+		end)
+		-- an error got out of an xpcall handler, like C Lua that's an error in error handling
+		f:load(ty)
+		f:i32(calltypes.xh)
+		f:eq()
+		f:iff(function()
+			f:loadg(GS['error in error handling'])
+			f:store(msg)
 		end)
 		f:call(fpop)
 		f:br(loop)
@@ -1138,6 +1229,7 @@ return {
 	throw = throw,
 	errfn = errfn,
 	callerrfn = callerrfn,
+	tbcfn = tbcfn,
 	pushvarg = pushvarg,
 	loadvarg = loadvarg,
 	appendn = appendn,

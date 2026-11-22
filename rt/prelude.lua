@@ -1877,19 +1877,7 @@ function os.setlocale(locale)
 	end
 end
 
-function coro_wrap_handler(t, ...)
-	if t then
-		return ...
-	else
-		return _error(...)
-	end
-end
-function coroutine.wrap(f)
-	local c = co_create(f)
-	return function(...)
-		return coro_wrap_handler(co_resume(c, ...))
-	end
-end
+-- coroutine.wrap is with the to-be-closed variable helpers
 -- the wasm status traps on a non coroutine, so check here
 local co_status = coroutine.status
 function coroutine.status(co)
@@ -1988,13 +1976,18 @@ local rawerror = _error
 local _frame, fn_info = _luwa.frame, _luwa.fn_info
 local string_find, string_match = string.find, string.match
 local CALLTY = 3 -- calltypes.call in frame.lua: the frame under it hasn't started yet
+-- To-be-closed variable helpers, defined below. Their frames are hidden, so __close looks called
+-- by the function whose variable it is
+local tbcpush, tbcclose, tbcunwind
 
--- co's frames from the top, as { fn, pc, ty, pend }. Frames of outer calls in a call chain
--- that haven't started are left out, pend counts them under each frame
-local function stackof(co)
+-- co's frames from the top, as { fn, pc, ty, pend, base, dd, lo }. Frames of outer calls in a call chain
+-- that haven't started are left out, pend counts them under each frame.
+-- base is the slot of param 0, base+dd & base+lo the first vararg & local.
+-- With max, stops once list has that many, so errors deep in a recursion don't walk the whole stack
+local function stackof(co, max)
 	local list, n, above = {}, 0, nil
-	while true do
-		local fn, pc, ty = _frame(co, n)
+	while not max or #list < max do
+		local fn, pc, ty, base, dd, lo = _frame(co, n)
 		if not pc then
 			break
 		end
@@ -2003,8 +1996,13 @@ local function stackof(co)
 			last.pend = last.pend + 1
 		elseif fn == rawerror then
 			-- error is the prelude function & this builtin, count them as 1 like C Lua's error
+		elseif fn == tbcpush or fn == tbcclose or fn == tbcunwind then
+			-- also the pcall these call __close with
+			if list[#list] and list[#list].fn == _pcall then
+				list[#list] = nil
+			end
 		else
-			list[#list+1] = { fn = fn, pc = pc, ty = ty, pend = 0 }
+			list[#list+1] = { fn = fn, pc = pc, ty = ty, pend = 0, base = base, dd = dd, lo = lo }
 		end
 		above = ty
 		n = n + 1
@@ -2012,9 +2010,9 @@ local function stackof(co)
 	return list
 end
 -- The running coro's frames. list[off] is the function calling levels, list[off+1] its caller...
--- Above it are _frame, stackof & levels
-local function levels()
-	return stackof(nil), 4
+-- Above it are _frame, stackof & levels. Only the top n frames, enough for error positions & names
+local function levels(n)
+	return stackof(nil, 4 + (n or 2) + 32), 4
 end
 -- Frames of co & where level 0 is, for debug functions taking an optional thread
 local function threadlevels(co)
@@ -2077,12 +2075,111 @@ end
 function error(msg, level)
 	level = level or 1
 	if _type(msg) == 'string' and _type(level) == 'number' and level > 0 then
-		local list, off = levels()
+		local list, off = levels(level)
 		msg = where(list, off + level) .. msg
 	end
 	return rawerror(msg)
 end
 _error = error
+
+-- To-be-closed variables. Each coroutine has a list of the values of its <close> variables in scope:
+-- l[2i-1] is a value, l[2i] the frame count when it was declared. bcgen emits calls to tbcpush & tbcclose
+local tbclists = {}
+local fdepth = _luwa.fdepth
+-- local x <close> = v, after v is stored. nil & false are kept too, so bcgen's counts stay right
+function tbcpush(v, name)
+	if v ~= nil and v ~= false then
+		local mt = debug_getmetatable(v)
+		if not (mt and _rawget(mt, '__close')) then
+			-- tbcpush is hidden, so level 1 is the function declaring the variable
+			error("variable '" .. name .. "' got a non-closable value", 1)
+		end
+	end
+	local co = co_running()
+	local l = tbclists[co]
+	if not l then
+		l = { n = 0 }
+		tbclists[co] = l
+	end
+	local n = l.n + 1
+	l.n = n
+	l[2*n-1], l[2*n] = v, fdepth()
+end
+-- Take the newest value off co's list
+local function tbcpop(l)
+	local n = l.n
+	local v = l[2*n-1]
+	l[2*n-1], l[2*n] = nil, nil
+	l.n = n - 1
+	return v
+end
+local function closemeta(v)
+	local mt = debug_getmetatable(v)
+	return mt and _rawget(mt, '__close')
+end
+-- Leaving the scope of the k newest variables: call their __close(v), newest first.
+-- An error goes on like any error, tbcunwind then closes the rest
+function tbcclose(k)
+	local l = tbclists[co_running()]
+	for _ = 1, k do
+		local v = tbcpop(l)
+		if v ~= nil and v ~= false then
+			local c = closemeta(v)
+			if c == nil then
+				error("metamethod 'close' is nil", 1)
+			end
+			c(v)
+		end
+	end
+end
+-- pcall caught msg, called from the wasm throw once frames above pcall are gone (depth is how many are left).
+-- Closes the variables of those frames with __close(v, msg). An error in one becomes msg for the rest.
+-- Gives the error pcall returns
+function tbcunwind(msg, depth)
+	local l = tbclists[co_running()]
+	-- a variable's count was taken in fdepth, called by tbcpush, called by the function declaring it.
+	-- Those functions above pcall's frame are gone
+	while l and l.n > 0 and l[2*l.n] > depth + 2 do
+		local v = tbcpop(l)
+		if v ~= nil and v ~= false then
+			local ok, e = _pcall(closemeta(v), v, msg)
+			if not ok then
+				msg = e
+			end
+		end
+	end
+	return msg
+end
+-- Close all of co's variables, for coroutine.wrap after an error & coroutine.close
+local function tbccloseall(co, msg)
+	local l = tbclists[co]
+	tbclists[co] = nil
+	local ok = true
+	while l and l.n > 0 do
+		local v = tbcpop(l)
+		if v ~= nil and v ~= false then
+			local ok2, e = _pcall(closemeta(v), v, msg)
+			if not ok2 then
+				ok, msg = false, e
+			end
+		end
+	end
+	return ok, msg
+end
+-- An error in a wrapped coroutine closes its variables, then goes on to the caller
+local function wrapret(c, ok, ...)
+	if ok then
+		return ...
+	end
+	local _, e = tbccloseall(c, (...))
+	return rawerror(e)
+end
+function coroutine.wrap(f)
+	local c = co_create(f)
+	return function(...)
+		return wrapret(c, co_resume(c, ...))
+	end
+end
 
 -- Called by the Error mop: kind of operation & its operands. Raises the error like C Lua words it.
 -- The op's operand names are in its function's info.names at the op's pc
@@ -2119,6 +2216,8 @@ local function rterror(kind, a, b)
 		msg = 'attempt to get length of a ' .. _type(a) .. ' value' .. nm(1)
 	elseif kind == 'defined' then
 		msg = "global '" .. a .. "' already defined"
+	elseif kind == 'overflow' then
+		msg = 'stack overflow'
 	else
 		msg = 'invalid operation'
 	end
@@ -2130,7 +2229,7 @@ local function callerror(v)
 	local name, what = callname(list, off)
 	return error('attempt to call a ' .. _type(v) .. ' value' .. (name and ' (' .. what .. " '" .. name .. "')" or ''), 2)
 end
-_luwa.seterrfns(rterror, callerror)
+_luwa.seterrfns(rterror, callerror, tbcunwind)
 
 -- Name of a global function, like C Lua's tracebacks find: 'print', 'string.rep'
 local function globalname(fn)
@@ -2298,6 +2397,92 @@ function debug.getinfo(co, f, what)
 	return t
 end
 
+-- A function from load is a wrapper around the chunk, with env as upvalue 1 & the chunk as 2.
+-- Gives the chunk, or nil when f isn't such a wrapper
+local upval = _luwa.upval
+local function chunkof(f)
+	if fn_info(f) == nil then
+		local c = upval(f, 2)
+		local info = _type(c) == 'function' and fn_info(c)
+		if info and info.what == 'main' then
+			return c
+		end
+	end
+end
+local slot = _luwa.slot
+-- Name & stack slot of frame fr's nth local in scope at its pc, or for n < 0 its -nth vararg
+local function frlocal(fr, n)
+	if n < 0 then
+		if fr.base and -n <= fr.lo - fr.dd then
+			return '(vararg)', fr.base + fr.dd - n - 1
+		end
+		return nil
+	end
+	local info = fn_info(fr.fn)
+	local lv = info and info.locvars
+	if not lv then
+		return nil
+	end
+	-- pc is after the frame's current op
+	local pc, k = fr.pc, 0
+	for i = 1, #lv do
+		local v = lv[i]
+		if v[4] < pc and pc <= v[5] then
+			k = k + 1
+			if k == n then
+				return v[1], fr.base + (v[2] and 0 or fr.lo) + v[3]
+			end
+		end
+	end
+end
+-- Frame of co at level, for getlocal & setlocal
+local function localframe(fname, co, level)
+	local argn = co and 2 or 1
+	local lv = tointeger(level)
+	if not lv then
+		_error("bad argument #" .. argn .. " to '" .. fname .. "' (number expected, got " .. _type(level) .. ")")
+	end
+	-- off counts getlocal as level 0, this function is between them
+	local list, off = threadlevels(co)
+	if off > 1 then
+		off = off + 1
+	end
+	local fr = lv >= 0 and list[off + lv]
+	if not fr then
+		_error("bad argument #" .. argn .. " to '" .. fname .. "' (level out of range)")
+	end
+	return fr
+end
+function debug.getlocal(co, level, n)
+	if _type(co) ~= 'thread' then
+		co, level, n = nil, co, level
+	end
+	n = tointeger(n)
+	if _type(level) == 'function' then
+		-- the nth param's name
+		local info = fn_info(chunkof(level) or level)
+		local v = info and info.locvars and info.locvars[n]
+		if v and v[2] and v[4] == 0 then
+			return v[1]
+		end
+		return nil
+	end
+	local name, i = frlocal(localframe('getlocal', co, level), n)
+	if name then
+		return name, slot(co, i)
+	end
+end
+function debug.setlocal(co, level, n, v)
+	if _type(co) ~= 'thread' then
+		co, level, n, v = nil, co, level, n
+	end
+	local name, i = frlocal(localframe('setlocal', co, level), tointeger(n))
+	if name then
+		slot(co, i, 1, v)
+		return name
+	end
+end
+
 -- Source name to show in messages, like C Lua's luaO_chunkid
 -- Lexing errors from _luwa.lexgen, by code
 local lexerrors = {
@@ -2378,6 +2563,8 @@ local function vargunpack(t)
 end
 fakereqenv = {
 	_vargunpack = vargunpack,
+	_tbcpush = tbcpush,
+	_tbcclose = tbcclose,
 	assert = _assert,
 	-- compile errors carry their own position
 	error = rawerror,
@@ -2435,6 +2622,8 @@ local function asm2fn(asm, src, short, main)
 		isvararg = asm.isdotdotdot,
 		nups = main and 1 or #asm.freenames,
 		upnames = main and { '_ENV' } or asm.freenames,
+		-- { name, isparam, slot index, startpc, endpc } for debug.getlocal
+		locvars = asm.locvars,
 	})
 	_luwa.fn_set_localc(fn, #asm.locals)
 	_luwa.fn_set_paramc(fn, #asm.params)
@@ -2486,8 +2675,10 @@ local function _load(src, name, mode, env)
 	-- compiled chunks take _ENV as their first param, like the prelude does
 	-- TODO make _ENV the chunk's first free instead, saving this extra call
 	env = env or _ENV
+	-- env is used first, so it's this wrapper's upvalue 1 & debug.getupvalue sees it as _ENV
 	return function(...)
-		return fn(env, ...)
+		local e = env
+		return fn(e, ...)
 	end
 end
 loadstring = _load
@@ -2604,6 +2795,54 @@ function debug.upvalueid(f, n)
 		return nil
 	end
 	return upvalid(f, i)
+end
+
+-- Name of f's nth upvalue & whether it has one. Builtins & prelude functions name them ''
+local function upname(fname, f, n)
+	if _type(f) ~= 'function' then
+		_error("bad argument #1 to '" .. fname .. "' (function expected, got " .. (f == nil and 'no value' or _type(f)) .. ")")
+	end
+	local i = tointeger(n)
+	if not i then
+		_error("bad argument #2 to '" .. fname .. "' (number expected, got " .. (n == nil and 'no value' or _type(n)) .. ")")
+	end
+	if i < 1 or i > 0x7fffffff then
+		return nil
+	end
+	local c = chunkof(f)
+	if c then
+		return i == 1 and '_ENV' or nil, i
+	end
+	if not upvalid(f, i) then
+		return nil
+	end
+	local info = fn_info(f)
+	return info and info.upnames[i] or '', i
+end
+function debug.getupvalue(f, n)
+	local name, i = upname('getupvalue', f, n)
+	if name then
+		return name, upval(f, i)
+	end
+end
+function debug.setupvalue(f, n, ...)
+	if _select('#', ...) == 0 then
+		_error("bad argument #3 to 'setupvalue' (value expected)")
+	end
+	local name, i = upname('setupvalue', f, n)
+	if name then
+		upval(f, i, 1, (...))
+		return name
+	end
+end
+function debug.upvaluejoin(f1, n1, f2, n2)
+	local a, i = upname('upvaluejoin', f1, n1)
+	_assert(a, "bad argument #2 to 'upvaluejoin' (invalid upvalue index)")
+	local b, j = upname('upvaluejoin', f2, n2)
+	_assert(b, "bad argument #4 to 'upvaluejoin' (invalid upvalue index)")
+	_assert(fn_info(f1), "bad argument #1 to 'upvaluejoin' (Lua function expected)")
+	_assert(fn_info(f2), "bad argument #3 to 'upvaluejoin' (Lua function expected)")
+	upval(f1, i, 2, f2, j)
 end
 
 local registry = {}

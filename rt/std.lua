@@ -143,9 +143,11 @@ local function intparam(f, i, dflt)
 	end)
 end
 
--- _luwa.frame(co, n): function, pc & call type of frame n of coro co (nil for the running one),
--- counting from the top at 0. Nothing past the last frame. The function is nil when the frame has none
--- (the main init frame). pc is the frame's next op, for frames under the top that's just after their call
+-- _luwa.frame(co, n): function, pc, call type, base, dotdotdot & locals of frame n of coro co
+-- (nil for the running one), counting from the top at 0. Nothing past the last frame.
+-- The function is nil when the frame has none (the main init frame).
+-- pc is the frame's next op, for frames under the top that's just after their call.
+-- base is the slot of param 0, varargs & locals start at base+dotdotdot & base+locals
 local std_frame = func(function(f)
 	local co = f:locals(R.coro)
 	local fr = f:locals(M.refnull(alloc.frames))
@@ -210,7 +212,7 @@ local std_frame = func(function(f)
 		f:refnull(M.heap.eq)
 	end)
 	f:call(tmppush)
-	for _, field in ipairs{ 'pc', 'type' } do
+	for _, field in ipairs{ 'pc', 'type', 'base', 'dotdotdot', 'locals' } do
 		f:load(arr)
 		f:load(off)
 		f:i32(stack.df[field])
@@ -279,6 +281,87 @@ local std_seterrfns = func(function(f)
 	f:storeg(frame.errfn)
 	loadparam(f, 1)
 	f:storeg(frame.callerrfn)
+	loadparam(f, 2)
+	f:storeg(frame.tbcfn)
+end)
+
+-- _luwa.slot(co, i, op, v): slot i of coro co's stack (nil co for the running one). op 1 sets it to v.
+-- A captured variable's slot holds its box, that's read or set instead.
+-- Nothing when i is past the stack
+local std_slot = func(function(f)
+	local st = f:locals(M.refnull(alloc.stack))
+	local i = f:locals(i32)
+	local v = f:locals(V)
+	-- the running coro's stack is gstack
+	loadparam(f, 0)
+	f:refisnull()
+	f:iff(M.refnull(alloc.stack), function()
+		f:loadg(gstack)
+	end, function()
+		loadparam(f, 0)
+		f:refcast(R.coro)
+		f:structget(alloc.coro, 'stack')
+	end)
+	f:store(st)
+	intparam(f, 1, function() f:i32(-1) end)
+	f:tee(i)
+	f:i32(0)
+	f:lts()
+	f:load(i)
+	f:load(st)
+	f:structget(alloc.stack, 'len')
+	f:ges()
+	f:bor()
+	f:iff(function()
+		f:ret()
+	end)
+	f:load(st)
+	f:structget(alloc.stack, 'arr')
+	f:load(i)
+	f:arrayget(vals)
+	f:tee(v)
+	f:reftest(M.ref(alloc.box))
+	f:iff(function()
+		intparam(f, 2, function() f:i32(0) end)
+		f:iff(function()
+			f:load(v)
+			f:refcast(R.box)
+			loadparam(f, 3)
+			f:structset(alloc.box, 'val')
+			alloc.ltrue(f)
+			f:call(tmppush)
+		end, function()
+			f:load(v)
+			f:refcast(R.box)
+			f:structget(alloc.box, 'val')
+			f:call(tmppush)
+		end)
+		f:ret()
+	end)
+	intparam(f, 2, function() f:i32(0) end)
+	f:iff(function()
+		f:load(st)
+		f:structget(alloc.stack, 'arr')
+		f:load(i)
+		loadparam(f, 3)
+		f:arrayset(vals)
+		alloc.ltrue(f)
+		f:call(tmppush)
+	end, function()
+		f:load(v)
+		f:call(tmppush)
+	end)
+end)
+
+-- _luwa.fdepth(): how many frames the running coro has
+local std_fdepth = func(function(f)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'len')
+	f:i32(stack.df.sizeof)
+	f:divu()
+	f:i64extendu()
+	f:call(newi64)
+	f:call(tmppush)
 end)
 
 -- Is v the string "#"
@@ -784,6 +867,90 @@ local std_upvalid = func(function(f)
 	f:call(tmppush)
 end)
 
+-- Leave the frees of param fi & index (param ni) - 1, or return when fi isn't a function
+-- or has no such upvalue
+local function upslot(f, fi, ni)
+	local frees = f:locals(R.vals)
+	local n = f:locals(i32)
+	loadparam(f, fi)
+	f:call(typeof)
+	f:i32(types.functy)
+	f:ne()
+	f:iff(function()
+		f:ret()
+	end)
+	loadparam(f, fi)
+	f:refcast(R.functy)
+	f:structget(functy, 'frees')
+	f:tee(frees)
+	f:refisnull()
+	f:iff(function()
+		f:ret()
+	end)
+	intparam(f, ni, function() f:i32(0) end)
+	f:i32(1)
+	f:sub()
+	f:tee(n)
+	f:load(frees)
+	f:arraylen()
+	f:geu()
+	f:iff(function()
+		f:ret()
+	end)
+	-- main chunks keep _ENV itself in frees, not a box
+	f:load(frees)
+	f:load(n)
+	f:arrayget(vals)
+	f:reftest(M.ref(alloc.box))
+	f:eqz()
+	f:iff(function()
+		f:ret()
+	end)
+	f:load(frees)
+	f:load(n)
+end
+
+-- _luwa.upval(fn, n, op, a, b): fn's nth upvalue. op 0 gives its value, op 1 sets it to a,
+-- op 2 makes it the same variable as a's bth upvalue. Gives nothing when there's no such upvalue
+local std_upval = func(function(f)
+	local op = f:locals(i32)
+	local b = f:locals(R.box)
+	upslot(f, 0, 1)
+	f:arrayget(vals)
+	f:refcast(R.box)
+	f:store(b)
+	intparam(f, 2, function() f:i32(0) end)
+	f:tee(op)
+	f:eqz()
+	f:iff(function()
+		f:load(b)
+		f:structget(alloc.box, 'val')
+		f:call(tmppush)
+		f:ret()
+	end)
+	f:load(op)
+	f:i32(1)
+	f:eq()
+	f:iff(function()
+		f:load(b)
+		loadparam(f, 3)
+		f:structset(alloc.box, 'val')
+		alloc.ltrue(f)
+		f:call(tmppush)
+		f:ret()
+	end)
+	-- join: the other function's box goes in fn's frees
+	upslot(f, 3, 4)
+	f:arrayget(vals)
+	f:refcast(R.box)
+	f:store(b)
+	upslot(f, 0, 1)
+	f:load(b)
+	f:arrayset(vals)
+	alloc.ltrue(f)
+	f:call(tmppush)
+end)
+
 -- _luwa.fn_new(): an empty function object, filled in by the fn_set_* calls
 local std_fn_new = func(function(f)
 	f:call(alloc.newfunc)
@@ -942,6 +1109,9 @@ return {
 	fn_new = std_fn_new,
 	objid = std_objid,
 	upvalid = std_upvalid,
+	upval = std_upval,
+	fdepth = std_fdepth,
+	slot = std_slot,
 	fn_set_localc = std_fn_set_localc,
 	fn_set_paramc = std_fn_set_paramc,
 	fn_set_isdotdotdot = std_fn_set_isdotdotdot,

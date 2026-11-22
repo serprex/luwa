@@ -43,6 +43,15 @@ local function Assembler()
 		-- what made the value on top of the stack, if it's a variable or field
 		desc = nil,
 		curline = nil,
+		-- how many <close> variables are in scope where code is being emitted
+		tbcn = 0,
+		-- label node -> tbcn where it is, goto pc -> { tbcn at the goto, pc of the count to patch }
+		labeltbc = {},
+		gototbc = {},
+		-- locals in declaration order as { namety, startpc, endpc }, & the ones in scope while emitting.
+		-- For debug.getlocal
+		locvars = {},
+		actives = {},
 	}, asmmt)
 end
 
@@ -63,7 +72,7 @@ function asmmeta:patch(idx, x)
 	self.bc[idx],self.bc[idx+1],self.bc[idx+2],self.bc[idx+3] = string.byte(string.pack('<i4', assert(x)), 1, 4)
 end
 function asmmeta:breakscope(f)
-	self.breaks = { prev = self.breaks }
+	self.breaks = { prev = self.breaks, tbcn = self.tbcn }
 	f(self)
 	for i=1,#self.breaks do
 		self:patch(self.breaks[i], #self.bc)
@@ -119,6 +128,30 @@ function asmmeta:globaldecl(n, decl)
 	if n ~= '*' and not self.names['*'] then
 		self:globaldecl('*', { strict = true })
 	end
+end
+
+-- Close the k newest <close> variables, by calling the prelude's helper (from fakereqenv).
+-- Returns the pc of k's const index, so a goto can patch it once the count is known
+function asmmeta:tbcclose(k, force)
+	if k > 0 or force then
+		self:push(bc.LoadConst, self:const(assert(_tbcclose, 'no to-be-closed helper')))
+		local kpc = #self.bc + 2
+		self:push(bc.LoadConst, self:const(k))
+		self:push(bc.Call, 0, 1, 1)
+		-- names the __close calls in tracebacks
+		self:opname({ "metamethod 'close'", call = true })
+		return kpc
+	end
+end
+-- After the value v of a <close> variable is stored, check it can be closed & keep it to close later.
+-- v is left by emit()
+function asmmeta:tbcpush(emit, name)
+	self:push(bc.LoadConst, self:const(assert(_tbcpush, 'no to-be-closed helper')))
+	emit()
+	self:push(bc.LoadConst, self:const(name))
+	self:push(bc.Call, 0, 1, 2)
+	self:opname({ false, call = true })
+	self.tbcn = self.tbcn + 1
 end
 
 local function consterr(n)
@@ -243,9 +276,34 @@ function asmmeta:checkglobal(name)
 	self.desc = nil
 	self:push(bc.ErrNNil, self:const(name.arg))
 end
+-- A local comes into scope at the current pc
+function asmmeta:activate(namety)
+	local v = { namety = namety, startpc = #self.bc }
+	self.locvars[#self.locvars+1] = v
+	self.actives[#self.actives+1] = v
+end
+-- Locals declared after the first n0 go out of scope here
+function asmmeta:deactivate(n0)
+	local a = self.actives
+	for i=#a, n0+1, -1 do
+		a[i].endpc = #self.bc
+		a[i] = nil
+	end
+end
+-- The last k locals were declared last first, put them in order
+function asmmeta:inorder(k)
+	local a, lv = self.actives, self.locvars
+	for i = 1, k // 2 do
+		local j, m = #a - k + i, #a + 1 - i
+		a[j], a[m] = a[m], a[j]
+		j, m = #lv - k + i, #lv + 1 - i
+		lv[j], lv[m] = lv[m], lv[j]
+	end
+end
 function asmmeta:declname(name)
 	self:boxname(name)
-	return self:storename(name)
+	self:storename(name)
+	self:activate(self.namety[name])
 end
 
 local nextNode = {}
@@ -625,9 +683,11 @@ emitStatSwitch = {
 	end,
 	function(self, node) -- 3 label
 		self.labels[node] = #self.bc
+		self.labeltbc[node] = self.tbcn
 	end,
 	function(self, node) -- 4 break
 		assert(self.breaks, "break outside of loop")
+		self:tbcclose(self.tbcn - self.breaks.tbcn)
 		self.breaks[#self.breaks+1] = #self.bc+2
 		self:push(bc.Jmp, 0)
 	end,
@@ -654,7 +714,12 @@ emitStatSwitch = {
 			error("<goto " .. namei .. "> at line " .. (node.line or self.curline or 0) ..
 				" jumps into the scope of '" .. sc[gc + 1] .. "'")
 		end
+		-- close the <close> variables the jump leaves, how many is known once the label is emitted
+		local kpc = self.tbcn > 0 and self:tbcclose(0, true)
 		self.gotos[#self.bc+2] = label
+		if kpc then
+			self.gototbc[#self.bc+2] = { tbcn = self.tbcn, pc = kpc }
+		end
 		self:push(bc.Jmp, 0)
 	end,
 	function(self, node) -- 6 do-end
@@ -674,8 +739,12 @@ emitStatSwitch = {
 	function(self, node) -- 8 repeat
 		self:breakscope(function()
 			local soc = #self.bc
-			emitNode(self, node, ast.Block)
+			-- the block's locals are in scope in until, so they're closed after it on both ways out
+			local tbc0, n0 = emitNode(self, node, ast.Block, true)
 			emitNode(self, node, ast.ExpOr, 1)
+			self:tbcclose(self.tbcn - tbc0)
+			self.tbcn = tbc0
+			self:deactivate(n0)
 			self:push(bc.JifNot, soc)
 		end)
 	end,
@@ -742,6 +811,7 @@ emitStatSwitch = {
 		local forxit = #self.bc+2
 		self:push(bc.Jif, 0)
 		self:push(bc.LoadLocal, tempi)
+		local n0 = #self.actives
 		self:declname(selectIdent(node))
 		self:breakscope(function()
 			emitNode(self, node, ast.Block)
@@ -751,13 +821,21 @@ emitStatSwitch = {
 			self:push(bc.StoreLocal, tempi)
 			self:push(bc.Jmp, incrdecr)
 		end)
+		self:deactivate(n0)
 		self:patch(forxit, #self.bc)
 	end,
 	function(self, node) -- 11 generic for
-		emitExplist(self, node, 3)
+		-- a 4th value is closed when the loop ends. Not in the prelude, which is built without the helpers
+		local closing = _tbcpush ~= nil
+		emitExplist(self, node, closing and 4 or 3)
 		local tempf = idxtbl(self.locals, {})
 		local temps = idxtbl(self.locals, {})
 		local tempv = idxtbl(self.locals, {})
+		if closing then
+			local tempc = idxtbl(self.locals, {})
+			self:push(bc.StoreLocal, tempc)
+			self:tbcpush(function() self:push(bc.LoadLocal, tempc) end, '(for state)')
+		end
 		self:push(bc.StoreLocal, tempv)
 		self:push(bc.StoreLocal, temps)
 		self:push(bc.StoreLocal, tempf)
@@ -771,6 +849,7 @@ emitStatSwitch = {
 		end
 		self:push(bc.Call, #vars, 1, 2) -- f(s, ctl): 2 args
 		self:opname({ "for iterator 'for iterator'", call = true })
+		local n0 = #self.actives
 		for i=#vars,2,-1 do
 			self:declname(vars[i])
 		end
@@ -782,11 +861,18 @@ emitStatSwitch = {
 		self:push(bc.Jif, 0)
 		self:push(bc.LoadLocal, tempv)
 		self:declname(vars[1])
+		self:inorder(#vars)
 		self:breakscope(function()
 			emitNode(self, node, ast.Block)
 			self:push(bc.Jmp, begfor)
 		end)
+		self:deactivate(n0)
 		self:patch(forxit, #self.bc)
+		if closing then
+			-- breaks land here too, so they don't close it themselves (breakscope saw it counted)
+			self:tbcclose(1)
+			self.tbcn = self.tbcn - 1
+		end
 	end,
 	function(self, node) -- 12 func
 		emitNode(self, node, ast.Funcbody)
@@ -816,6 +902,7 @@ emitStatSwitch = {
 		self:boxname(name)
 		emitNode(self, node, ast.Funcbody)
 		self:storename(name)
+		self:activate(self.namety[name])
 	end,
 	function(self, node) -- 14 locals=exps
 		local vars = {}
@@ -825,6 +912,12 @@ emitStatSwitch = {
 		emitExplist(self, node, #vars)
 		for i=#vars,1,-1 do
 			self:declname(vars[i])
+		end
+		self:inorder(#vars)
+		for i=1,#vars do
+			if self.namety[vars[i]].attrib == 'close' then
+				self:tbcpush(function() self:loadname(vars[i]) end, vars[i].arg)
+			end
 		end
 	end,
 	function(self, node) -- 15 global func
@@ -1133,22 +1226,34 @@ local function emitShortCircuitFactory(ty, opcode)
 	end
 end
 visitEmit = {
-	[ast.Block] = function(self, node)
+	-- keep: leave closing <close> variables & ending locals' scope to the caller, which gets the counts
+	[ast.Block] = function(self, node, keep)
+		local tbc0, n0 = self.tbcn, #self.actives
 		emitNodes(self, node, ast.Stat)
 		if hasToken(node, lex._return) then
+			-- results are on the stack, then <close> variables are closed, then they're returned
 			local n, res = emitExplist(self, node, -1)
 			if type(res) == 'number' then
+				self:tbcclose(self.tbcn)
 				self:push(bc.Return)
 			elseif #res > 0 then
 				-- No tail calls yet: call keeping all results (retc 0xffff), then return them
 				self.curline = res.line or self.curline
 				self:push(res.varg and bc.CallVarg or bc.Call, 0xffff, #res, table.unpack(res))
 				self:opname(res.descs)
+				self:tbcclose(self.tbcn)
 				self:push(bc.Return)
 			else
+				self:tbcclose(self.tbcn)
 				self:push(bc.ReturnVarg)
 			end
+		elseif keep then
+			return tbc0, n0
+		else
+			self:tbcclose(self.tbcn - tbc0)
 		end
+		self.tbcn = tbc0
+		self:deactivate(n0)
 	end,
 	[ast.Stat] = function(self, node)
 		return emitStatSwitch[node.type >> 5](self, node)
@@ -1378,12 +1483,33 @@ function asmmeta:synth()
 	self:push(bc.Return)
 	for k,v in pairs(self.gotos) do
 		self:patch(k, self.labels[v])
+		local t = self.gototbc[k]
+		if t then
+			self:patch(t.pc, self:const(t.tbcn - self.labeltbc[v]))
+		end
 	end
 	local freenames = {}
 	for i, v in ipairs(self.frees) do
 		freenames[i] = v.name or '?'
 	end
 	self.freenames = freenames
+	-- locals for debug.getlocal: { name, isparam, slot index, startpc, endpc }, params first.
+	-- The main chunk's _ENV param is an upvalue in C Lua, so it's left out
+	self:deactivate(0)
+	local lv = {}
+	for i = self.envparam and 2 or 1, #self.params do
+		local v = self.params[i]
+		lv[#lv+1] = { v.name, true, v.isparam, 0, #self.bc }
+	end
+	for _, v in ipairs(self.locvars) do
+		local nt = v.namety
+		if nt.isparam then
+			lv[#lv+1] = { nt.name, true, nt.isparam, v.startpc, v.endpc }
+		else
+			lv[#lv+1] = { nt.name, false, self:nameidx(nt), v.startpc, v.endpc }
+		end
+	end
+	self.locvars = lv
 	return self
 end
 
@@ -1415,6 +1541,7 @@ local function gen(root)
 	asm.isdotdotdot = true
 	asm:scope(function()
 		asm:name('_ENV', true)
+		asm.envparam = true
 		visitScope[ast.Block](asm, root)
 	end)
 	asm:genBoxPrologue()
