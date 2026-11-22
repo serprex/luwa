@@ -167,6 +167,10 @@ local microTypeToWasmTypeTable = {
 	f32 = f32,
 	f64 = f64,
 	obj = i32,
+	int = i32,
+	float = i32,
+	str = i32,
+	tbl = i32,
 }
 local function microTypeToWasmType(mty)
 	if mty then
@@ -184,117 +188,146 @@ end
 local function cg(ctx, fn)
 	ctx.code[#ctx.code+1] = fn
 end
--- A register is a table whose .r gets filled in with a wasm local by genLocals
+-- A register is a table whose .r gets filled in with a wasm local by genLocals.
+-- Ops never run at the same time, so each op numbers its registers from 1 & they're shared between ops
 local function newreg(ctx, mty)
 	local wty = microTypeToWasmType(mty)
 	local rtbl = assert(ctx.regdef[wty], "Invalid register type")
-	local r = {}
-	rtbl[#rtbl+1] = r
+	local n = ctx.regn[wty] + 1
+	ctx.regn[wty] = n
+	local r = rtbl[n]
+	if not r then
+		r = {}
+		rtbl[n] = r
+	end
 	return r
 end
-local resolve
-local function resolvefirst(ctx, ast)
-	local r = newreg(ctx, ast.out)
-	ctx.temps[ast] = r
-	mopcomp[ast.op](ast, ctx)
-	return r
-end
--- Evaluate for side effects, dropping any result
-local function resolvevoid(ctx, ast)
-	if ast.out then
-		if not ctx.temps[ast] then
-			resolve(ctx, ast)
-			cg(ctx, function(f)
-				f:drop()
-			end)
-		end
-	else
-		mopcomp[ast.op](ast, ctx)
-	end
-end
--- Evaluate, leaving result on wasm stack.
--- Nodes used more than once are kept in a register after their first evaluation
-function resolve(ctx, ast)
-	local wty = microTypeToWasmType(ast.out)
-	if wty == void then
-		return resolvevoid(ctx, ast)
-	end
-	-- TODO when mty == 'obj', track on tempstack
-	local r = ctx.temps[ast]
-	if r then
+-- Leave a node's value on the wasm stack.
+-- A statement's value was put in a register where the statement ran, unless it's inlined here.
+-- Pure nodes are computed again at each use
+local function resolve(ctx, node)
+	if node.stmt and not ctx.inline[node] then
+		local r = assert(ctx.temps[node], 'statement value used before its statement ran')
 		cg(ctx, function(f)
 			f:load(r.r)
 		end)
-		return
-	end
-	local reglife = assert(ctx.reglife[ast], 'AST node missing from liveness analysis')
-	reglife.rcount = reglife.rcount + 1
-	if reglife.usage == 1 then
-		-- Only use, no need to juggle registers
-		mopcomp[ast.op](ast, ctx)
 	else
-		r = resolvefirst(ctx, ast)
-		cg(ctx, function(f)
-			f:tee(r.r)
-		end)
+		mopcomp[node.op](node, ctx)
 	end
 end
--- Compile ast into separate code, for If/loop bodies
--- TODO a value first computed inside a branch is unset on the other path
-local function resolvethunk(ctx, ast, void)
-	local subctx = setmetatable({
-		code = {},
-	}, { __index = ctx })
-	if void then
-		resolvevoid(subctx, ast)
-	else
-		resolve(subctx, ast)
+local function genstmt(ctx, node)
+	if ctx.inline[node] then
+		return
 	end
-	return function(f, scopes)
-		for i=1,#subctx.code do
-			subctx.code[i](f, scopes)
+	mopcomp[node.op](node, ctx)
+	if microTypeToWasmType(node.out) ~= void then
+		if (ctx.uses[node] or 0) == 0 then
+			cg(ctx, function(f)
+				f:drop()
+			end)
+		else
+			local r = newreg(ctx, node.out)
+			ctx.temps[node] = r
+			cg(ctx, function(f)
+				f:store(r.r)
+			end)
 		end
 	end
 end
-local function resolvereg(ctx, mop)
-	local r = ctx.regs[mop]
-	if not r then
-		assert(mop.op == microbc.mops.Reg32)
-		r = newreg(ctx, 'i32')
-		ctx.regs[mop] = r
+-- Code made by fn(subctx), kept apart so it can go inside an if/loop
+local function thunk(ctx, fn)
+	local subctx = setmetatable({
+		code = {},
+	}, { __index = ctx })
+	fn(subctx)
+	return function(f, scopes)
+		emitOp(subctx, scopes, f)
 	end
-	return r
 end
--- Count how many times each node is used. Children are only counted
--- on a node's first visit, since the node itself is only evaluated once
-local function initreglife(ctx, ast)
-	local data = ctx.reglife[ast]
-	if data then
-		data.usage = data.usage + 1
+-- A block's statements, then its result if wty isn't void
+local function genblock(ctx, blk, wty)
+	return thunk(ctx, function(subctx)
+		for _, s in ipairs(blk.stmts) do
+			genstmt(subctx, s)
+		end
+		if wty ~= void then
+			resolve(subctx, blk.result)
+		end
+	end)
+end
+
+-- How many times each node gets evaluated: pure nodes count again at each use,
+-- a statement's args only count once, where the statement runs
+local function countuses(uses, node)
+	if type(node) ~= 'table' then
 		return
 	end
-	ctx.reglife[ast] = { usage = 1, rcount = 0 }
-	local arg = ast.arg or {}
-	for i=1,#ast do
-		local child = ast[i]
-		if type(child) == 'table' and arg[i] ~= 'r32' then
-			initreglife(ctx, child)
+	uses[node] = (uses[node] or 0) + 1
+	if not node.stmt then
+		for i=1,#node do
+			countuses(uses, node[i])
+		end
+	end
+end
+local function countblock(uses, blk)
+	for _, s in ipairs(blk.stmts) do
+		for i=1,#s do
+			countuses(uses, s[i])
+		end
+		for _, sub in ipairs(s.blocks or {}) do
+			countblock(uses, sub)
+		end
+	end
+	countuses(uses, blk.result)
+end
+-- Is v the first thing with a side effect that evaluating node's args runs?
+-- Args are evaluated in order. Values of other statements are register loads, so they don't count.
+-- Nested blocks aren't looked at, they may not run
+local function early(node, v)
+	for i=1,#node do
+		local a = node[i]
+		if a == v then
+			return true
+		elseif type(a) == 'table' then
+			if not a.stmt then
+				local r = early(a, v)
+				if r ~= nil then
+					return r
+				end
+			end
+			if node.argfx then
+				return false
+			end
+		end
+	end
+	return nil
+end
+-- A statement value used once, by the next statement before it does anything else,
+-- can be computed right there instead of going through a register
+local function findinline(uses, inline, blk)
+	local stmts = blk.stmts
+	for k, s in ipairs(stmts) do
+		if uses[s] == 1 and microTypeToWasmType(s.out) ~= void then
+			local nxt = stmts[k+1]
+			if nxt then
+				inline[s] = early(nxt, s) == true
+			elseif blk.result then
+				inline[s] = blk.result == s or (not blk.result.stmt and early(blk.result, s) == true)
+			end
+		end
+		for _, sub in ipairs(s.blocks or {}) do
+			findinline(uses, inline, sub)
 		end
 	end
 end
 -- Bytes of bytecode args read by an op, from its highest Arg index
-local function argsize(ast, seen)
-	if type(ast) ~= 'table' or seen[ast] then
-		return 0
-	end
-	seen[ast] = true
+local function argsize(blk)
 	local n = 0
-	if ast.op == microbc.mops.Arg then
-		n = (ast[1] + 1) * 4
-	end
-	for i=1,#ast do
-		n = math.max(n, argsize(ast[i], seen))
-	end
+	microbc.walk(blk, function(node)
+		if node.op == microbc.mops.Arg then
+			n = math.max(n, (node[1] + 1) * 4)
+		end
+	end)
 	return n
 end
 -- L holds eval's existing wasm locals
@@ -315,19 +348,23 @@ local function mkcgctx(f, L)
 	}
 end
 local function genOp(ctx, op)
-	local opast = assert(microbc.ops[op], 'genOp: no microcode for op')
+	local blk = assert(microbc.ops[op], 'genOp: no microcode for op')
+	local uses, inline = {}, {}
+	countblock(uses, blk)
+	findinline(uses, inline, blk)
 	local subctx = setmetatable({
-		reglife = {},
-		regs = {},
+		uses = uses,
+		inline = inline,
 		temps = {},
 		code = {},
+		regn = { [i32] = 0, [i64] = 0, [f32] = 0, [f64] = 0 },
 	}, { __index = ctx })
 	-- Bytes of bytecode args, mops that leave the op early need it to find the next op
-	local argoffset = argsize(opast, {})
+	local argoffset = argsize(blk)
 	subctx.argoffset = argoffset
-	initreglife(subctx, opast)
-	resolvevoid(subctx, opast)
-	-- TODO Phase 2: reserve spill slots on tmp stack, stackspace
+	for _, s in ipairs(blk.stmts) do
+		genstmt(subctx, s)
+	end
 	return function(scopes)
 		local f = ctx.f
 		emitOp(subctx, scopes, f)
@@ -342,13 +379,9 @@ local function genOp(ctx, op)
 	end
 end
 
-defMop('Nop', function()
-end)
-defMop('Seq', function(mop, ctx)
-	for i=1, #mop-1 do
-		resolvevoid(ctx, mop[i])
-	end
-	resolve(ctx, mop[#mop])
+-- Narrowing an object's type changes nothing in linear memory
+defMop('As', function(mop, ctx)
+	resolve(ctx, mop[1])
 end)
 defMop('Int', function(mop, ctx)
 	cg(ctx, function(f)
@@ -393,22 +426,6 @@ end)
 defMop('Obj', function(mop, ctx)
 	cg(ctx, function(f)
 		f:i32(mop[1])
-	end)
-end)
-defMop('Reg32', function(mop, ctx)
-	error('Reg32 is only used through LoadReg/StoreReg')
-end)
-defMop('StoreReg', function(mop, ctx)
-	resolve(ctx, mop[2])
-	local r = resolvereg(ctx, mop[1])
-	cg(ctx, function(f)
-		f:store(r.r)
-	end)
-end)
-defMop('LoadReg', function(mop, ctx)
-	local r = resolvereg(ctx, mop[1])
-	cg(ctx, function(f)
-		f:load(r.r)
 	end)
 end)
 defMop('Type', function(mop, ctx)
@@ -997,96 +1014,80 @@ defMop('Ret', function(mop, ctx)
 end)
 defMop('If', function(mop, ctx)
 	resolve(ctx, mop[1])
-	local ifty = mop.out
-	local wifty = microTypeToWasmType(ifty)
-	assert(mop[3] or wifty == void)
-	local isvoid = wifty == void
-	local mop2 = resolvethunk(ctx, mop[2], isvoid)
-	local mop3 = mop[3] and resolvethunk(ctx, mop[3], isvoid)
+	local wty = microTypeToWasmType(mop.out)
+	local t = genblock(ctx, mop.thenb, wty)
+	local e = mop.elseb and genblock(ctx, mop.elseb, wty)
 	cg(ctx, function(f, scopes)
-		f:iff(wifty,
+		f:iff(wty,
 			function()
-				mop2(f, scopes)
+				t(f, scopes)
 			end,
-			mop3 and function()
-				mop3(f, scopes)
+			e and function()
+				e(f, scopes)
 			end
 		)
 	end)
 end)
-defMop('ForRange', function(mop, ctx)
-	local r = resolvereg(ctx, mop[1])
-	local rto = newreg(ctx, 'i32')
-	resolve(ctx, mop[2])
-	cg(ctx, function(f)
-		f:store(r.r)
+defMop('Select', function(mop, ctx)
+	resolve(ctx, mop[1])
+	local wty = microTypeToWasmType(mop.out)
+	local t = thunk(ctx, function(subctx)
+		resolve(subctx, mop[2])
 	end)
-	resolve(ctx, mop[3])
-	local body = resolvethunk(ctx, mop[4])
+	local e = thunk(ctx, function(subctx)
+		resolve(subctx, mop[3])
+	end)
 	cg(ctx, function(f, scopes)
-		f:store(rto.r)
-		f:loop(function(loop)
-			body(f, scopes)
-
-			f:load(r.r)
-			f:i32(1)
-			f:add()
-			f:tee(r.r)
-			f:load(rto.r)
-			f:ltu()
-			f:brif(loop)
+		f:iff(wty, function()
+			t(f, scopes)
+		end, function()
+			e(f, scopes)
 		end)
 	end)
 end)
 defMop('Typeck', function(mop, ctx)
-	local a1 = mop[1]
-	local alen = #mop
-	local hasDefault = (alen - 1) % (a1 + 1) == 0
+	local n = #mop
 	local rs = {}
-	for i=1,a1 do
+	for i=1,n do
 		rs[i] = newreg(ctx, 'i32')
-		resolve(ctx, mop[i+1])
+		resolve(ctx, mop[i])
 		cg(ctx, function(f)
 			f:i32load8u(obj.type)
 			f:store(rs[i].r)
 		end)
 	end
-	-- Layout after the operands: groups of a1 type ids then a body, then an optional default body.
-	-- i is where a group starts; when i == alen it's the default
 	local wty = microTypeToWasmType(mop.out)
-	local isvoid = wty == void
-	local rthunks = {}
-	for i=a1+2,alen,a1+1 do
-		local body = i == alen and mop[i] or mop[i+a1]
-		rthunks[i] = resolvethunk(ctx, body, isvoid)
+	local cases = mop.cases
+	local bodies = {}
+	for i, case in ipairs(cases) do
+		bodies[i] = genblock(ctx, case.block, wty)
 	end
+	local default = mop.default and genblock(ctx, mop.default, wty)
 	cg(ctx, function(f, scopes)
+		-- if case 1 then ... else if case 2 then ... else default
 		local function rec(i)
-			if i < alen then
-				return function()
-					for j=1,a1 do
-						f:load(rs[j].r)
-						f:i32(mop[i+j-1])
-						f:eq()
-						if j > 1 then
-							f:band()
-						end
-					end
-					local nxt = rec(i+a1+1)
-					f:iff(wty, function()
-						rthunks[i](f, scopes)
-					end, nxt)
+			local case = cases[i]
+			if not case then
+				if default then
+					default(f, scopes)
 				end
-			elseif i == alen then
-				return function()
-					rthunks[i](f, scopes)
+				return
+			end
+			for j=1,n do
+				f:load(rs[j].r)
+				f:i32(case.tys[j])
+				f:eq()
+				if j > 1 then
+					f:band()
 				end
 			end
+			f:iff(wty, function()
+				bodies[i](f, scopes)
+			end, (cases[i+1] or default) and function()
+				rec(i+1)
+			end)
 		end
-		local top = rec(a1+2)
-		if top then
-			top()
-		end
+		rec(1)
 	end)
 end)
 

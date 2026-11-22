@@ -145,9 +145,9 @@ local image = M.data(memory, addStatics(4, {
 	-- nil
 	2, 0, 0, 0,
 	-- false
-	8, 0, 0, 0, 3, 0, 0 ,0,
+	8, 0, 0, 0, 2, 0, 0, 0,
 	-- true
-	16, 0, 0, 0, 3, 1, 0, 0,
+	16, 0, 0, 0, 2, 1, 0, 0,
 }, 'float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file', 'closed file',
 	'nil', 'number', 'string', 'boolean', 'table', 'function', 'thread', 'userdata',
 	'b', 't', 'bt', 'n', 'a', 'l', 'L', 'r', 'w', 'r+', 'w+', 'a+',

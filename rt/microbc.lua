@@ -1,12 +1,38 @@
 require 'rt' -- sets NIL/FALSE/TRUE globals
 local alloc = require 'alloc'
-local types, vec, functy = alloc.types, alloc.vec, alloc.functy
+local types = alloc.types
 local bc = require 'bc'
-local mtypes = {}
+
+-- Each bytecode op is a block: a list of statements, built in order by calling the block's methods.
+-- Pure mops (math, compares, constants, reads of fields that never change) are plain functions
+-- that build expression trees. Everything else is a statement, made with b:Name(...):
+-- the statement runs where it's added, and its value (if any) can be used by later statements.
+-- If & Typeck are statements holding nested blocks.
 local mops = {}
 local ops = {}
 -- ops whose microcode doesn't typecheck yet: op -> error message
 local broken = {}
+
+-- Object types narrower than obj. Typeck branches see their operands as these,
+-- and mops that need a certain kind of object take these types
+local objtypes = { obj = true, int = true, float = true, str = true, tbl = true }
+local narrowtype = {
+	[types.int] = 'int',
+	[types.float] = 'float',
+	[types.str] = 'str',
+	[types.tbl] = 'tbl',
+}
+local function subtype(t, want)
+	return t == want or (want == 'obj' and objtypes[t] ~= nil)
+end
+-- Type that both a and b fit in, or nil
+local function join(a, b)
+	if a == b then
+		return a
+	elseif objtypes[a] and objtypes[b] then
+		return 'obj'
+	end
+end
 
 -- Result type of a node. Plain Lua values (atoms, nil) have no type
 local function out(ast)
@@ -27,71 +53,67 @@ local function verify(mop)
 	end
 	for i=1,#arg do
 		local a = arg[i]
-		if a ~= 'atom' and out(mop[i]) ~= a then
+		if a ~= 'atom' and not subtype(out(mop[i]), a) then
 			mop.err = mop.err or (mops[mop.op] .. ': arg ' .. i .. ' expected ' .. tostring(a) .. ' got ' .. tostring(out(mop[i])))
 		end
 	end
 end
-local function mkMop(op, sig)
+
+local Block = {}
+Block.__index = Block
+local function newblock(parent)
+	return setmetatable({ parent = parent, stmts = {} }, Block)
+end
+function Block:add(node)
+	assert(not node.block, 'statement added twice')
+	node.block = self
+	self.stmts[#self.stmts+1] = node
+	return node
+end
+-- New block nested in this one. fn(blk, ...) fills it, what fn returns is the block's value
+function Block:sub(fn, ...)
+	local blk = newblock(self)
+	blk.result = fn(blk, ...)
+	return blk
+end
+
+-- sig is a table, or a function given the new node that returns one.
+-- sig.stmt marks a statement, so do alloc & exit. sig.argfx means codegen
+-- does side effects between evaluating the args
+local function mkMop(name, sig)
 	local id = #mops+1
-	mops[id] = op
-	mops[op] = id
-	if type(sig) == 'table' then
-		return function(...)
-			local node = { op = id, ... }
-			for k,v in pairs(sig) do
-				node[k] = v
+	mops[id] = name
+	mops[name] = id
+	local function ctor(...)
+		local node = { op = id, ... }
+		local meta = sig
+		if type(sig) == 'function' then
+			local ok, m = pcall(sig, node)
+			if not ok then
+				node.err = name .. ': ' .. tostring(m)
+				return node
 			end
-			verify(node)
-			return node
+			meta = m
 		end
-	else
-		return function(...)
-			local node = { op = id, ... }
-			local ok, meta = pcall(sig, node)
-			if ok then
-				for k,v in pairs(meta) do
-					node[k] = v
-				end
-				verify(node)
-			else
-				node.err = op .. ': ' .. tostring(meta)
-			end
-			return node
+		for k,v in pairs(meta) do
+			node[k] = v
 		end
-	end
-end
--- First error found anywhere in an op's tree, or nil
-local function findErr(ast, seen)
-	if type(ast) == 'function' then
-		return 'Lua function used where microcode expected'
-	end
-	if type(ast) ~= 'table' or seen[ast] then
-		return nil
-	end
-	seen[ast] = true
-	if not ast.op then
-		return 'not a microcode node'
-	end
-	if ast.err then
-		return ast.err
-	end
-	for i=1,#ast do
-		local err = findErr(ast[i], seen)
-		if err then
-			return err
+		if node.alloc or node.exit then
+			node.stmt = true
 		end
+		verify(node)
+		return node
 	end
-end
-local function mkOp(op, f)
-	assert(op, 'mkOp: unknown bytecode op')
-	local err = findErr(f, {})
-	if err then
-		broken[op] = err
-	else
-		ops[op] = f
+	Block[name] = function(self, ...)
+		local node = ctor(...)
+		if not node.stmt then
+			error(name .. ' is pure, call it without the block')
+		end
+		return self:add(node)
 	end
+	return ctor
 end
+
 local function GenericUnOp(args)
 	assert(#args == 1, 'GenericUnOp: expects 1 param')
 	local _a = out(args[1])
@@ -109,23 +131,6 @@ local function GenericBinOp(args)
 		out = _a,
 	}
 end
-local Nop = mkMop('Nop', {})
-local Seq = mkMop('Seq', function(args)
-	local arg = {}
-	for i=1,#args-1 do
-		arg[i] = out(args[i])
-	end
-	return {
-		arg = arg,
-		out = out(args[#args]),
-	}
-end)
-local Void = mkMop('Void', function(args)
-	assert(#args == 1, 'Void expects 1 param')
-	return {
-		arg = {out(args[1])}
-	}
-end)
 local Int = mkMop('Int', {
 	arg = {'atom'},
 	out = 'i32',
@@ -149,44 +154,60 @@ local Obj = mkMop('Obj', {
 })
 local Str = mkMop('Str', {
 	arg = {'atom'},
-	out = 'obj',
+	out = 'str',
 })
-local ToString = mkMop('ToString', {
+-- Treat an object as a narrower type without checking.
+-- Only for values known by construction, Typeck is the checked way
+local As = mkMop('As', function(args)
+	assert(objtypes[args[2]], 'As: not an object type')
+	return {
+		arg = {'obj', 'atom'},
+		out = args[2],
+	}
+end)
+mkMop('ToString', {
 	alloc = true,
 	arg = {'obj'},
 	out = 'obj',
 })
-local Load = mkMop('Load', {
+mkMop('Load', {
+	stmt = true,
 	arg = {'i32', 'atom'},
 	out = 'i32',
 })
 local LoadInt = mkMop('LoadInt', {
-	arg = {'obj'},
+	arg = {'int'},
 	out = 'i64',
 })
 local LoadFlt = mkMop('LoadFlt', {
-	arg = {'obj'},
+	arg = {'float'},
 	out = 'f64',
 })
-local Store = mkMop('Store', {
+mkMop('Store', {
+	stmt = true,
 	arg = { 'i32', 'i32' },
 })
 -- Slots of the current function. Index comes first, value to store second
 -- Local/Param live on the lua stack, Free/Const in the function's vecs
-local LoadLocal = mkMop('LoadLocal', {
+mkMop('LoadLocal', {
+	stmt = true,
 	arg = {'i32'},
 	out = 'obj',
 })
-local StoreLocal = mkMop('StoreLocal', {
+mkMop('StoreLocal', {
+	stmt = true,
 	arg = {'i32', 'obj'},
 })
-local LoadParam = mkMop('LoadParam', {
+mkMop('LoadParam', {
+	stmt = true,
 	arg = {'i32'},
 	out = 'obj',
 })
-local StoreParam = mkMop('StoreParam', {
+mkMop('StoreParam', {
+	stmt = true,
 	arg = {'i32', 'obj'},
 })
+-- Frees & consts don't change while a function runs
 local LoadFree = mkMop('LoadFree', {
 	arg = {'i32'},
 	out = 'obj',
@@ -196,22 +217,14 @@ local LoadConst = mkMop('LoadConst', {
 	out = 'obj',
 })
 -- Value inside a box (a vec of length 1)
-local Unbox = mkMop('Unbox', {
+mkMop('Unbox', {
+	stmt = true,
 	arg = {'obj'},
 	out = 'obj',
 })
-local SetBox = mkMop('SetBox', {
+mkMop('SetBox', {
+	stmt = true,
 	arg = {'obj', 'obj'},
-})
-local Reg32 = mkMop('Reg32', {
-	out = 'r32',
-})
-local LoadReg = mkMop('LoadReg', {
-	arg = { 'r32' },
-	out =  'i32' 
-})
-local StoreReg = mkMop('StoreReg', {
-	arg = { 'r32', 'i32' }
 })
 -- Like GenericBinOp, but result is an i32 flag
 local function GenericCmpOp(args)
@@ -240,54 +253,49 @@ local And = mkMop('And', {
 	arg = {'i32', 'i32'},
 	out = 'i32',
 })
-local NegateInt = mkMop('NegateInt', {
+mkMop('NegateInt', {
 	alloc = true,
 	arg = {'obj'},
 	out = 'obj',
 })
-local NegateFloat = mkMop('NegateFloat', {
+mkMop('NegateFloat', {
 	alloc = true,
 	arg = {'obj'},
 	out = 'obj',
 })
-local StrConcat = mkMop('StrConcat', {
+mkMop('StrConcat', {
 	alloc = true,
-	arg = {'obj','obj'},
+	arg = {'str','str'},
 	out = 'obj',
 })
--- TODO need to work out concept of 'deferred' block in arg sig
--- ie we're mixing up idea of input vs argument
--- If either branch has no result, the If has no result & any branch result is dropped
-local If = mkMop('If', function(args)
-	local _then, _else = out(args[2]), out(args[3])
-	if _then ~= _else then
-		assert(not args[3] or _then == nil or _else == nil, "If's branches with unequal type")
-		_then, _else = nil, nil
-	end
+-- c ? a : b, on pure values. Only the chosen one is evaluated
+local Select = mkMop('Select', function(args)
+	local t = join(out(args[2]), out(args[3]))
+	assert(t, 'Select: branches with unequal type')
 	return {
-		arg = { 'i32' },
-		out = _then,
+		arg = {'i32', t, t},
+		out = t,
 	}
 end)
-local ForRange = mkMop('ForRange', {
-	arg = { 'r32', 'i32', 'i32', nil }
-})
 local Arg = mkMop('Arg', {
 	arg = { 'atom' },
 	out =  'i32' ,
 })
-local Push = mkMop('Push', {
+mkMop('Push', {
+	stmt = true,
 	arg = {'obj'},
 })
-local Pop = mkMop('Pop', {
+mkMop('Pop', {
+	stmt = true,
 	arg = {},
 	out = 'obj',
 })
-local Peek = mkMop('Peek', {
+mkMop('Peek', {
+	stmt = true,
 	arg = {},
 	out = 'obj',
 })
-local SetPc = mkMop('SetPc', {
+mkMop('SetPc', {
 	exit = true,
 	arg = {'i32'},
 })
@@ -295,7 +303,7 @@ local Truthy = mkMop('Truthy', {
 	arg = {'obj'},
 	out = 'i32',
 })
-local Box = mkMop('Box', {
+mkMop('Box', {
 	alloc = true,
 	arg = {'obj'},
 	out = 'obj',
@@ -304,30 +312,30 @@ local ObjMetalessEq = mkMop('ObjMetalessEq', {
 	arg = {'obj', 'obj'},
 	out = 'i32',
 })
-local IntObjFromInt = mkMop('IntObjFromInt', {
+mkMop('IntObjFromInt', {
 	alloc = true,
 	arg = {'i32'},
-	out = 'obj',
+	out = 'int',
 })
-local IntObjFromInt64 = mkMop('IntObjFromInt64', {
+mkMop('IntObjFromInt64', {
 	alloc = true,
 	arg = {'i64'},
-	out = 'obj',
+	out = 'int',
 })
-local FltObjFromFlt = mkMop('FltObjFromFlt', {
+mkMop('FltObjFromFlt', {
 	alloc = true,
 	arg = {'f64'},
-	out = 'obj',
+	out = 'float',
 })
 local LoadStrLen = mkMop('LoadStrLen', {
-	arg = {'obj'},
+	arg = {'str'},
 	out = 'i32',
 })
-local Error = mkMop('Error', {
-	alloc = true,
+mkMop('Error', {
+	exit = true,
 })
 -- Builtin written in wasm, reads its own 1 byte arg
-local Syscall = mkMop('Syscall', {
+mkMop('Syscall', {
 	alloc = true,
 })
 local Int64Flt = mkMop('Int64Flt', {
@@ -339,7 +347,7 @@ local Flt64Int = mkMop('Flt64Int', {
 	out = 'i64',
 })
 local Meta = mkMop('Meta', {
-	arg = {'obj'},
+	arg = {'tbl'},
 	out = 'obj',
 })
 local Type = mkMop('Type', {
@@ -354,103 +362,88 @@ local IsNumOrStr = mkMop('IsNumOrStr', {
 	arg = {'obj'},
 	out = 'i32',
 })
-local TblGet = mkMop('TblGet', {
-	arg = {'obj', 'obj'},
+mkMop('TblGet', {
+	stmt = true,
+	arg = {'tbl', 'obj'},
 	out = 'obj',
 })
-local TblSet = mkMop('TblSet', {
+mkMop('TblSet', {
 	alloc = true,
-	arg = {'obj', 'obj', 'obj'},
+	arg = {'tbl', 'obj', 'obj'},
 })
-local LoadTblLen = mkMop('LoadTblLen', {
-	arg = {'obj'},
+-- tbllen allocates a temporary int
+mkMop('LoadTblLen', {
+	alloc = true,
+	arg = {'tbl'},
 	out = 'i32',
 })
 local LoadFuncParamc = mkMop('LoadFuncParamc', {
 	arg = {'obj'},
 	out = 'i32',
 })
-local Typeck = mkMop('Typeck', function(args)
-	local a1 = args[1]
-	local alen = #args
-	assert(type(a1) == 'number' and a1>0, 'Typeck expects first param to be a positive number')
-	local arg = {'atom'}
-	for i=2,a1+1 do
-		arg[i] = 'obj'
-	end
-	local hasDefault = (alen - 1) % (a1 + 1) == 0
-	local out = out(args[#args])
-	assert(hasDefault or not out, 'Typeck without default expects no out type')
-	for i=a1+2,alen,a1+1 do
-		arg[#arg+1] = out
-		if i ~= alen then
-			for j=0,a1-1 do
-				assert(type(args[i+j]) == 'number', 'Typeck expects type ids')
-			end
-		end
-	end
-	return {
-		arg = arg,
-		out = out,
-	}
-end)
--- Mops used by op sketches below. Signatures only, vm.lua doesn't compile these yet
 -- Metatable field, nil without a metatable. Strings use the string metatable
-local MetaGet = mkMop('MetaGet', {
-	arg = {'obj', 'obj'},
+mkMop('MetaGet', {
+	stmt = true,
+	arg = {'obj', 'str'},
 	out = 'obj',
 })
 -- Metamethod for a binary op: first operand's, else second's
-local BinMeta = mkMop('BinMeta', {
-	arg = {'obj', 'obj', 'obj'},
+mkMop('BinMeta', {
+	stmt = true,
+	arg = {'obj', 'obj', 'str'},
 	out = 'obj',
 })
 -- a[b] following __index tables. If it ends at an __index function,
 -- that's the result & IdxSelf is what to call it with, otherwise IdxSelf is 0
-local IdxWalk = mkMop('IdxWalk', {
+mkMop('IdxWalk', {
+	stmt = true,
 	arg = {'obj', 'obj'},
 	out = 'obj',
 })
-local IdxSelf = mkMop('IdxSelf', {
+mkMop('IdxSelf', {
+	stmt = true,
 	out = 'obj',
 })
 -- Call a function with some args, its 1 result is pushed when it returns.
 -- First arg is the call type: 'norm', or 'bool' to make the result true/false.
--- Leaves the op, so it has to come last
-local CallMeta = mkMop('CallMeta', function(args)
+-- Leaves the op, so it has to come last. Pushes each arg as it goes
+mkMop('CallMeta', function(args)
 	local arg = { 'atom' }
 	for i=2,#args do
 		arg[i] = 'obj'
 	end
-	return { arg = arg, exit = true }
+	return { arg = arg, exit = true, argfx = true }
 end)
 -- Call op family, reads its own bytecode args. Args: call type, whether to pass varargs too
-local CallChain = mkMop('CallChain', {
+mkMop('CallChain', {
 	exit = true,
 	arg = {'atom', 'atom'},
 })
 -- Return everything after the frame's locals
-local Ret = mkMop('Ret', {
+mkMop('Ret', {
 	exit = true,
 })
 -- Push all varargs
-local VargPush = mkMop('VargPush', {})
+mkMop('VargPush', {
+	stmt = true,
+})
 -- Push the first n varargs, nil filled
-local VargPushN = mkMop('VargPushN', {
+mkMop('VargPushN', {
+	stmt = true,
 	arg = {'i32'},
 })
 -- Stack is table then n values: set them as t[1..n], leave the table
-local AppendN = mkMop('AppendN', {
+mkMop('AppendN', {
 	alloc = true,
 	arg = {'i32'},
 })
 -- Like AppendN, with varargs after the n values
-local AppendVarg = mkMop('AppendVarg', {
+mkMop('AppendVarg', {
 	alloc = true,
 	arg = {'i32'},
 })
 -- Copy of a function proto, the top n values are popped as its frees
-local MakeClosure = mkMop('MakeClosure', {
+mkMop('MakeClosure', {
 	alloc = true,
 	arg = {'obj', 'i32'},
 	out = 'obj',
@@ -462,229 +455,404 @@ local Pow = mkMop('Pow', GenericBinOp)
 local Shl = mkMop('Shl', GenericBinOp)
 local Shr = mkMop('Shr', GenericBinOp)
 local StrCmp = mkMop('StrCmp', {
-	arg = {'obj', 'obj'},
+	arg = {'str', 'str'},
 	out = 'i32',
 })
-local NewTbl = mkMop('NewTbl', {
+mkMop('NewTbl', {
 	alloc = true,
-	out = 'obj',
+	out = 'tbl',
 })
-local function IfNot(c, t, e)
-	return If(Eq(c, Int(0)), t, e)
+
+-- Type of an If or Typeck: its branches' common result type.
+-- If any branch has no result, there's no result & branch results are dropped
+local function branchtype(blocks, hasDefault)
+	local t
+	for i, blk in ipairs(blocks) do
+		local bt = out(blk.result)
+		t = i == 1 and bt or (t and bt and join(t, bt))
+		if not t then
+			break
+		end
+	end
+	if not hasDefault then
+		t = nil
+	end
+	if not t then
+		for _, blk in ipairs(blocks) do
+			blk.result = nil
+		end
+	end
+	return t
 end
--- Box an i64 or f64 into a number object
-local function NumObj(x)
-	if out(x) == 'f64' then
-		return FltObjFromFlt(x)
+local IfMop = mkMop('If', {
+	stmt = true,
+	arg = { 'i32' },
+})
+-- b:If(cond, function(b) ... end, function(b) ... end), else is optional
+function Block:If(cond, thenf, elsef)
+	local node = IfMop(cond)
+	node.thenb = self:sub(thenf)
+	node.elseb = elsef and self:sub(elsef)
+	node.blocks = { node.thenb, node.elseb }
+	node.out = branchtype(node.blocks, elsef ~= nil)
+	return self:add(node)
+end
+function Block:IfNot(cond, thenf, elsef)
+	return self:If(Eq(cond, Int(0)), thenf, elsef)
+end
+local TypeckMop = mkMop('Typeck', function(args)
+	assert(#args > 0, 'Typeck expects values to check')
+	local arg = {}
+	for i=1,#args do
+		arg[i] = 'obj'
+	end
+	return { stmt = true, arg = arg }
+end)
+-- b:Typeck({x, y}, {
+--	{types.int, types.int, function(b, x, y) ... end},
+--	...
+-- }, function(b) ... end)
+-- Runs the first case whose type ids match the values' types, else the default (optional).
+-- A case's function gets the values narrowed to its types
+function Block:Typeck(vals, cases, default)
+	local n = #vals
+	local node = TypeckMop(table.unpack(vals, 1, n))
+	node.cases = {}
+	node.blocks = {}
+	for i, case in ipairs(cases) do
+		local tys = {}
+		for j=1,n do
+			tys[j] = case[j]
+			assert(type(tys[j]) == 'number', 'Typeck expects type ids')
+		end
+		local fn = assert(case[n+1], 'Typeck case without a body')
+		local blk = newblock(self)
+		local narrowed = {}
+		for j=1,n do
+			local ty = narrowtype[tys[j]]
+			if ty then
+				narrowed[j] = As(vals[j], ty)
+				-- only valid inside this case
+				narrowed[j].block = blk
+			else
+				narrowed[j] = vals[j]
+			end
+		end
+		blk.result = fn(blk, table.unpack(narrowed, 1, n))
+		node.cases[i] = { tys = tys, block = blk }
+		node.blocks[i] = blk
+	end
+	if default then
+		node.default = self:sub(default)
+		node.blocks[#node.blocks+1] = node.default
+	end
+	node.out = branchtype(node.blocks, default ~= nil)
+	return self:add(node)
+end
+
+-- Is blk def, or nested inside it?
+local function visible(def, blk)
+	while blk do
+		if blk == def then
+			return true
+		end
+		blk = blk.parent
+	end
+	return false
+end
+-- First error in an expression used in blk, or nil
+local function checktree(node, blk)
+	if type(node) == 'function' then
+		return 'Lua function used where microcode expected'
+	end
+	if type(node) ~= 'table' then
+		return nil
+	end
+	if not node.op then
+		return 'not a microcode node'
+	end
+	if node.err then
+		return node.err
+	end
+	if node.stmt and not node.block then
+		return mops[node.op] .. ' is a statement, call it on the block'
+	end
+	if node.block and not visible(node.block, blk) then
+		return mops[node.op] .. ' value used outside the block that made it'
+	end
+	if node.stmt then
+		-- its args were checked where it was added
+		return nil
+	end
+	for i=1,#node do
+		local err = checktree(node[i], blk)
+		if err then
+			return err
+		end
+	end
+end
+local function checkblock(blk)
+	for _, s in ipairs(blk.stmts) do
+		if s.err then
+			return s.err
+		end
+		for i=1,#s do
+			local err = checktree(s[i], blk)
+			if err then
+				return err
+			end
+		end
+		for _, sub in ipairs(s.blocks or {}) do
+			local err = checkblock(sub)
+			if err then
+				return err
+			end
+		end
+	end
+	return checktree(blk.result, blk)
+end
+-- Call fn on every node in blk & its nested blocks, once each
+local function walk(blk, fn, seen)
+	seen = seen or {}
+	local function tree(node)
+		if type(node) ~= 'table' or seen[node] then
+			return
+		end
+		seen[node] = true
+		fn(node)
+		for i=1,#node do
+			tree(node[i])
+		end
+	end
+	for _, s in ipairs(blk.stmts) do
+		tree(s)
+		for _, sub in ipairs(s.blocks or {}) do
+			walk(sub, fn, seen)
+		end
+	end
+	tree(blk.result)
+end
+
+-- Define op's microcode: fn(b) adds its statements to block b
+local function op(code, fn)
+	assert(code, 'op: unknown bytecode op')
+	local blk = newblock(nil)
+	local ok, err = pcall(fn, blk)
+	if ok then
+		err = checkblock(blk)
+	end
+	if err then
+		broken[code] = tostring(err)
 	else
-		return IntObjFromInt64(x)
+		ops[code] = blk
+	end
+end
+
+-- Box an i64 or f64 into a number object
+local function NumObj(b, x)
+	if out(x) == 'f64' then
+		return b:FltObjFromFlt(x)
+	else
+		return b:IntObjFromInt64(x)
 	end
 end
 local function Nil() return Obj(NIL) end
 local function False() return Obj(FALSE) end
 local function True() return Obj(TRUE) end
-mkOp(bc.Nop, Nop())
-mkOp(bc.LoadNil, Push(Nil()))
-mkOp(bc.LoadFalse, Push(False()))
-mkOp(bc.LoadTrue, Push(True()))
-mkOp(bc.LoadParam, Push(LoadParam(Arg(0))))
-mkOp(bc.StoreParam, StoreParam(Arg(0), Pop()))
-mkOp(bc.LoadLocal, Push(LoadLocal(Arg(0))))
-mkOp(bc.StoreLocal, StoreLocal(Arg(0), Pop()))
-mkOp(bc.LoadFree, Push(LoadFree(Arg(0))))
-mkOp(bc.LoadFreeBox, Push(Unbox(LoadFree(Arg(0)))))
-mkOp(bc.StoreFreeBox, SetBox(LoadFree(Arg(0)), Pop()))
-mkOp(bc.LoadParamBox, Push(Unbox(LoadParam(Arg(0)))))
-mkOp(bc.StoreParamBox, SetBox(LoadParam(Arg(0)), Pop()))
-mkOp(bc.BoxParam, StoreParam(Arg(0), Box(LoadParam(Arg(0)))))
-mkOp(bc.BoxLocal, StoreLocal(Arg(0), Box(Nil())))
-mkOp(bc.LoadLocalBox, Push(Unbox(LoadLocal(Arg(0)))))
-mkOp(bc.StoreLocalBox, SetBox(LoadLocal(Arg(0)), Pop()))
-mkOp(bc.LoadConst, Push(LoadConst(Arg(0))))
-mkOp(bc.Pop, Pop())
-mkOp(bc.Syscall, Syscall())
-mkOp(bc.Jmp, SetPc(Arg(0)))
-mkOp(bc.Jif,
-	If(
-		Truthy(Pop()),
-		SetPc(Arg(0))
-	)
-)
-mkOp(bc.JifNot,
-	IfNot(
-		Truthy(Pop()),
-		SetPc(Arg(0))
-	)
-)
-mkOp(bc.JifOrPop,
-	If(
-		Truthy(Peek()),
-		SetPc(Arg(0)),
-		Pop()
-	)
-)
-mkOp(bc.JifNotOrPop,
-	If(
-		Truthy(Peek()),
-		Pop(),
-		SetPc(Arg(0))
-	)
-)
-mkOp(bc.LoadFunc, Push(MakeClosure(LoadConst(Arg(1)), Arg(0))))
-mkOp(bc.LoadVarg, VargPushN(Arg(0)))
-mkOp(bc.AppendVarg, AppendVarg(Arg(0)))
-mkOp(bc.Append, AppendN(Arg(0)))
-mkOp(bc.Call, CallChain('norm', false))
-mkOp(bc.CallVarg, CallChain('norm', true))
-mkOp(bc.AppendCall, CallChain('push', false))
-mkOp(bc.AppendCallVarg, CallChain('push', true))
-mkOp(bc.Return, Ret())
-mkOp(bc.ReturnVarg, Seq(VargPush(), Ret()))
+op(bc.Nop, function(b) end)
+op(bc.LoadNil, function(b) b:Push(Nil()) end)
+op(bc.LoadFalse, function(b) b:Push(False()) end)
+op(bc.LoadTrue, function(b) b:Push(True()) end)
+op(bc.LoadParam, function(b) b:Push(b:LoadParam(Arg(0))) end)
+op(bc.StoreParam, function(b) b:StoreParam(Arg(0), b:Pop()) end)
+op(bc.LoadLocal, function(b) b:Push(b:LoadLocal(Arg(0))) end)
+op(bc.StoreLocal, function(b) b:StoreLocal(Arg(0), b:Pop()) end)
+op(bc.LoadFree, function(b) b:Push(LoadFree(Arg(0))) end)
+op(bc.LoadFreeBox, function(b) b:Push(b:Unbox(LoadFree(Arg(0)))) end)
+op(bc.StoreFreeBox, function(b) b:SetBox(LoadFree(Arg(0)), b:Pop()) end)
+op(bc.LoadParamBox, function(b) b:Push(b:Unbox(b:LoadParam(Arg(0)))) end)
+op(bc.StoreParamBox, function(b)
+	local v = b:Pop()
+	b:SetBox(b:LoadParam(Arg(0)), v)
+end)
+op(bc.BoxParam, function(b) b:StoreParam(Arg(0), b:Box(b:LoadParam(Arg(0)))) end)
+op(bc.BoxLocal, function(b) b:StoreLocal(Arg(0), b:Box(Nil())) end)
+op(bc.LoadLocalBox, function(b) b:Push(b:Unbox(b:LoadLocal(Arg(0)))) end)
+op(bc.StoreLocalBox, function(b)
+	local v = b:Pop()
+	b:SetBox(b:LoadLocal(Arg(0)), v)
+end)
+op(bc.LoadConst, function(b) b:Push(LoadConst(Arg(0))) end)
+op(bc.Pop, function(b) b:Pop() end)
+op(bc.Syscall, function(b) b:Syscall() end)
+op(bc.Jmp, function(b) b:SetPc(Arg(0)) end)
+op(bc.Jif, function(b)
+	b:If(Truthy(b:Pop()), function(b) b:SetPc(Arg(0)) end)
+end)
+op(bc.JifNot, function(b)
+	b:IfNot(Truthy(b:Pop()), function(b) b:SetPc(Arg(0)) end)
+end)
+op(bc.JifOrPop, function(b)
+	b:If(Truthy(b:Peek()),
+		function(b) b:SetPc(Arg(0)) end,
+		function(b) b:Pop() end)
+end)
+op(bc.JifNotOrPop, function(b)
+	b:If(Truthy(b:Peek()),
+		function(b) b:Pop() end,
+		function(b) b:SetPc(Arg(0)) end)
+end)
+op(bc.LoadFunc, function(b) b:Push(b:MakeClosure(LoadConst(Arg(1)), Arg(0))) end)
+op(bc.LoadVarg, function(b) b:VargPushN(Arg(0)) end)
+op(bc.AppendVarg, function(b) b:AppendVarg(Arg(0)) end)
+op(bc.Append, function(b) b:AppendN(Arg(0)) end)
+op(bc.Call, function(b) b:CallChain('norm', false) end)
+op(bc.CallVarg, function(b) b:CallChain('norm', true) end)
+op(bc.AppendCall, function(b) b:CallChain('push', false) end)
+op(bc.AppendCallVarg, function(b) b:CallChain('push', true) end)
+op(bc.Return, function(b) b:Ret() end)
+op(bc.ReturnVarg, function(b)
+	b:VargPush()
+	b:Ret()
+end)
 -- No tail calls yet: bcgen emits Call keeping all results, then Return
-mkOp(bc.ReturnCall, Error())
-mkOp(bc.ReturnCallVarg, Error())
+op(bc.ReturnCall, function(b) b:Error() end)
+op(bc.ReturnCallVarg, function(b) b:Error() end)
 
 -- Call metamethod h with args if there is one, else raise an error
-local function MetaOr(h, callty, ...)
-	return If(Truthy(h), CallMeta(callty, h, ...), Error())
+local function MetaOr(b, h, callty, ...)
+	local args = table.pack(...)
+	b:If(Truthy(h),
+		function(b) b:CallMeta(callty, h, table.unpack(args, 1, args.n)) end,
+		function(b) b:Error() end)
 end
-mkOp(bc.Not, Push(If(Truthy(Pop()), False(), True())))
+op(bc.Not, function(b)
+	b:Push(Select(Truthy(b:Pop()), False(), True()))
+end)
 
-mkOp(bc.Len, (function()
-	local a = Pop()
-	local aty = Type(a)
-	return If(
-		Eq(aty, Int(types.str)),
-		Push(IntObjFromInt(LoadStrLen(a))),
-		(function()
-			local h = MetaGet(a, Str('__len'))
-			return If(Truthy(h),
-				CallMeta('norm', h, a),
-				If(
-					Eq(aty, Int(types.tbl)),
-					Push(IntObjFromInt(LoadTblLen(a))),
-					Error()
-				)
-			)
-		end)()
-	)
-end)())
+op(bc.Len, function(b)
+	local a = b:Pop()
+	b:Typeck({a}, {
+		{types.str, function(b, s) b:Push(b:IntObjFromInt(LoadStrLen(s))) end},
+	}, function(b)
+		local h = b:MetaGet(a, Str('__len'))
+		b:If(Truthy(h),
+			function(b) b:CallMeta('norm', h, a) end,
+			function(b)
+				b:Typeck({a}, {
+					{types.tbl, function(b, t) b:Push(b:IntObjFromInt(b:LoadTblLen(t))) end},
+				}, function(b) b:Error() end)
+			end)
+	end)
+end)
 
-mkOp(bc.Neg, (function()
-	local a = Pop()
-	return Typeck(1, a,
-		types.int,
-		Push(IntObjFromInt64(Negate(LoadInt(a)))),
-		types.float,
-		Push(FltObjFromFlt(Negate(LoadFlt(a)))),
-		MetaOr(MetaGet(a, Str('__unm')), 'norm', a, a)
-	)
-end)())
+op(bc.Neg, function(b)
+	local a = b:Pop()
+	b:Typeck({a}, {
+		{types.int, function(b, a) b:Push(NumObj(b, Negate(LoadInt(a)))) end},
+		{types.float, function(b, a) b:Push(NumObj(b, Negate(LoadFlt(a)))) end},
+	}, function(b)
+		MetaOr(b, b:MetaGet(a, Str('__unm')), 'norm', a, a)
+	end)
+end)
 
-mkOp(bc.TblNew, Push(NewTbl()))
+op(bc.TblNew, function(b) b:Push(b:NewTbl()) end)
 -- Table stays on the stack, constructors keep adding to it
-mkOp(bc.TblAdd, (function()
-	local v = Pop()
-	local k = Seq(v, Pop())
-	local tbl = Seq(k, Peek())
-	return TblSet(tbl, k, v)
-end)())
-mkOp(bc.TblSet, (function()
-	local k = Pop()
-	local tbl = Seq(k, Pop())
-	local v = Seq(tbl, Pop())
-	return TblSet(tbl, k, v)
-end)())
+op(bc.TblAdd, function(b)
+	local v = b:Pop()
+	local k = b:Pop()
+	-- always the table from TblNew
+	local t = As(b:Peek(), 'tbl')
+	b:TblSet(t, k, v)
+end)
+-- TODO __newindex
+op(bc.TblSet, function(b)
+	local k = b:Pop()
+	local t = b:Pop()
+	local v = b:Pop()
+	b:Typeck({t}, {
+		{types.tbl, function(b, t) b:TblSet(t, k, v) end},
+	}, function(b) b:Error() end)
+end)
 
-mkOp(bc.CmpEq, (function()
-	local b = Pop() -- top of stack is right operand
-	local a = Seq(b, Pop())
-	return If(
-		ObjMetalessEq(a, b),
-		Push(True()),
-		If(
-			And(IsTbl(a), IsTbl(b)),
-			(function()
-				local h = BinMeta(a, b, Str('__eq'))
-				return If(Truthy(h),
-					CallMeta('bool', h, a, b),
-					Push(False())
-				)
-			end)(),
-			Push(False())
-		)
-	)
-end)())
+op(bc.CmpEq, function(b)
+	local y = b:Pop() -- top of stack is right operand
+	local x = b:Pop()
+	b:If(ObjMetalessEq(x, y),
+		function(b) b:Push(True()) end,
+		function(b)
+			b:If(And(IsTbl(x), IsTbl(y)),
+				function(b)
+					local h = b:BinMeta(x, y, Str('__eq'))
+					b:If(Truthy(h),
+						function(b) b:CallMeta('bool', h, x, y) end,
+						function(b) b:Push(False()) end)
+				end,
+				function(b) b:Push(False()) end)
+		end)
+end)
 
-local function cmpop(op, cmpop, metamethod, swap)
-	mkOp(op, (function()
-		local b = Pop() -- top of stack is right operand
-		local a = Seq(b, Pop())
-		return Typeck(2, a, b,
-			types.int,
-			types.int,
-			Push(If(
-				cmpop(LoadInt(a), LoadInt(b)),
-				True(), False()
-			)),
-			types.float,
-			types.float,
-			Push(If(
-				cmpop(LoadFlt(a), LoadFlt(b)),
-				True(), False()
-			)),
-			types.str,
-			types.str,
-			Push(If(
-				cmpop(StrCmp(a, b), Int(0)),
-				True(), False()
-			)),
-			types.int,
-			types.float,
-			Push(If(
-				cmpop(Int64Flt(LoadInt(a)), LoadFlt(b)),
-				True(), False()
-			)),
-			types.float,
-			types.int,
-			Push(If(
-				cmpop(LoadFlt(a), Int64Flt(LoadInt(b))),
-				True(), False()
-			)),
-			swap
-				and MetaOr(BinMeta(b, a, Str(metamethod)), 'bool', b, a)
-				or MetaOr(BinMeta(a, b, Str(metamethod)), 'bool', a, b)
-		)
-	end)())
+local function PushBool(b, c)
+	b:Push(Select(c, True(), False()))
+end
+local function cmpop(code, cmp, metamethod, swap)
+	op(code, function(b)
+		local y = b:Pop() -- top of stack is right operand
+		local x = b:Pop()
+		b:Typeck({x, y}, {
+			{types.int, types.int, function(b, x, y)
+				PushBool(b, cmp(LoadInt(x), LoadInt(y)))
+			end},
+			{types.float, types.float, function(b, x, y)
+				PushBool(b, cmp(LoadFlt(x), LoadFlt(y)))
+			end},
+			{types.str, types.str, function(b, x, y)
+				PushBool(b, cmp(StrCmp(x, y), Int(0)))
+			end},
+			{types.int, types.float, function(b, x, y)
+				PushBool(b, cmp(Int64Flt(LoadInt(x)), LoadFlt(y)))
+			end},
+			{types.float, types.int, function(b, x, y)
+				PushBool(b, cmp(LoadFlt(x), Int64Flt(LoadInt(y))))
+			end},
+		}, function(b)
+			if swap then
+				MetaOr(b, b:BinMeta(y, x, Str(metamethod)), 'bool', y, x)
+			else
+				MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'bool', x, y)
+			end
+		end)
+	end)
 end
 cmpop(bc.CmpLe, Le, '__le')
 cmpop(bc.CmpLt, Lt, '__lt')
 cmpop(bc.CmpGe, Ge, '__le', true)
 cmpop(bc.CmpGt, Gt, '__lt', true)
 
-local function binmathop(op, floatlogic, intlogic, metamethod)
-	mkOp(op, (function()
-		local b = Pop() -- top of stack is right operand
-		local a = Seq(b, Pop())
-		return Typeck(2, a, b,
-			types.int,
-			types.int,
-			Push(NumObj(intlogic(LoadInt(a), LoadInt(b)))),
-			types.float,
-			types.float,
-			Push(NumObj(floatlogic(LoadFlt(a), LoadFlt(b)))),
-			types.int,
-			types.float,
-			Push(NumObj(floatlogic(Int64Flt(LoadInt(a)), LoadFlt(b)))),
-			types.float,
-			types.int,
-			Push(NumObj(floatlogic(LoadFlt(a), Int64Flt(LoadInt(b))))),
-			MetaOr(BinMeta(a, b, Str(metamethod)), 'norm', a, b)
-		)
-	end)())
+local function binmathop(code, floatlogic, intlogic, metamethod)
+	op(code, function(b)
+		local y = b:Pop() -- top of stack is right operand
+		local x = b:Pop()
+		b:Typeck({x, y}, {
+			{types.int, types.int, function(b, x, y)
+				b:Push(NumObj(b, intlogic(LoadInt(x), LoadInt(y))))
+			end},
+			{types.float, types.float, function(b, x, y)
+				b:Push(NumObj(b, floatlogic(LoadFlt(x), LoadFlt(y))))
+			end},
+			{types.int, types.float, function(b, x, y)
+				b:Push(NumObj(b, floatlogic(Int64Flt(LoadInt(x)), LoadFlt(y))))
+			end},
+			{types.float, types.int, function(b, x, y)
+				b:Push(NumObj(b, floatlogic(LoadFlt(x), Int64Flt(LoadInt(y)))))
+			end},
+		}, function(b)
+			MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'norm', x, y)
+		end)
+	end)
 end
-local function binmathop_mono(op, mop, metamethod)
-	return binmathop(op, mop, mop, metamethod)
+local function binmathop_mono(code, mop, metamethod)
+	return binmathop(code, mop, mop, metamethod)
 end
 binmathop_mono(bc.Add, Add, '__add')
 binmathop_mono(bc.Sub, Sub, '__sub')
@@ -703,69 +871,72 @@ binmathop(bc.Pow,
 	end,
 	'__pow')
 binmathop_mono(bc.Mod, Mod, '__mod')
-local function binbitop(op, mop, metamethod)
-	mkOp(op, (function()
-		local b = Pop() -- top of stack is right operand
-		local a = Seq(b, Pop())
+local function binbitop(code, mop, metamethod)
+	op(code, function(b)
+		local y = b:Pop() -- top of stack is right operand
+		local x = b:Pop()
 		-- TODO assert floats are integer compatible
-		return Typeck(2, a, b,
-			types.int,
-			types.int,
-			Push(NumObj(mop(LoadInt(a), LoadInt(b)))),
-			types.float,
-			types.float,
-			Push(NumObj(mop(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b))))),
-			types.int,
-			types.float,
-			Push(NumObj(mop(LoadInt(a), Flt64Int(LoadFlt(b))))),
-			types.float,
-			types.int,
-			Push(NumObj(mop(Flt64Int(LoadFlt(a)), LoadInt(b)))),
-			MetaOr(BinMeta(a, b, Str(metamethod)), 'norm', a, b)
-		)
-	end)())
+		b:Typeck({x, y}, {
+			{types.int, types.int, function(b, x, y)
+				b:Push(NumObj(b, mop(LoadInt(x), LoadInt(y))))
+			end},
+			{types.float, types.float, function(b, x, y)
+				b:Push(NumObj(b, mop(Flt64Int(LoadFlt(x)), Flt64Int(LoadFlt(y)))))
+			end},
+			{types.int, types.float, function(b, x, y)
+				b:Push(NumObj(b, mop(LoadInt(x), Flt64Int(LoadFlt(y)))))
+			end},
+			{types.float, types.int, function(b, x, y)
+				b:Push(NumObj(b, mop(Flt64Int(LoadFlt(x)), LoadInt(y))))
+			end},
+		}, function(b)
+			MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'norm', x, y)
+		end)
+	end)
 end
 binbitop(bc.BAnd, BAnd, '__band')
 binbitop(bc.BOr, BOr, '__bor')
 binbitop(bc.BXor, BXor, '__bxor')
 binbitop(bc.Shr, Shr, '__shr')
 binbitop(bc.Shl, Shl, '__shl')
-mkOp(bc.BNot, (function()
-	local a = Pop()
-	return Typeck(1, a,
-		types.int,
-		Push(NumObj(BXor(LoadInt(a), Int64(-1)))),
-		types.float,
-		Push(NumObj(BXor(Flt64Int(LoadFlt(a)), Int64(-1)))),
-		MetaOr(MetaGet(a, Str('__bnot')), 'norm', a, a)
-	)
-end)())
+op(bc.BNot, function(b)
+	local a = b:Pop()
+	b:Typeck({a}, {
+		{types.int, function(b, a)
+			b:Push(NumObj(b, BXor(LoadInt(a), Int64(-1))))
+		end},
+		{types.float, function(b, a)
+			b:Push(NumObj(b, BXor(Flt64Int(LoadFlt(a)), Int64(-1))))
+		end},
+	}, function(b)
+		MetaOr(b, b:MetaGet(a, Str('__bnot')), 'norm', a, a)
+	end)
+end)
 
-mkOp(bc.Concat, (function()
-	local b = Pop()
-	local a = Seq(b, Pop())
-	return Typeck(2, a, b,
-		types.str,
-		types.str,
-		Push(StrConcat(a, b)),
+op(bc.Concat, function(b)
+	local y = b:Pop()
+	local x = b:Pop()
+	b:Typeck({x, y}, {
+		{types.str, types.str, function(b, x, y) b:Push(b:StrConcat(x, y)) end},
 		-- TODO numbers: rt has no number to string yet
-		MetaOr(BinMeta(a, b, Str('__concat')), 'norm', a, b)
-	)
-end)())
+	}, function(b)
+		MetaOr(b, b:BinMeta(x, y, Str('__concat')), 'norm', x, y)
+	end)
+end)
 
-mkOp(bc.Idx, (function()
-	local b = Pop()
-	local a = Seq(b, Pop())
-	local v = IdxWalk(a, b)
-	local recv = IdxSelf()
-	return Seq(v, If(Truthy(recv),
-		CallMeta('norm', v, recv, b),
-		Push(v)
-	))
-end)())
+op(bc.Idx, function(b)
+	local k = b:Pop()
+	local t = b:Pop()
+	local v = b:IdxWalk(t, k)
+	local recv = b:IdxSelf()
+	b:If(Truthy(recv),
+		function(b) b:CallMeta('norm', v, recv, k) end,
+		function(b) b:Push(v) end)
+end)
 
 return {
 	mops = mops,
 	ops = ops,
 	broken = broken,
+	walk = walk,
 }

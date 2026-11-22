@@ -178,11 +178,16 @@ FFI.prototype.obj2js = function(h) {
 	return this.rawobj2js(h.val);
 }
 FFI.prototype.evalWait = function() {
-	return new Promise(resolve =>
+	return new Promise((resolve, reject) =>
 		(function core(mod) {
 			// setTimeout waits at least 1ms, so run many steps per wait
-			for (let i = 0; i < 1000; i++) {
-				if (mod.eval()) return resolve();
+			try {
+				for (let i = 0; i < 1000; i++) {
+					if (mod.eval()) return resolve();
+				}
+			} catch (e) {
+				// a wasm trap, like Error's unreachable
+				return reject(e);
 			}
 			setTimeout(core, 0, mod);
 		})(this.mod)
