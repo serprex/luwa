@@ -42,5 +42,11 @@ rt().then(async runt => {
 			});
 		}
 	} else {
+		// luwa script.lua args...: like lua, arg[0] is the script & the rest are also its ...
+		const m = runt.mod, argt = runt.newtbl();
+		process.argv.slice(2).forEach((a, i) => m.tblset(argt.val, m.newi64(BigInt(i)), runt.newstr(a).val));
+		m.tblset(env.val, runt.newstr('arg').val, argt.val);
+		const run = runt.newstr('local f = assert(loadfile(arg[0])) return f(table.unpack(arg, 1, #arg))');
+		await runt.eval(env, run);
 	}
 }).catch(e => setImmediate(() => { throw e; }));

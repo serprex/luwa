@@ -33,7 +33,6 @@ end
 local _rawget, _type = rawget, type
 local _error, _next, _select, _pcall = error, next, select, pcall
 local debug_getmetatable, debug_setmetatable = debug.getmetatable, debug.setmetatable
-local io_type = io.type
 local tointeger, math_type = math.tointeger, math.type
 local string_byte, string_char = string.byte, string.char
 local table_unpack = table.unpack
@@ -56,32 +55,165 @@ local function _assert(v, ...)
 end
 assert = _assert
 
-local function _unpack(t, i, j)
-	if i <= j then
-		return t[i], _unpack(t, i + 1, j)
+-- table.unpack is native
+table_unpack = table.unpack
+local string_sub = string.sub
+local reinterp = _luwa.reinterp
+
+-- string.pack & string.unpack. Ints of 1 to 8 bytes, doubles, strings.
+-- Alignment ('!') is read but ignored, floats ('f') aren't done
+local packsizes = {
+	[98] = 1, [66] = 1, -- b B
+	[104] = 2, [72] = 2, -- h H
+	[105] = 4, [73] = 4, -- i I
+	[108] = 8, [76] = 8, -- l L
+	[106] = 8, [74] = 8, -- j J
+	[84] = 8, -- T
+}
+-- Reads one option of fmt at i. Gives the next i, option byte & size
+local function packopt(fmt, i)
+	local c = string_byte(fmt, i)
+	i = i + 1
+	local n = 0
+	local d = string_byte(fmt, i)
+	while d and d >= 48 and d <= 57 do
+		n = n * 10 + d - 48
+		i = i + 1
+		d = string_byte(fmt, i)
+	end
+	return i, c, n
+end
+-- n bytes of x, little endian first
+local function intbytes(out, x, n, little)
+	local k = #out
+	for j = 0, n - 1 do
+		local b = j < 8 and (x >> (j * 8) & 255) or (x < 0 and 255 or 0)
+		if little then
+			out[k + 1 + j] = b
+		else
+			out[k + n - j] = b
+		end
 	end
 end
-function table.unpack(t, i, j)
-	return _unpack(t, i or 1, j or #t)
-end
-table_unpack = table.unpack
-
--- Only the '<i4' format for now, which is all luwa's compiler needs
--- TODO the other formats
 function string.pack(fmt, ...)
-	_assert(fmt == '<i4', 'string.pack: only <i4 is supported')
-	local x = ...
-	return string_char(x & 255, x >> 8 & 255, x >> 16 & 255, x >> 24 & 255)
+	-- the common case, from luwa's compiler
+	if fmt == '<i4' then
+		local x = ...
+		return string_char(x & 255, x >> 8 & 255, x >> 16 & 255, x >> 24 & 255)
+	end
+	local out, argi, little = {}, 1, true
+	local i, n = 1, #fmt
+	while i <= n do
+		local c, sz
+		i, c, sz = packopt(fmt, i)
+		if c == 60 or c == 61 then -- < =
+			little = true
+		elseif c == 62 then -- >
+			little = false
+		elseif c == 33 or c == 32 then -- ! space
+		elseif packsizes[c] then
+			local x = _select(argi, ...)
+			argi = argi + 1
+			local v = tointeger(x)
+			if not v then
+				v = tointeger(tonumber(x))
+			end
+			_assert(v, "bad argument #" .. argi .. " to 'pack' (number has no integer representation)")
+			intbytes(out, v, (c == 105 or c == 73) and sz > 0 and sz or packsizes[c], little)
+		elseif c == 100 or c == 110 then -- d n
+			local x = _select(argi, ...)
+			argi = argi + 1
+			intbytes(out, reinterp(x + 0.0), 8, little)
+		elseif c == 115 or c == 122 then -- s z
+			local s = _select(argi, ...)
+			argi = argi + 1
+			if _type(s) == 'number' then
+				s = s .. ''
+			end
+			_assert(_type(s) == 'string', "bad argument #" .. argi .. " to 'pack' (string expected)")
+			if c == 115 then
+				intbytes(out, #s, sz > 0 and sz or 8, little)
+			end
+			local k = #out
+			for j = 1, #s do
+				out[k + j] = string_byte(s, j)
+			end
+			if c == 122 then
+				out[#out + 1] = 0
+			end
+		elseif c == 120 then -- x
+			out[#out + 1] = 0
+		else
+			_error("invalid format option '" .. string_char(c) .. "'")
+		end
+	end
+	return string_char(table_unpack(out))
 end
 function string.unpack(fmt, s, pos)
-	_assert(fmt == '<i4', 'string.unpack: only <i4 is supported')
 	pos = pos or 1
-	local a, b, c, d = string_byte(s, pos, pos + 3)
-	local x = a | b << 8 | c << 16 | d << 24
-	if x >= 0x80000000 then
-		x = x - 0x100000000
+	if pos < 0 then
+		pos = #s + pos + 1
 	end
-	return x, pos + 4
+	-- the common case, from luwa's compiler
+	if fmt == '<i4' then
+		local a, b, c, d = string_byte(s, pos, pos + 3)
+		_assert(d, "data string too short")
+		local x = a | b << 8 | c << 16 | d << 24
+		if x >= 0x80000000 then
+			x = x - 0x100000000
+		end
+		return x, pos + 4
+	end
+	local res, little = {}, true
+	local i, n = 1, #fmt
+	local function getint(sz, signed)
+		_assert(pos + sz - 1 <= #s, "data string too short")
+		local x = 0
+		for j = 0, sz - 1 do
+			local b = string_byte(s, little and pos + j or pos + sz - 1 - j)
+			if j < 8 then
+				x = x | b << (j * 8)
+			end
+		end
+		pos = pos + sz
+		if signed and sz < 8 and x >= 1 << (sz * 8 - 1) then
+			x = x - (1 << (sz * 8))
+		end
+		return x
+	end
+	while i <= n do
+		local c, sz
+		i, c, sz = packopt(fmt, i)
+		if c == 60 or c == 61 then
+			little = true
+		elseif c == 62 then
+			little = false
+		elseif c == 33 or c == 32 then
+		elseif packsizes[c] then
+			res[#res + 1] = getint((c == 105 or c == 73) and sz > 0 and sz or packsizes[c], c >= 97)
+		elseif c == 100 or c == 110 then
+			res[#res + 1] = reinterp(getint(8, true))
+		elseif c == 115 then
+			local len = getint(sz > 0 and sz or 8, false)
+			_assert(pos + len - 1 <= #s, "data string too short")
+			res[#res + 1] = string_sub(s, pos, pos + len - 1)
+			pos = pos + len
+		elseif c == 122 then
+			local e = pos
+			while string_byte(s, e) ~= 0 do
+				_assert(e <= #s, "unfinished string for format 'z'")
+				e = e + 1
+			end
+			res[#res + 1] = string_sub(s, pos, e - 1)
+			pos = e + 1
+		elseif c == 120 then
+			pos = pos + 1
+		else
+			_error("invalid format option '" .. string_char(c) .. "'")
+		end
+	end
+	res[#res + 1] = pos
+	return table_unpack(res)
 end
 
 local function _getmetatable(object)
@@ -411,19 +543,841 @@ function strmt:__unm()
 	end
 end
 
+-- Position i of a string of length len, negative counts from the end
+local function posrelat(i, len)
+	if i >= 0 then
+		return i
+	elseif -i > len then
+		return 0
+	else
+		return len + i + 1
+	end
+end
+
+function string.rep(s, n, sep)
+	if n <= 0 then
+		return ''
+	elseif sep and sep ~= '' then
+		return string.rep(s .. sep, n - 1) .. s
+	end
+	-- doubling: s, ss, ssss, ...
+	local r = ''
+	while true do
+		if n & 1 == 1 then
+			r = r .. s
+		end
+		n = n >> 1
+		if n == 0 then
+			return r
+		end
+		s = s .. s
+	end
+end
+
+-- Apply fn to each byte of s, 4096 at a time so string.char doesn't get too many args
+local function mapbytes(s, fn)
+	local parts = {}
+	for i = 1, #s, 4096 do
+		local t = { string_byte(s, i, i + 4095) }
+		for j = 1, #t do
+			t[j] = fn(t[j])
+		end
+		parts[#parts + 1] = string_char(table_unpack(t))
+	end
+	return table.concat(parts)
+end
+function string.upper(s)
+	return mapbytes(s, function(c)
+		return (c >= 97 and c <= 122) and c - 32 or c
+	end)
+end
+function string.lower(s)
+	return mapbytes(s, function(c)
+		return (c >= 65 and c <= 90) and c + 32 or c
+	end)
+end
+function string.reverse(s)
+	local t = {}
+	for i = #s, 1, -1 do
+		t[#t + 1] = string_byte(s, i)
+	end
+	local parts = {}
+	for i = 1, #t, 4096 do
+		parts[#parts + 1] = string_char(table_unpack(t, i, i + 4095 < #t and i + 4095 or #t))
+	end
+	return table.concat(parts)
+end
+
+-- Lua patterns, a port of lstrlib.c's matcher. One match runs at a time:
+-- the state is these upvalues, set by setstate before each match
+local msrc, mslen, mpat, mplen, mlevel
+local capinit, caplen = {}, {}
+local CAP_UNF, CAP_POS = -1, -2
+local function setstate(s, p)
+	msrc, mslen, mpat, mplen, mlevel = s, #s, p, #p, 0
+end
+
+-- character classes, by class letter: a set of bytes
+local classes = {}
+do
+	local function set(letter, test)
+		local t = {}
+		for c = 0, 255 do
+			t[c] = test(c) or nil
+		end
+		classes[letter] = t
+	end
+	local function isalpha(c) return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) end
+	local function isdigit(c) return c >= 48 and c <= 57 end
+	local function ispunct(c) return (c >= 33 and c <= 47) or (c >= 58 and c <= 64) or (c >= 91 and c <= 96) or (c >= 123 and c <= 126) end
+	set(97, isalpha) -- a
+	set(99, function(c) return c < 32 or c == 127 end) -- c
+	set(100, isdigit) -- d
+	set(103, function(c) return c > 32 and c < 127 end) -- g
+	set(108, function(c) return c >= 97 and c <= 122 end) -- l
+	set(112, ispunct) -- p
+	set(115, function(c) return c == 32 or (c >= 9 and c <= 13) end) -- s
+	set(117, function(c) return c >= 65 and c <= 90 end) -- u
+	set(119, function(c) return isalpha(c) or isdigit(c) end) -- w
+	set(120, function(c) return isdigit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102) end) -- x
+end
+local function matchclass(c, cl)
+	local upper = cl >= 65 and cl <= 90
+	local set = classes[upper and cl + 32 or cl]
+	if not set then
+		return cl == c
+	elseif upper then
+		return not set[c]
+	else
+		return set[c] == true
+	end
+end
+
+-- index just past the single char class at p
+local function classend(p)
+	local c = string_byte(mpat, p)
+	p = p + 1
+	if c == 37 then -- %
+		if p > mplen then
+			_error("malformed pattern (ends with '%')")
+		end
+		return p + 1
+	elseif c == 91 then -- [
+		if string_byte(mpat, p) == 94 then
+			p = p + 1
+		end
+		repeat
+			if p > mplen then
+				_error("malformed pattern (missing ']')")
+			end
+			local cc = string_byte(mpat, p)
+			p = p + 1
+			if cc == 37 and p <= mplen then
+				p = p + 1
+			end
+		until string_byte(mpat, p) == 93
+		return p + 1
+	else
+		return p
+	end
+end
+-- does c match the set [...] from p (at '[') to ec (at ']')
+local function matchbracket(c, p, ec)
+	local sig = true
+	p = p + 1
+	if string_byte(mpat, p) == 94 then
+		sig = false
+		p = p + 1
+	end
+	while p < ec do
+		local pc = string_byte(mpat, p)
+		if pc == 37 then
+			p = p + 1
+			if matchclass(c, string_byte(mpat, p)) then
+				return sig
+			end
+		elseif string_byte(mpat, p + 1) == 45 and p + 2 < ec then -- a-z
+			if pc <= c and c <= string_byte(mpat, p + 2) then
+				return sig
+			end
+			p = p + 2
+		elseif pc == c then
+			return sig
+		end
+		p = p + 1
+	end
+	return not sig
+end
+local function singlematch(s, p, ep)
+	if s > mslen then
+		return false
+	end
+	local c = string_byte(msrc, s)
+	local pc = string_byte(mpat, p)
+	if pc == 46 then -- .
+		return true
+	elseif pc == 37 then
+		return matchclass(c, string_byte(mpat, p + 1))
+	elseif pc == 91 then
+		return matchbracket(c, p, ep - 1)
+	else
+		return pc == c
+	end
+end
+
+local domatch
+local function maxexpand(s, p, ep)
+	local i = 0
+	while singlematch(s + i, p, ep) do
+		i = i + 1
+	end
+	while i >= 0 do
+		local res = domatch(s + i, ep + 1)
+		if res then
+			return res
+		end
+		i = i - 1
+	end
+end
+local function minexpand(s, p, ep)
+	while true do
+		local res = domatch(s, ep + 1)
+		if res then
+			return res
+		elseif singlematch(s, p, ep) then
+			s = s + 1
+		else
+			return nil
+		end
+	end
+end
+local function startcapture(s, p, what)
+	mlevel = mlevel + 1
+	capinit[mlevel] = s
+	caplen[mlevel] = what
+	local res = domatch(s, p)
+	if not res then
+		mlevel = mlevel - 1
+	end
+	return res
+end
+local function endcapture(s, p)
+	local l
+	for k = mlevel, 1, -1 do
+		if caplen[k] == CAP_UNF then
+			l = k
+			break
+		end
+	end
+	if not l then
+		_error('invalid pattern capture')
+	end
+	caplen[l] = s - capinit[l]
+	local res = domatch(s, p)
+	if not res then
+		caplen[l] = CAP_UNF
+	end
+	return res
+end
+local function matchbalance(s, p)
+	if p + 1 > mplen then
+		_error("malformed pattern (missing arguments to '%b')")
+	end
+	local b, e = string_byte(mpat, p, p + 1)
+	if s > mslen or string_byte(msrc, s) ~= b then
+		return nil
+	end
+	local cont = 1
+	s = s + 1
+	while s <= mslen do
+		local c = string_byte(msrc, s)
+		if c == e then
+			cont = cont - 1
+			if cont == 0 then
+				return s + 1
+			end
+		elseif c == b then
+			cont = cont + 1
+		end
+		s = s + 1
+	end
+end
+local function matchcapture(s, l)
+	l = l - 48
+	if l < 1 or l > mlevel or caplen[l] == CAP_UNF then
+		_error('invalid capture index %' .. l)
+	end
+	local len = caplen[l]
+	if mslen - s + 1 >= len and
+		string_sub(msrc, capinit[l], capinit[l] + len - 1) == string_sub(msrc, s, s + len - 1) then
+		return s + len
+	end
+end
+-- Match from s with pattern at p. Gives the index past the match, or nil
+function domatch(s, p)
+	while true do
+		if p > mplen then
+			return s
+		end
+		local pc = string_byte(mpat, p)
+		local nc = string_byte(mpat, p + 1)
+		if pc == 40 then -- (
+			if nc == 41 then
+				return startcapture(s, p + 2, CAP_POS)
+			else
+				return startcapture(s, p + 1, CAP_UNF)
+			end
+		elseif pc == 41 then -- )
+			return endcapture(s, p + 1)
+		elseif pc == 36 and p == mplen then -- $ at the end
+			return s == mslen + 1 and s or nil
+		elseif pc == 37 and nc == 98 then -- %b
+			s = matchbalance(s, p + 2)
+			if not s then
+				return nil
+			end
+			p = p + 4
+		elseif pc == 37 and nc == 102 then -- %f
+			p = p + 2
+			if string_byte(mpat, p) ~= 91 then
+				_error("missing '[' after '%f' in pattern")
+			end
+			local ep = classend(p)
+			local prev = s == 1 and 0 or string_byte(msrc, s - 1)
+			local cur = s <= mslen and string_byte(msrc, s) or 0
+			if not matchbracket(prev, p, ep - 1) and matchbracket(cur, p, ep - 1) then
+				p = ep
+			else
+				return nil
+			end
+		elseif pc == 37 and nc and nc >= 48 and nc <= 57 then -- %0-9
+			s = matchcapture(s, nc)
+			if not s then
+				return nil
+			end
+			p = p + 2
+		else
+			local ep = classend(p)
+			local epc = string_byte(mpat, ep)
+			if not singlematch(s, p, ep) then
+				if epc == 42 or epc == 63 or epc == 45 then -- * ? -
+					p = ep + 1
+				else
+					return nil
+				end
+			elseif epc == 63 then -- ?
+				local res = domatch(s + 1, ep + 1)
+				if res then
+					return res
+				end
+				p = ep + 1
+			elseif epc == 43 then -- +
+				return maxexpand(s + 1, p, ep)
+			elseif epc == 42 then -- *
+				return maxexpand(s, p, ep)
+			elseif epc == 45 then -- -
+				return minexpand(s, p, ep)
+			else
+				s = s + 1
+				p = ep
+			end
+		end
+	end
+end
+
+-- capture i of the match s..e-1
+local function getcapture(i, s, e)
+	if i > mlevel then
+		if i == 1 then
+			return string_sub(msrc, s, e - 1)
+		end
+		_error('invalid capture index %' .. i)
+	end
+	local l = caplen[i]
+	if l == CAP_UNF then
+		_error('unfinished capture')
+	elseif l == CAP_POS then
+		return capinit[i]
+	end
+	return string_sub(msrc, capinit[i], capinit[i] + l - 1)
+end
+-- all the captures, or the whole match when there are none
+local function getcaptures(s, e, whole)
+	local n = (mlevel == 0 and whole) and 1 or mlevel
+	local t = {}
+	for i = 1, n do
+		t[i] = getcapture(i, s, e)
+	end
+	return table_unpack(t, 1, n)
+end
+
+-- any of ^$*+?.([%- in p
+local function hasspecials(p)
+	for i = 1, #p do
+		local c = string_byte(p, i)
+		if c == 94 or c == 36 or c == 42 or c == 43 or c == 63 or c == 46 or
+			c == 40 or c == 91 or c == 37 or c == 45 then
+			return true
+		end
+	end
+	return false
+end
+local function strfind(s, p, init, plain, find)
+	_assert(_type(s) == 'string' or _type(s) == 'number', "bad argument #1 (string expected)")
+	_assert(_type(p) == 'string' or _type(p) == 'number', "bad argument #2 (string expected)")
+	s = s .. ''
+	p = p .. ''
+	local slen = #s
+	init = posrelat(init or 1, slen)
+	if init < 1 then
+		init = 1
+	elseif init > slen + 1 then
+		return nil
+	end
+	if find and (plain or not hasspecials(p)) then
+		local plen = #p
+		for i = init, slen - plen + 1 do
+			if string_sub(s, i, i + plen - 1) == p then
+				return i, i + plen - 1
+			end
+		end
+		return nil
+	end
+	setstate(s, p)
+	local pstart = 1
+	local anchor = string_byte(p, 1) == 94
+	if anchor then
+		pstart = 2
+	end
+	local s1 = init
+	repeat
+		mlevel = 0
+		local e = domatch(s1, pstart)
+		if e then
+			if find then
+				return s1, e - 1, getcaptures(s1, e, false)
+			else
+				return getcaptures(s1, e, true)
+			end
+		end
+		s1 = s1 + 1
+	until anchor or s1 > slen + 1
+	return nil
+end
+function string.find(s, p, init, plain)
+	return strfind(s, p, init, plain, true)
+end
+function string.match(s, p, init)
+	return strfind(s, p, init, false, false)
+end
+function string.gmatch(s, p, init)
+	s = s .. ''
+	p = p .. ''
+	local pos = posrelat(init or 1, #s)
+	if pos < 1 then
+		pos = 1
+	end
+	local lastmatch
+	return function()
+		setstate(s, p)
+		for s1 = pos, #s + 1 do
+			mlevel = 0
+			local e = domatch(s1, 1)
+			if e and e ~= lastmatch then
+				pos = e
+				lastmatch = e
+				return getcaptures(s1, e, true)
+			end
+		end
+	end
+end
+function string.gsub(s, p, repl, maxn)
+	s = s .. ''
+	p = p .. ''
+	local rty = _type(repl)
+	if rty == 'number' then
+		repl = repl .. ''
+		rty = 'string'
+	end
+	_assert(rty == 'string' or rty == 'table' or rty == 'function',
+		"bad argument #3 to 'gsub' (string/function/table expected, got " .. rty .. ")")
+	maxn = maxn or #s + 1
+	local slen = #s
+	local pstart = 1
+	local anchor = string_byte(p, 1) == 94
+	if anchor then
+		pstart = 2
+	end
+	local out = {}
+	local s1, copyfrom, n, lastmatch = 1, 1, 0, nil
+	setstate(s, p)
+	while n < maxn do
+		mlevel = 0
+		local e = domatch(s1, pstart)
+		if e and e ~= lastmatch then
+			n = n + 1
+			out[#out + 1] = string_sub(s, copyfrom, s1 - 1)
+			local whole = string_sub(s, s1, e - 1)
+			local v
+			if rty == 'string' then
+				-- %0-9 & %% in repl
+				local parts, i, rl = {}, 1, #repl
+				while i <= rl do
+					local c = string_byte(repl, i)
+					if c == 37 then
+						i = i + 1
+						local d = string_byte(repl, i)
+						if d == 37 then
+							parts[#parts + 1] = '%'
+						elseif d and d >= 48 and d <= 57 then
+							if d == 48 then
+								parts[#parts + 1] = whole
+							else
+								local cap = getcapture(d - 48, s1, e)
+								parts[#parts + 1] = _type(cap) == 'number' and cap .. '' or cap
+							end
+						else
+							_error("invalid use of '%' in replacement string")
+						end
+					else
+						-- copy up to the next %
+						local j = i
+						while j < rl and string_byte(repl, j + 1) ~= 37 do
+							j = j + 1
+						end
+						parts[#parts + 1] = string_sub(repl, i, j)
+						i = j
+					end
+					i = i + 1
+				end
+				v = table.concat(parts)
+			elseif rty == 'table' then
+				v = repl[getcapture(1, s1, e)]
+			else
+				v = repl(getcaptures(s1, e, true))
+			end
+			-- repl may have run other matches
+			setstate(s, p)
+			if not v then
+				v = whole
+			elseif _type(v) == 'number' then
+				v = v .. ''
+			elseif _type(v) ~= 'string' then
+				_error('invalid replacement value (a ' .. _type(v) .. ')')
+			end
+			out[#out + 1] = v
+			s1 = e
+			copyfrom = e
+			lastmatch = e
+		elseif s1 <= slen then
+			s1 = s1 + 1
+		else
+			break
+		end
+		if anchor then
+			break
+		end
+	end
+	out[#out + 1] = string_sub(s, copyfrom)
+	return table.concat(out), n
+end
+
+-- %q of a string: escapes ", \, newline & control chars, like lstrlib.c
+local function quotestr(s)
+	local out = { '"' }
+	local i, n = 1, #s
+	while i <= n do
+		-- copy plain bytes in runs
+		local j = i
+		while j <= n do
+			local c = string_byte(s, j)
+			if c == 34 or c == 92 or c < 32 or c == 127 then
+				break
+			end
+			j = j + 1
+		end
+		if j > i then
+			out[#out + 1] = string_sub(s, i, j - 1)
+		end
+		if j > n then
+			break
+		end
+		local c = string_byte(s, j)
+		if c == 34 or c == 92 or c == 10 then
+			out[#out + 1] = '\\' .. string_char(c)
+		else
+			local nx = string_byte(s, j + 1)
+			if nx and nx >= 48 and nx <= 57 then
+				local d = c .. ''
+				out[#out + 1] = '\\' .. string.rep('0', 3 - #d) .. d
+			else
+				out[#out + 1] = '\\' .. c
+			end
+		end
+		i = j + 1
+	end
+	out[#out + 1] = '"'
+	return table.concat(out)
+end
+
+local host = _luwa.host
+function string.format(fmt, ...)
+	fmt = fmt .. ''
+	local out = {}
+	local argi = 0
+	local i, n = 1, #fmt
+	while i <= n do
+		local j = i
+		while j <= n and string_byte(fmt, j) ~= 37 do
+			j = j + 1
+		end
+		if j > i then
+			out[#out + 1] = string_sub(fmt, i, j - 1)
+		end
+		if j > n then
+			break
+		end
+		-- a spec: %[flags][width][.precision]conv
+		local k = j + 1
+		if string_byte(fmt, k) == 37 then
+			out[#out + 1] = '%'
+			i = k + 1
+		else
+			while k <= n do
+				local c = string_byte(fmt, k)
+				if c == 45 or c == 43 or c == 32 or c == 35 or c == 48 then
+					k = k + 1
+				else
+					break
+				end
+			end
+			while k <= n and string_byte(fmt, k) >= 48 and string_byte(fmt, k) <= 57 do
+				k = k + 1
+			end
+			local hasprec = string_byte(fmt, k) == 46
+			if hasprec then
+				k = k + 1
+				while k <= n and string_byte(fmt, k) >= 48 and string_byte(fmt, k) <= 57 do
+					k = k + 1
+				end
+			end
+			local conv = string_byte(fmt, k)
+			_assert(conv, "invalid conversion '" .. string_sub(fmt, j) .. "' to 'format'")
+			local spec = string_sub(fmt, j, k)
+			argi = argi + 1
+			_assert(argi <= _select('#', ...), "bad argument #" .. (argi + 1) .. " to 'format' (no value)")
+			local arg = _select(argi, ...)
+			if conv == 100 or conv == 105 or conv == 120 or conv == 88 or conv == 111 or conv == 99 or conv == 117 then
+				local v = tointeger(arg)
+				if v == nil and _type(arg) == 'string' then
+					v = tointeger(tonumber(arg))
+				end
+				if v == nil then
+					_error("bad argument #" .. (argi + 1) .. " to 'format' (" ..
+						(_type(arg) == 'number' and 'number has no integer representation' or 'number expected, got ' .. _type(arg)) .. ")")
+				end
+				out[#out + 1] = host('fmt', spec, v)
+			elseif conv == 97 or conv == 65 or conv == 101 or conv == 69 or conv == 102 or conv == 70 or conv == 103 or conv == 71 then
+				local v = tonumber(arg)
+				_assert(v, "bad argument #" .. (argi + 1) .. " to 'format' (number expected, got " .. _type(arg) .. ")")
+				out[#out + 1] = host('fmt', spec, v + 0.0)
+			elseif conv == 115 then -- s
+				local v = _tostring(arg)
+				if #spec == 2 then
+					out[#out + 1] = v
+				else
+					-- precision cuts, width pads
+					local flags = string.match(spec, '^%%([-+ #0]*)')
+					local w = tonumber(string.match(spec, '^%%[-+ #0]*(%d*)')) or 0
+					local p = tonumber(string.match(spec, '%.(%d*)'))
+					if hasprec then
+						v = string_sub(v, 1, p or 0)
+					end
+					if #v < w then
+						if string.find(flags, '-', 1, true) then
+							v = v .. string.rep(' ', w - #v)
+						else
+							v = string.rep(' ', w - #v) .. v
+						end
+					end
+					out[#out + 1] = v
+				end
+			elseif conv == 113 then -- q
+				local ty = math_type(arg)
+				if _type(arg) == 'string' then
+					out[#out + 1] = quotestr(arg)
+				elseif ty == 'integer' then
+					out[#out + 1] = arg == math.mininteger and '0x8000000000000000' or arg .. ''
+				elseif ty == 'float' then
+					if arg ~= arg then
+						out[#out + 1] = '(0/0)'
+					elseif arg == 1/0 then
+						out[#out + 1] = '1e9999'
+					elseif arg == -1/0 then
+						out[#out + 1] = '-1e9999'
+					elseif arg == math_floor(arg) and arg >= -0x1p63 and arg < 0x1p63 then
+						out[#out + 1] = host('fmt', '%a', arg)
+					else
+						out[#out + 1] = host('fmt', '%a', arg)
+					end
+				elseif arg == nil or arg == true or arg == false then
+					out[#out + 1] = _tostring(arg)
+				else
+					_error("bad argument #" .. (argi + 1) .. " to 'format' (value has no literal form)")
+				end
+			elseif conv == 112 then -- p
+				local ty = _type(arg)
+				if ty == 'table' or ty == 'function' or ty == 'thread' then
+					out[#out + 1] = hexid(arg)
+				else
+					out[#out + 1] = '(null)'
+				end
+			else
+				_error("invalid conversion '" .. spec .. "' to 'format'")
+			end
+			i = k + 1
+		end
+	end
+	return table.concat(out)
+end
+
+-- utf8, strict: no surrogates or values past 10FFFF
+local function utf8dec(s, i)
+	local c = string_byte(s, i)
+	if c < 0x80 then
+		return c, i + 1
+	end
+	local n, cp, min
+	if c >= 0xf0 and c < 0xf8 then
+		n, cp, min = 3, c & 7, 0x10000
+	elseif c >= 0xe0 then
+		n, cp, min = 2, c & 15, 0x800
+	elseif c >= 0xc0 then
+		n, cp, min = 1, c & 31, 0x80
+	else
+		return nil
+	end
+	if c >= 0xf8 then
+		return nil
+	end
+	for k = 1, n do
+		local cc = string_byte(s, i + k)
+		if not cc or cc & 0xc0 ~= 0x80 then
+			return nil
+		end
+		cp = cp << 6 | (cc & 0x3f)
+	end
+	if cp < min or cp > 0x10ffff or (cp >= 0xd800 and cp <= 0xdfff) then
+		return nil
+	end
+	return cp, i + n + 1
+end
+function utf8.len(s, i, j)
+	local len = #s
+	i = posrelat(i or 1, len)
+	j = posrelat(j or -1, len)
+	local n = 0
+	while i <= j do
+		local cp, ni = utf8dec(s, i)
+		if not cp then
+			return nil, i
+		end
+		i = ni
+		n = n + 1
+	end
+	return n
+end
+function utf8.char(...)
+	local out = {}
+	for k = 1, _select('#', ...) do
+		local c = _select(k, ...)
+		if c < 0x80 then
+			out[k] = string_char(c)
+		elseif c < 0x800 then
+			out[k] = string_char(0xc0 | c >> 6, 0x80 | c & 0x3f)
+		elseif c < 0x10000 then
+			out[k] = string_char(0xe0 | c >> 12, 0x80 | c >> 6 & 0x3f, 0x80 | c & 0x3f)
+		else
+			out[k] = string_char(0xf0 | c >> 18, 0x80 | c >> 12 & 0x3f, 0x80 | c >> 6 & 0x3f, 0x80 | c & 0x3f)
+		end
+	end
+	return table.concat(out)
+end
+function utf8.codepoint(s, i, j)
+	local len = #s
+	i = posrelat(i or 1, len)
+	j = posrelat(j or i, len)
+	local out = {}
+	while i <= j do
+		local cp, ni = utf8dec(s, i)
+		if not cp then
+			_error('invalid UTF-8 code')
+		end
+		out[#out + 1] = cp
+		i = ni
+	end
+	return table_unpack(out)
+end
+function utf8.codes(s)
+	return function(s, i)
+		if i > 0 then
+			local _, ni = utf8dec(s, i)
+			i = ni
+		else
+			i = 1
+		end
+		if i > #s then
+			return nil
+		end
+		local cp = utf8dec(s, i)
+		if not cp then
+			_error('invalid UTF-8 code')
+		end
+		return i, cp
+	end, s, 0
+end
+
+-- concat halves, so long lists don't copy the same bytes over & over
+local function concatrange(t, sep, i, j)
+	if i == j then
+		local v = t[i]
+		local ty = _type(v)
+		if ty == 'number' then
+			return v .. ''
+		elseif ty ~= 'string' then
+			_error("invalid value (at index " .. i .. ") in table for 'concat'")
+		end
+		return v
+	end
+	local m = (i + j) // 2
+	return concatrange(t, sep, i, m) .. sep .. concatrange(t, sep, m + 1, j)
+end
+function table.concat(t, sep, i, j)
+	i = i or 1
+	j = j or #t
+	if i > j then
+		return ''
+	end
+	return concatrange(t, sep or '', i, j)
+end
+
 utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
 
 function table.pack(...)
 	return { n = _select('#', ...), ... }
 end
-function table.insert(list, pos, value)
-	if not value then
-		list[#list+1] = pos
-	else
+function table.insert(list, ...)
+	local n = _select('#', ...)
+	if n == 1 then
+		list[#list+1] = ...
+	elseif n == 2 then
+		local pos, value = ...
 		for i = #list,pos,-1 do
 			list[i+1] = list[i]
 		end
 		list[pos] = value
+	else
+		_error("wrong number of arguments to 'insert'")
 	end
 end
 function table.remove(list, pos)
@@ -440,19 +1394,19 @@ function table.remove(list, pos)
 	return ret
 end
 function table.move(a1, f, e, t, a2)
-	if not a2 then
-		a2 = a1
-	end
-	local len1 = e - f - 1
-	if t < f then
-		for i=0,len do
-			a[t+i] = a[f+i]
+	a2 = a2 or a1
+	if e >= f then
+		if t > e or t <= f or a1 ~= a2 then
+			for i = 0, e - f do
+				a2[t + i] = a1[f + i]
+			end
+		else
+			for i = e - f, 0, -1 do
+				a2[t + i] = a1[f + i]
+			end
 		end
-	elseif t > f then
-		for i=len,0,-1 do
-			a[t+i] = a[f+i]
-		end
 	end
+	return a2
 end
 
 -- TODO use a better sort; this fails on a big list of 0s
@@ -506,119 +1460,209 @@ function table.sort(list, comp)
 	end
 end
 
+-- Files are tables with iometa as metatable, the host's file number at key FD.
+-- TODO a userdata type, type(io.stdout) is 'table' for now
 local iometa = {}
+local FD = {}
+local function mkfile(fd, popen)
+	return debug_setmetatable({ [FD] = fd, popen = popen }, iometa)
+end
+local function io_type(f)
+	if debug_getmetatable(f) == iometa then
+		return f[FD] and 'file' or 'closed file'
+	end
+end
+io.type = io_type
+local function checkfile(f, fname)
+	local fd = debug_getmetatable(f) == iometa and f[FD]
+	if not fd then
+		_error("bad argument #1 to '" .. fname .. "' (" ..
+			(debug_getmetatable(f) == iometa and 'attempt to use a closed file' or 'FILE* expected') .. ")")
+	end
+	return fd
+end
 local function io_open(filename, mode)
-	_assert(_type(filename) == 'string', 'Unexpected argument #1 to io.open')
-	if mode == nil then
-		mode = 'r'
+	_assert(_type(filename) == 'string', "bad argument #1 to 'open' (string expected)")
+	mode = mode or 'r'
+	local fd = host('open', filename, mode)
+	if math_type(fd) == 'integer' then
+		return mkfile(fd)
 	end
-	filename, mode = _luwa.ioopen(filename, mode)
-	if filename then
-		return debug_setmetatable(filename, iometa)
-	end
-	return nil, mode
+	return nil, fd, 2
 end
 io.open = io_open
-local io_in = _luwa.stdin()
-local stdin = io_in
-local io_out = _luwa.stdout()
-local stdout = io_out
-local function io_input(file)
-	if file == nil then
-		return io_in
-	elseif _type(file) == 'string' then
-		io_in = io_open(file)
-		return io_in
-	else
-		_assert(io_type(file), "bad argument #1 to 'io.input'")
-		io_out = file
-		return file
+function io.popen(cmd, mode)
+	_assert(mode == nil or mode == 'r', "io.popen: only mode 'r' is supported")
+	local fd = host('popen', cmd)
+	if math_type(fd) == 'integer' then
+		return mkfile(fd, true)
 	end
+	return nil, fd
 end
-io.input = io_input
-local function io_output(file)
-	if file == nil then
-		return io_out
-	elseif _type(file) == 'string' then
-		io_out = io_open(file, 'w')
-		return io_in
-	else
-		_assert(io_type(file), "bad argument #1 to 'io.output'")
-		io_out = file
-		return file
+local stdin, stdout, stderr = mkfile(0), mkfile(1), mkfile(2)
+io.stdin, io.stdout, io.stderr = stdin, stdout, stderr
+local io_in, io_out = stdin, stdout
+
+local function readfmts(fd, ...)
+	local n = _select('#', ...)
+	if n == 0 then
+		return host('read', fd, 'l')
 	end
-end
-io.output = io_output
-local function io_read(...)
-	return _luwa.ioread(io_in, ...)
-end
-io.read = io_read
-local function io_write(...)
-	return _luwa.iowrite(io_out, ...)
-end
-io.write = io_write
-local function io_flush(file)
-	return _luwa.ioflush(io_out)
-end
-io.flush = io_flush
-local function io_lines(file)
-	if file == nil then
-		file = io_in
-	elseif _type(file) == 'string' then
-		file = io_open(file)
-	else
-		_assert(io_type(file), "bad argument #1 to 'io.lines'")
+	local res = {}
+	for i = 1, n do
+		local fmt = _select(i, ...)
+		if _type(fmt) == 'string' then
+			if string_byte(fmt, 1) == 42 then -- old style '*a'
+				fmt = string_sub(fmt, 2)
+			end
+			fmt = string_sub(fmt, 1, 1)
+			_assert(fmt == 'a' or fmt == 'l' or fmt == 'L', "bad argument #" .. i .. " to 'read' (invalid format)")
+		else
+			fmt = tointeger(fmt)
+			_assert(fmt, "bad argument #" .. i .. " to 'read' (invalid format)")
+		end
+		local v = host('read', fd, fmt)
+		res[i] = v
+		if v == nil then
+			return table_unpack(res, 1, i)
+		end
 	end
+	return table_unpack(res, 1, n)
+end
+local function writeargs(f, fd, ...)
+	for i = 1, _select('#', ...) do
+		local s = _select(i, ...)
+		if _type(s) == 'number' then
+			s = s .. ''
+		end
+		_assert(_type(s) == 'string', "bad argument #" .. i .. " to 'write' (string expected, got " .. _type(s) .. ")")
+		host('write', fd, s)
+	end
+	return f
+end
+local function fileclose(f)
+	local fd = checkfile(f, 'close')
+	host('close', fd)
+	f[FD] = nil
+	if f.popen then
+		return true, 'exit', 0
+	end
+	return true
+end
+local function filelines(f, fd, close, ...)
+	local n = _select('#', ...)
+	local fmts = { ... }
 	return function()
-		return _luwa.ioread(file)
+		local fd = checkfile(f, 'lines')
+		local v
+		if n == 0 then
+			v = host('read', fd, 'l')
+		else
+			v = readfmts(fd, table_unpack(fmts, 1, n))
+		end
+		if v == nil and close then
+			fileclose(f)
+		end
+		return v
 	end
 end
-io.lines = io_lines
-local function io_close(file)
-	if file == nil then
-		return _luwa.ioclose(io_out)
-	else
-		_assert(io_type(file), "bad argument #1 to 'io.close'")
-		return _luwa.ioclose(file)
-	end
-end
-io.close = io_close
 
 iometa.__index = iometa
 iometa.__name = 'FILE*'
-iometa.__gc = _luwa.iogc
-iometa.lines = io_lines
-iometa.flush = io_flush
-iometa.read = io_read
-iometa.write = io_write
-iometa.close = io_close
-iometa.setvbuf = _luwa.iosetvbuf
-
-function iometa:__tostring()
-	_assert(io_type(self), "bad argument #1 to '__tostring'")
-	return 'file (' .. hexid(self) .. ')'
+function iometa:read(...)
+	return readfmts(checkfile(self, 'read'), ...)
 end
-function iometa:seek(whence, offset)
-	_assert(io_type(self), "bad argument #1 to 'seek'")
-	if not _luwa.ioseekable(self) then
-		return nil, 'Invalid seek'
+function iometa:write(...)
+	return writeargs(self, checkfile(self, 'write'), ...)
+end
+function iometa:lines(...)
+	return filelines(self, checkfile(self, 'lines'), false, ...)
+end
+iometa.close = fileclose
+function iometa:flush()
+	checkfile(self, 'flush')
+	return self
+end
+function iometa:setvbuf()
+	checkfile(self, 'setvbuf')
+	return true
+end
+function iometa:seek()
+	checkfile(self, 'seek')
+	return nil, 'seek is not supported'
+end
+function iometa:__tostring()
+	if self[FD] then
+		return 'file (' .. hexid(self) .. ')'
 	end
-	if offset == nil then
-		offset = 0
+	return 'file (closed)'
+end
+
+function io.input(file)
+	if _type(file) == 'string' then
+		io_in = _assert(io_open(file))
+	elseif file ~= nil then
+		checkfile(file, 'input')
+		io_in = file
 	end
-	if whence == 'cur' then
-		offset = offset + _luwa.iopos(self)
-	elseif whence == 'end' then
-		offset = offset + _luwa.iolen(self)
-	elseif whence ~= 'set' then
-		_error('Unexpected argument #1 to file:seek')
+	return io_in
+end
+function io.output(file)
+	if _type(file) == 'string' then
+		io_out = _assert(io_open(file, 'w'))
+	elseif file ~= nil then
+		checkfile(file, 'output')
+		io_out = file
 	end
-	offset = tointeger(offset)
-	if offset < 0 then
-		return nil, 'Invalid argument'
+	return io_out
+end
+function io.read(...)
+	return readfmts(checkfile(io_in, 'read'), ...)
+end
+function io.write(...)
+	return writeargs(io_out, checkfile(io_out, 'write'), ...)
+end
+function io.flush()
+	return io_out
+end
+function io.lines(fname, ...)
+	if fname == nil then
+		return filelines(io_in, checkfile(io_in, 'lines'), false, ...)
 	end
-	_luwa.ioseek(self, offset)
-	return offset
+	local f, err = io_open(fname)
+	if not f then
+		_error(err)
+	end
+	return filelines(f, f[FD], true, ...)
+end
+function io.close(file)
+	return fileclose(file or io_out)
+end
+
+function os.getenv(name)
+	return host('getenv', name)
+end
+function os.clock()
+	return host('clock')
+end
+function os.time(t)
+	_assert(t == nil, 'os.time: a table argument is not supported')
+	return host('time')
+end
+function os.exit(code)
+	if code == nil or code == true then
+		code = 0
+	elseif code == false then
+		code = 1
+	end
+	host('exit', code)
+end
+function os.remove(name)
+	local r = host('remove', name)
+	if r == true then
+		return true
+	end
+	return nil, r
 end
 
 function os.difftime(t2, t1)
@@ -651,13 +1695,12 @@ function coroutine.isyieldable()
 end
 
 function print(...)
-	for i = 1, _select('#', ...) do
-		if i > 1 then
-			_luwa.iowrite(stdout, '\t')
-		end
-		_luwa.iowrite(stdout, _tostring((_select(i, ...))))
+	local n = _select('#', ...)
+	local t = {}
+	for i = 1, n do
+		t[i] = _tostring((_select(i, ...)))
 	end
-	_luwa.iowrite(stdout, '\n')
+	host('write', 1, table.concat(t, '\t', 1, n) .. '\n')
 end
 
 function pairs(t)
@@ -785,6 +1828,18 @@ end
 
 local function _load(src, name, mode, env)
 	-- TODO function names
+	if _type(src) == 'function' then
+		-- a function giving pieces until nil or ''
+		local parts = {}
+		while true do
+			local piece = src()
+			if piece == nil or piece == '' then
+				break
+			end
+			parts[#parts + 1] = piece
+		end
+		src = table.concat(parts)
+	end
 	local lx, vals = _luwa.lexgen(src)
 	if not lx then
 		return nil, vals
@@ -809,63 +1864,100 @@ end
 loadstring = _load
 load = _load
 local function _loadfile(fname, mode, env)
-	local file
-	if not fname then
+	local file, err
+	if fname == nil then
 		file = io_in
-	elseif _type(fname) == 'string' then
-		file = _assert(_luwa.ioopen(fname, 'r'))
 	else
-		return _error('bad argument #1 to loadfile')
+		file, err = io_open(fname)
+		if not file then
+			return nil, 'cannot open ' .. err
+		end
 	end
-	local src = _luwa.ioread(file, 'a')
-	_luwa.ioclose(file)
+	local src = file:read('a')
+	if fname ~= nil then
+		file:close()
+	end
 	-- skip a first line starting with #, like a #! line. As a comment, so line numbers stay the same
 	if string_byte(src, 1) == 35 then
 		src = '--' .. src
 	end
-	return _load(src, fname or 'stdin', mode, env)
+	return _load(src, fname and '@' .. fname or '=stdin', mode, env)
+end
+loadfile = _loadfile
+function dofile(fname)
+	local f = _assert(_loadfile(fname))
+	return f()
 end
 
-local loaded = {}
+package.path = os.getenv('LUA_PATH') or './?.lua;./?/init.lua'
+package.cpath = ''
+local loaded = package.loaded
 local preload = {}
+package.preload = preload
+-- First file name from path's templates that can be opened, with . in name as /
+function package.searchpath(name, path, sep, rep)
+	sep = sep or '.'
+	rep = rep or '/'
+	if sep ~= '' then
+		name = string.gsub(name, string.gsub(sep, '%p', '%%%0'), (string.gsub(rep, '%%', '%%%%')))
+	end
+	local tried = {}
+	for tmpl in string.gmatch(path, '[^;]+') do
+		local fname = string.gsub(tmpl, '%?', (string.gsub(name, '%%', '%%%%')))
+		local f = io_open(fname)
+		if f then
+			f:close()
+			return fname
+		end
+		tried[#tried + 1] = "\n\tno file '" .. fname .. "'"
+	end
+	return nil, table.concat(tried)
+end
 local searchers = {
 	function(name)
 		local pre = preload[name]
 		if pre then
-			return pre
+			return pre, ':preload:'
 		end
+		return "\n\tno field package.preload['" .. name .. "']"
 	end,
 	function(name)
-		local fname, err = package.searchpath(name)
+		local fname, err = package.searchpath(name, package.path)
 		if fname then
-			return _loadfile(fname)
+			local f, err = _loadfile(fname)
+			if not f then
+				_error("error loading module '" .. name .. "' from file '" .. fname .. "':\n\t" .. err)
+			end
+			return f, fname
 		else
-			return nil, err
+			return err
 		end
 	end
 }
-package.preload = preload
 package.searchers = searchers
 local function _require(modname)
-	modname = _tostring(modname)
-	_assert(_type(modname) == 'string', 'bad argument #1 to require')
+	_assert(_type(modname) == 'string' or _type(modname) == 'number', "bad argument #1 to 'require' (string expected)")
+	modname = modname .. ''
 	local lded = loaded[modname]
-	if lded then
+	if lded ~= nil then
 		return lded
-	else
-		for i=1,#searchers do
-			local f, p = searchers[i](modname)
-			if f then
-				local ret = f(p)
-				if ret == nil then
-					ret = true
-				end
-				loaded[modname] = ret
-				return ret
-			end
-		end
-		return _error('module \'' .. modname .. '\' not found')
 	end
+	local msg = {}
+	for i = 1, #searchers do
+		local f, p = searchers[i](modname)
+		if _type(f) == 'function' then
+			local ret = f(modname, p)
+			if ret ~= nil then
+				loaded[modname] = ret
+			elseif loaded[modname] == nil then
+				loaded[modname] = true
+			end
+			return loaded[modname], p
+		elseif _type(f) == 'string' then
+			msg[#msg + 1] = f
+		end
+	end
+	return _error("module '" .. modname .. "' not found:" .. table.concat(msg))
 end
 require = _require
 
@@ -875,20 +1967,20 @@ function debug.getregistry()
 end
 
 function debug.debug()
-	local iowrite = _luwa.iowrite
-	local ioread = _luwa.ioread
 	while true do
-		iowrite(stdout, 'lua_debug> ')
-		local line = ioread(stdin)
-		if line == 'cont' then return end
-		local succ, f = _pcall(_load(line))
-		if succ then
-			local succ, msg = _pcall(f)
-			if not succ then
-				iowrite(stdout, _tostring(msg))
+		stdout:write('lua_debug> ')
+		local line = stdin:read('l')
+		if line == nil or line == 'cont' then
+			return
+		end
+		local f, err = _load(line)
+		if f then
+			local ok, msg = _pcall(f)
+			if not ok then
+				stdout:write(_tostring(msg), '\n')
 			end
 		else
-			iowrite(stdout, _tostring(f))
+			stdout:write(_tostring(err), '\n')
 		end
 	end
 end

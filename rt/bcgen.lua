@@ -77,7 +77,9 @@ function asmmeta:name(n, isparam)
 	if isparam then
 		paramidx = #self.params
 	end
-	local newscope = { prev = prevscope, func = self, isparam = paramidx }
+	-- seq is declaration order, so code gen never depends on pairs order
+	self.nameseq = (self.nameseq or 0) + 1
+	local newscope = { prev = prevscope, func = self, isparam = paramidx, seq = self.nameseq }
 	if isparam then
 		self.params[#self.params+1] = newscope
 	end
@@ -1064,13 +1066,17 @@ function asmmeta:genBoxPrologue()
 			self:push(bc.BoxParam, v.isparam)
 		end
 	end
-	local pastlocal = {}
+	local pastlocal, boxed = {}, {}
 	for k,v in pairs(self.namety) do
 		-- params were boxed above
 		if v.free and v.func == self and not v.isparam and not pastlocal[v] then
 			pastlocal[v] = true
-			self:push(bc.BoxLocal, self:nameidx(v))
+			boxed[#boxed+1] = v
 		end
+	end
+	table.sort(boxed, function(a, b) return a.seq < b.seq end)
+	for i=1,#boxed do
+		self:push(bc.BoxLocal, self:nameidx(boxed[i]))
 	end
 end
 

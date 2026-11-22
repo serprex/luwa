@@ -49,4 +49,8 @@ return {
 	'_fn_new',
 	'io_type',
 	'_objid',
+	'string_sub',
+	'_reinterp',
+	'_host',
+	'table_unpack',
 }

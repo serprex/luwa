@@ -122,7 +122,7 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	-- begin _luwa fields
 	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc', 'lpeg',
 	'stdin', 'stdout', 'ioread', 'iowrite', 'ioflush', 'ioclose',
-	'iosetvbuf', 'vec_new', 'random', 'objid',
+	'iosetvbuf', 'vec_new', 'random', 'objid', 'sub', 'reinterp', 'host', 'unpack',
 	'fn_new', 'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
 	'fn_set_bc', 'fn_set_frees', 'fn_set_consts',
 	{'error', 2, false, SYS'error'},
@@ -172,6 +172,10 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	{'_objid', 1, false, SYS'_objid' .. RET},
 	{'string_byte', 3, false, SYS'string_byte' .. RET},
 	{'string_char', 0, true, SYS'string_char' .. RET},
+	{'string_sub', 3, false, SYS'string_sub' .. RET},
+	{'_reinterp', 1, false, SYS'_reinterp' .. RET},
+	{'_host', 3, false, SYS'_host' .. RET},
+	{'table_unpack', 3, false, SYS'table_unpack' .. RET},
 	(BOOTRT or doboot)())
 
 local blobdata = M.passivedata(blob)
@@ -235,6 +239,8 @@ local random = importfunc('', 'random', f64)
 local exp = importfunc('', 'exp', f64, f64)
 local log = importfunc('', 'log', f64, f64)
 local pow = importfunc('', 'pow', f64, f64, f64)
+-- op, a, b -> result. rt.js has the ops
+local host = importfunc('', 'host', V, V, V, V)
 
 return {
 	initstatics = initstatics,
@@ -251,5 +257,6 @@ return {
 	exp = exp,
 	log = log,
 	pow = pow,
+	host = host,
 	Version = Version,
 }

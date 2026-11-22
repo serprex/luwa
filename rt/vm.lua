@@ -1040,6 +1040,10 @@ defMop('Syscall', function(mop, ctx)
 			_vec_new = std.vec_new,
 			_fn_new = std.fn_new,
 			_objid = std.objid,
+			string_sub = std.string_sub,
+			_reinterp = std.reinterp,
+			_host = std.host,
+			table_unpack = std.table_unpack,
 			_lex = std.lexgen,
 			_random = function()
 				f:call(rt.random)

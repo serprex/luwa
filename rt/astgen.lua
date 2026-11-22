@@ -43,32 +43,54 @@ local function seq(rules)
 		return i, ri
 	end
 end
-local function sf(id, rule)
+-- Results of sf & of rules, by rule then position: { next i, node } or false.
+-- Without it the parser backtracks over the same nested functions again & again,
+-- which takes exponential time in nesting depth
+local memo
+local function memoize(build)
+	local key = {}
 	return function(str, i, res, ri, vals)
+		local mt = memo[key]
+		if not mt then
+			mt = {}
+			memo[key] = mt
+		end
+		local hit = mt[i]
+		if hit == nil then
+			local nxi, node = build(str, i, vals)
+			hit = nxi and { nxi, node } or false
+			mt[i] = hit
+		end
+		if hit then
+			res[ri] = hit[2]
+			return hit[1], ri+1
+		end
+	end
+end
+local function sf(id, rule)
+	return memoize(function(str, i, vals)
 		local subres, subri = {}
 		i, subri = rule(str, i, subres, 1, vals)
 		if i then
 			t_trunc(subres, subri)
 			subres.type = id
-			res[ri] = subres
-			return i, ri+1
+			return i, subres
 		end
-	end
+	end)
 end
 local function of(id, ...)
 	local rules = {...}
-	return function(str, i, res, ri, vals)
+	return memoize(function(str, i, vals)
 		local subres = {}
 		for xi=1, #rules do
 			local nxi, subri = rules[xi](str, i, subres, 1, vals)
 			if nxi then
 				t_trunc(subres, subri)
 				subres.type = id+xi*32
-				res[ri] = subres
-				return nxi, ri+1
+				return nxi, subres
 			end
 		end
-	end
+	end)
 end
 local function m(rule)
 	return function(str, i, res, ri, vals)
@@ -160,7 +182,11 @@ local Block = G.Block
 
 return function(lx, vals)
 	local res = {}
-	local i = assert(Block(lx, 1, res, 1, vals))
+	local prevmemo = memo
+	memo = {}
+	local i = Block(lx, 1, res, 1, vals)
+	memo = prevmemo
+	assert(i)
 	assert(i > #lx)
 	return res[1]
 end

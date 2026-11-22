@@ -130,7 +130,9 @@ local initPrelude = func(R.tbl, function(f)
 		GS.fn_set_consts, GF._fn_set_consts,
 		GS.vec_new, GF._vec_new,
 		GS.random, GF._random,
-		GS.objid, GF._objid)
+		GS.objid, GF._objid,
+		GS.reinterp, GF._reinterp,
+		GS.host, GF._host)
 
 	addmod(GS.coroutine,
 		GS.create, GF.coro_create,
@@ -159,8 +161,10 @@ local initPrelude = func(R.tbl, function(f)
 	addmod(GS.package)
 	addmod(GS.string,
 		GS.byte, GF.string_byte,
-		GS.char, GF.string_char)
-	addmod(GS.table)
+		GS.char, GF.string_char,
+		GS.sub, GF.string_sub)
+	addmod(GS.table,
+		GS.unpack, GF.table_unpack)
 	addmod(GS.utf8)
 
 	f:i32(0)

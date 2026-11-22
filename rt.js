@@ -7,6 +7,9 @@ const rtwa = isnode ?
 	// node has fetch too, but it can't fetch file: urls
 	import('node:fs/promises').then(fs => fs.readFile(wasmurl)) :
 	fetch(wasmurl, {cache:'no-cache'}).then(r => r.arrayBuffer());
+// files & processes, only under node
+const [nodefs, nodecp] = isnode ?
+	await Promise.all([import('node:fs'), import('node:child_process')]) : [null, null];
 
 async function rtwathen(ab) {
 	const ffi = new FFI();
@@ -16,7 +19,8 @@ async function rtwathen(ab) {
 			return x;
 		},
 		echoobj: x => {
-			console.log(ffi.obj2js(x));
+			const v = ffi.obj2js(x);
+			console.log(v instanceof Uint8Array ? new TextDecoder().decode(v) : v);
 		},
 		sin: Math.sin,
 		cos: Math.cos,
@@ -29,6 +33,7 @@ async function rtwathen(ab) {
 		exp: Math.exp,
 		log: Math.log,
 		pow: Math.pow,
+		host: (op, a, b) => ffi.host(op, a, b),
 	}});
 	ffi.mod = inst.instance.exports;
 	return ffi;
@@ -43,6 +48,8 @@ function Handle(val) {
 }
 function FFI() {
 	this.mod = null;
+	// open files for _luwa.host, by number. 0 1 2 are stdin, stdout, stderr
+	this.files = [{ pos: 0, data: null, fd: 0 }, { pos: 0, data: null, fd: 1 }, { pos: 0, data: null, fd: 2 }];
 }
 FFI.prototype.free = function(h) {}
 FFI.prototype.mkref = function(p) {
@@ -115,6 +122,216 @@ FFI.prototype.obj2js = function(v, memo = new Map()) {
 			return "Unknown type: " + m.typeof(v);
 	}
 }
+// _luwa.host(op, a, b) from Lua. Ops get Lua values & give one back
+FFI.prototype.host = function(op, a, b) {
+	const m = this.mod;
+	const str = v => new TextDecoder().decode(this.strbytes(v));
+	const ret = v => {
+		if (v === null || v === undefined) return null;
+		if (v === true) return 1;
+		if (v === false) return 0;
+		if (typeof v === 'bigint') return m.newi64(v);
+		if (typeof v === 'number') return m.newf64(v);
+		if (typeof v === 'string' || v instanceof Uint8Array) return this.newstr(v).val;
+		throw new Error('host: bad result ' + v);
+	};
+	const fd = () => this.files[Number(m.intval(a))];
+	switch (str(op)) {
+		case 'open': {
+			const name = str(a), mode = str(b);
+			try {
+				const f = { pos: 0, data: null, fd: -1 };
+				if (mode[0] == 'r' && !mode.includes('+')) {
+					f.data = nodefs.readFileSync(name);
+				} else {
+					f.fd = nodefs.openSync(name, mode.replace('b', ''));
+				}
+				this.files.push(f);
+				return ret(BigInt(this.files.length - 1));
+			} catch (e) {
+				return ret(`${name}: ${e.code == 'ENOENT' ? 'No such file or directory' : e.message}`);
+			}
+		}
+		case 'popen': {
+			try {
+				const data = nodecp.execSync(str(a), { stdio: ['inherit', 'pipe', 'inherit'], maxBuffer: 1 << 30 });
+				this.files.push({ pos: 0, data, fd: -1 });
+				return ret(BigInt(this.files.length - 1));
+			} catch (e) {
+				return ret(e.message);
+			}
+		}
+		case 'read': {
+			// fmt is 'a', 'l', 'L', or a byte count
+			const f = fd();
+			if (f.data === null) {
+				f.data = f.fd == 0 && nodefs ? nodefs.readFileSync(0) : new Uint8Array(0);
+			}
+			const d = f.data, n = d.length;
+			if (m.typeof(b) == 0) {
+				const cnt = Number(m.intval(b));
+				if (f.pos >= n && cnt > 0) return null;
+				const r = d.subarray(f.pos, f.pos + cnt);
+				f.pos += r.length;
+				return ret(r);
+			}
+			const fmt = str(b);
+			if (fmt == 'a') {
+				const r = d.subarray(f.pos);
+				f.pos = n;
+				return ret(r);
+			}
+			if (f.pos >= n) return null;
+			let e = d.indexOf(10, f.pos);
+			if (e == -1) e = n;
+			const r = d.subarray(f.pos, fmt == 'L' && e < n ? e + 1 : e);
+			f.pos = Math.min(e + 1, n);
+			return ret(r);
+		}
+		case 'write': {
+			const f = fd(), bytes = this.strbytes(b);
+			if (nodefs) nodefs.writeSync(f.fd, bytes);
+			else console.log(new TextDecoder().decode(bytes));
+			return 1;
+		}
+		case 'close': {
+			const f = fd();
+			if (f.fd > 2) nodefs.closeSync(f.fd);
+			f.fd = -1;
+			f.data = null;
+			return 1;
+		}
+		case 'flush':
+			return 1;
+		case 'getenv':
+			return isnode ? ret(process.env[str(a)]) : null;
+		case 'clock':
+			return ret(isnode ? process.cpuUsage().user / 1e6 : performance.now() / 1000);
+		case 'time':
+			return ret(BigInt(Math.floor(Date.now() / 1000)));
+		case 'exit':
+			if (isnode) process.exit(Number(m.intval(a)));
+			return null;
+		case 'remove':
+			try {
+				nodefs.unlinkSync(str(a));
+				return 1;
+			} catch (e) {
+				return ret(`${str(a)}: ${e.message}`);
+			}
+		case 'fmt':
+			return ret(fmtnum(str(a), m.typeof(b) == 0 ? m.intval(b) : m.fltval(b)));
+		default:
+			throw new Error('host: unknown op ' + str(op));
+	}
+}
+
+// One printf spec like %5.2f, for string.format. x is a BigInt for integer specs, else a number
+function fmtnum(spec, x) {
+	const [, flags, width, prec, conv] = spec.match(/^%([-+ #0]*)(\d*)(?:\.(\d*))?([a-zA-Z])$/);
+	const p = prec === undefined ? -1 : +prec;
+	let sign = '', body;
+	if ('dioxXuc'.includes(conv)) {
+		if (conv == 'c') return String.fromCharCode(Number(x));
+		let n = BigInt(x);
+		if (conv == 'd' || conv == 'i') {
+			if (n < 0n) {
+				sign = '-';
+				n = -n;
+			}
+			body = n.toString();
+		} else {
+			n = BigInt.asUintN(64, n);
+			body = n.toString(conv == 'o' ? 8 : conv == 'u' ? 10 : 16);
+			if (conv == 'X') body = body.toUpperCase();
+		}
+		if (p >= 0) body = p == 0 && n == 0n ? '' : body.padStart(p, '0');
+		if (flags.includes('#') && n != 0n) {
+			if (conv == 'x') body = '0x' + body;
+			if (conv == 'X') body = '0X' + body;
+			if (conv == 'o' && body[0] != '0') body = '0' + body;
+		}
+	} else {
+		x = Number(x);
+		const neg = x < 0 || Object.is(x, -0);
+		if (neg) {
+			sign = '-';
+			x = -x;
+		}
+		const up = conv == conv.toUpperCase(), lc = conv.toLowerCase();
+		const alt = flags.includes('#');
+		if (!isFinite(x)) {
+			body = isNaN(x) ? 'nan' : 'inf';
+		} else if (lc == 'f') {
+			body = fixed(x, p < 0 ? 6 : p);
+			if (alt && p == 0) body += '.';
+		} else if (lc == 'e') {
+			body = expo(x, p < 0 ? 6 : p);
+			if (alt && p == 0) body = body.replace('e', '.e');
+		} else if (lc == 'g') {
+			const P = p < 0 ? 6 : p == 0 ? 1 : p;
+			const X = x == 0 ? 0 : +x.toExponential(P - 1).split('e')[1];
+			body = P > X && X >= -4 ? fixed(x, P - 1 - X) : expo(x, P - 1);
+			if (!alt && body.includes('.')) body = body.replace(/\.?0+(e|$)/, '$1');
+		} else if (lc == 'a') {
+			body = hexfloat(x, p);
+		} else {
+			throw new Error('invalid conversion ' + spec);
+		}
+		if (up) body = body.toUpperCase();
+	}
+	if (!sign) {
+		if (flags.includes('+')) sign = '+';
+		else if (flags.includes(' ')) sign = ' ';
+	}
+	const w = +width || 0;
+	let out = sign + body;
+	if (out.length < w) {
+		if (flags.includes('-')) out = out.padEnd(w);
+		else if (flags.includes('0') && conv != 'c' && conv != 's' && (isFinite(Number(x)) || typeof x == 'bigint') && !(p >= 0 && 'dioxXu'.includes(conv))) {
+			const pre = body.match(/^0[xX]/) ? body.slice(0, 2) : '';
+			out = sign + pre + body.slice(pre.length).padStart(w - sign.length - pre.length, '0');
+		} else out = out.padStart(w);
+	}
+	return out;
+}
+// x >= 0 with d digits after the point. toFixed goes exponential past 1e21
+function fixed(x, d) {
+	if (x < 1e21) return x.toFixed(Math.min(d, 100)) + (d > 100 ? '0'.repeat(d - 100) : '');
+	return BigInt(x).toString() + (d > 0 ? '.' + '0'.repeat(d) : '');
+}
+// x >= 0 as d.ddde+XX, at least 2 exponent digits like C
+function expo(x, d) {
+	const [m, e] = x.toExponential(Math.min(d, 100)).split('e');
+	const en = +e;
+	return m + (d > 100 ? '0'.repeat(d - 100) : '') + 'e' + (en < 0 ? '-' : '+') + String(Math.abs(en)).padStart(2, '0');
+}
+// x >= 0 as 0x1.hhhp+e, the way glibc does %a
+function hexfloat(x, p) {
+	if (x == 0) return '0x0' + (p > 0 ? '.' + '0'.repeat(p) : '') + 'p+0';
+	const dv = new DataView(new ArrayBuffer(8));
+	dv.setFloat64(0, x);
+	const bits = dv.getBigUint64(0);
+	let e = Number(bits >> 52n), frac = bits & ((1n << 52n) - 1n), lead = 1n;
+	if (e == 0) {
+		lead = 0n;
+		e = -1022;
+	} else e -= 1023;
+	let h = frac.toString(16).padStart(13, '0');
+	if (p >= 0 && p < 13) {
+		// round to p hex digits, half to even
+		const sh = BigInt((13 - p) * 4);
+		let v = ((lead << 52n) | frac), q = v >> sh, r = v & ((1n << sh) - 1n), half = 1n << (sh - 1n);
+		if (r > half || (r == half && (q & 1n))) q++;
+		lead = q >> BigInt(p * 4);
+		h = p ? (q & ((1n << BigInt(p * 4)) - 1n)).toString(16).padStart(p, '0') : '';
+	} else {
+		h = h.replace(/0+$/, '');
+		if (p > 13) h = h.padEnd(p, '0');
+	}
+	return '0x' + lead.toString(16) + (h ? '.' + h : '') + 'p' + (e < 0 ? '-' : '+') + Math.abs(e);
+}
+
 // Old name, values aren't raw pointers now
 FFI.prototype.rawobj2js = function(v) {
 	return this.obj2js(v);
@@ -122,7 +339,7 @@ FFI.prototype.rawobj2js = function(v) {
 FFI.prototype.evalWait = function() {
 	return new Promise((resolve, reject) =>
 		(function core(mod) {
-			// setTimeout waits at least 1ms, so run many steps per wait
+			// run many steps per host round trip
 			try {
 				for (let i = 0; i < 10000; i++) {
 					if (mod.eval()) return resolve();
@@ -131,7 +348,7 @@ FFI.prototype.evalWait = function() {
 				// a wasm trap, like Error's unreachable
 				return reject(e);
 			}
-			setTimeout(core, 0, mod);
+			setImmediate(core, mod);
 		})(this.mod)
 	);
 }

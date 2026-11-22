@@ -33,3 +33,6 @@ jobs:
 
       - name: make.lua gc test
         run: node scripts/maketest.js
+
+      - name: bootstrap
+        run: ./scripts/bootstrap.sh

@@ -21,7 +21,7 @@ local function import(obj, ...)
 	end
 end
 import(_rt, 'echo', 'echoobj', 'sin', 'cos', 'tan',
-	'asin', 'acos', 'atan', 'atan2', 'random', 'exp', 'log', 'pow')
+	'asin', 'acos', 'atan', 'atan2', 'random', 'exp', 'log', 'pow', 'host')
 export(_stack, 'tmppush', 'tmppop', 'tmpclear', 'nthtmp', 'stacklen')
 export(_vm, 'init', 'eval')
 export(_env, 'genesis', 'initPrelude')
@@ -29,4 +29,5 @@ export(_js, 'typeof', 'newstr', 'newtbl', 'newi64', 'newf64', 'strlen', 'strget'
 	'intval', 'fltval', 'veclen', 'vecget', 'tblnext', 'tblmeta', 'tblget', 'tblset')
 local chunks = mod:compile()
 
-io.open('rt.wasm', 'w'):write(table.unpack(chunks)):close()
+-- output file is rt.wasm, or the first arg
+io.open(... or 'rt.wasm', 'w'):write(table.unpack(chunks)):close()
