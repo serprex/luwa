@@ -124,9 +124,8 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	-- runtime error kinds, given to the prelude's error function
 	'index', 'arith', 'bitwise', 'concat', 'compare', 'len', 'xpcall', 'defined',
 	-- begin _luwa fields
-	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc', 'lpeg',
-	'stdin', 'stdout', 'ioread', 'iowrite', 'ioflush', 'ioclose',
-	'iosetvbuf', 'vec_new', 'random', 'objid', 'sub', 'reinterp', 'host', 'unpack',
+	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc',
+	'vec_new', 'random', 'objid', 'sub', 'reinterp', 'host', 'unpack',
 	'fn_new', 'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
 	'fn_set_bc', 'fn_set_frees', 'fn_set_consts', 'fn_set_info', 'fn_info', 'frame', 'seterrfns', 'upvalid',
 	{'error', 2, false, SYS'error'},
@@ -160,14 +159,6 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	{'math_exp', 1, false, SYS'math_exp' .. RET},
 	{'math_log', 2, false, SYS'math_log' .. RET},
 	{'math_atan', 2, false, SYS'math_atan' .. RET},
-	{'io_type', 1, false, SYS'io_type' .. RET},
-	{'_stdin', 0, false, SYS'_stdin' .. RET},
-	{'_stdout', 0, false, SYS'_stdout' .. RET},
-	{'_ioread', 2, false, SYS'_ioread' .. RET},
-	{'_iowrite', 1, true, SYS'_iowrite' .. RET},
-	{'_ioflush', 1, false, SYS'_ioflush' .. RET},
-	{'_ioclose', 1, false, SYS'_ioclose' .. RET},
-	{'_iosetvbuf', 2, false, SYS'_iosetvbuf' .. RET},
 	{'_fn_set_localc', 2, false, SYS'_fn_set_localc' .. RET},
 	{'_fn_set_paramc', 2, false, SYS'_fn_set_paramc' .. RET},
 	{'_fn_set_isdotdotdot', 2, false, SYS'_fn_set_isdotdotdot' .. RET},
@@ -237,7 +228,6 @@ local initstatics = func(function(f)
 	end
 end)
 
-local echo = importfunc('', 'echo', i32, i32)
 -- Print any value, for debugging & error messages
 local echoobj = importfunc('', 'echoobj', V, void)
 local sin = importfunc('', 'sin', f64, f64)
@@ -256,7 +246,6 @@ local host = importfunc('', 'host', V, V, V, V)
 
 return {
 	initstatics = initstatics,
-	echo = echo,
 	echoobj = echoobj,
 	sin = sin,
 	cos = cos,

@@ -3,26 +3,6 @@ package.path = 'rt/?.lua;' .. package.path
 local astgen = require 'astgen'
 local bcgen = require 'bcgen'
 
-local function pprintcore(x, dep, hist)
-	local a = string.rep(' ', dep)
-	if hist[x] then
-		return print(a .. '...', x)
-	end
-	hist[x] = true
-	for k,v in pairs(x) do
-		if type(v) == 'table' then
-			print(a .. tostring(k), v)
-			pprintcore(v, dep+1, hist)
-		else
-			print(a .. tostring(k),v)
-		end
-	end
-end
-local function pprint(x)
-	pprintcore(x, 0, {})
-	return x
-end
-
 local result = {}
 local prevsult = {
 	integer = {},

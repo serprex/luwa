@@ -1037,12 +1037,7 @@ defMop('Syscall', function(mop, ctx)
 		local stddebug = require 'stddebug'
 		local stdmath = require 'stdmath'
 
-		local function pushnil()
-			lnil(f)
-			f:call(tmppush)
-		end
-
-		-- Each builtin is a wasm func to call, a function that writes its code inline, or 'nyi' to trap.
+		-- Each builtin is a wasm func to call, or a function that writes its code inline.
 		-- { sw = fn } is a builtin that may switch frames: fn gets the pc after the syscall
 		-- & returns the pc to run next, the way call ops do
 		local impl = {
@@ -1079,15 +1074,6 @@ defMop('Syscall', function(mop, ctx)
 			math_exp = stdmath.math_exp,
 			math_log = stdmath.math_log,
 			math_atan = stdmath.math_atan,
-			-- No files exist yet, so stdin/stdout are nil & io.type is always nil
-			_stdin = pushnil,
-			_stdout = pushnil,
-			io_type = pushnil,
-			_ioread = 'nyi',
-			_iowrite = 'nyi',
-			_ioflush = 'nyi',
-			_ioclose = 'nyi',
-			_iosetvbuf = 'nyi',
 			_fn_set_localc = std.fn_set_localc,
 			_fn_set_paramc = std.fn_set_paramc,
 			_fn_set_isdotdotdot = std.fn_set_isdotdotdot,
@@ -1115,20 +1101,16 @@ defMop('Syscall', function(mop, ctx)
 			local body = assert(impl[name], 'Syscall has no impl: ' .. name)
 			cases[#cases+1] = i-1
 			cases[#cases+1] = function()
-				if body == 'nyi' then
-					f:unreachable()
+				if type(body) == 'function' then
+					body()
+				elseif type(body) == 'table' and rawget(body, 'sw') then
+					f:load(ctx.pc.r)
+					f:call(body.sw)
+					switchframe(f, ctx, scopes)
 				else
-					if type(body) == 'function' then
-						body()
-					elseif type(body) == 'table' and rawget(body, 'sw') then
-						f:load(ctx.pc.r)
-						f:call(body.sw)
-						switchframe(f, ctx, scopes)
-					else
-						f:call(body)
-					end
-					f:br(scopes.nop)
+					f:call(body)
 				end
+				f:br(scopes.nop)
 			end
 		end
 		f:switch(function()

@@ -121,10 +121,6 @@ local function ltrue(f)
 	f:i32(1)
 	f:refi31()
 end
--- i32 0 or 1 on the stack to false or true
-local function lbool(f)
-	f:refi31()
-end
 
 idcount = M.global(i32, true)
 
@@ -177,14 +173,6 @@ local strfrombytes = func(M.refnull(bytes), M.ref(str), function(f, b)
 	f:refasnonnull()
 	f:i32(0)
 	f:structnew(str)
-end)
-
--- vec of sz nils
-local newvec = func(i32, M.ref(vec), function(f, sz)
-	f:i32(types.vec)
-	f:load(sz)
-	f:arraynewdefault(vals)
-	f:structnew(vec)
 end)
 
 local newtbl = func(M.ref(tbl), function(f)
@@ -263,14 +251,12 @@ return {
 	lnil = lnil,
 	lfalse = lfalse,
 	ltrue = ltrue,
-	lbool = lbool,
 	nextid = nextid,
 	typeof = typeof,
 	newi64 = newi64,
 	newf64 = newf64,
 	newstr = newstr,
 	strfrombytes = strfrombytes,
-	newvec = newvec,
 	newtbl = newtbl,
 	newfunc = newfunc,
 	newstack = newstack,

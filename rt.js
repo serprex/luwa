@@ -14,10 +14,6 @@ const [nodefs, nodecp] = isnode ?
 async function rtwathen(ab) {
 	const ffi = new FFI();
 	const inst = await WebAssembly.instantiate(ab, {'':{
-		echo: x => {
-			console.log(x);
-			return x;
-		},
 		echoobj: x => {
 			const v = ffi.obj2js(x);
 			console.log(v instanceof Uint8Array ? new TextDecoder().decode(v) : v);
@@ -69,14 +65,8 @@ FFI.prototype.newstr = function(s) {
 FFI.prototype.newf64 = function(f) {
 	return this.mkref(this.mod.newf64(f));
 }
-// nil is null, false & true are i31 refs, which JS sees as 0 & 1
+// nil is null
 FFI.prototype.nil = new Handle(null);
-FFI.prototype.false = new Handle(0);
-FFI.prototype.true = new Handle(1);
-const tys = ["number", "number", null, "table", "string", "vec", "buf", "function", "thread"];
-FFI.prototype.gettype = function(h) {
-	return tys[this.mod.typeof(h.val)] || (h.val === null ? 'nil' : 'boolean');
-}
 FFI.prototype.strbytes = function(v) {
 	const n = this.mod.strlen(v), r = new Uint8Array(n);
 	for (let i = 0; i < n; i++) r[i] = this.mod.strget(v, i);
@@ -332,10 +322,6 @@ function hexfloat(x, p) {
 	return '0x' + lead.toString(16) + (h ? '.' + h : '') + 'p' + (e < 0 ? '-' : '+') + Math.abs(e);
 }
 
-// Old name, values aren't raw pointers now
-FFI.prototype.rawobj2js = function(v) {
-	return this.obj2js(v);
-}
 // Lua traceback of the running coro, read from its frames. For wasm traps,
 // where the Lua state is left as it was when the op trapped
 FFI.prototype.traceback = function() {
@@ -413,9 +399,6 @@ FFI.prototype.rawexec = function(fn, ...param) {
 	this.mod.init(fn);
 	// Resolves to top of stack once done. With several results that's the last one
 	return this.evalWait().then(() => this.mod.stacklen() ? this.mod.nthtmp(1) : null);
-}
-FFI.prototype.exec = function(fn, ...param) {
-	return this.rawexec(fn.val, ...param.map(x => x.val))
 }
 FFI.prototype.compile = function(env, str) {
 	const loadstr = this.newstr('load');

@@ -20,7 +20,7 @@ local function import(obj, ...)
 		mod:import(obj[select(i, ...)])
 	end
 end
-import(_rt, 'echo', 'echoobj', 'sin', 'cos', 'tan',
+import(_rt, 'echoobj', 'sin', 'cos', 'tan',
 	'asin', 'acos', 'atan', 'atan2', 'random', 'exp', 'log', 'pow', 'host')
 export(_stack, 'tmppush', 'tmppop', 'tmpclear', 'nthtmp', 'stacklen')
 export(_vm, 'init', 'eval')
