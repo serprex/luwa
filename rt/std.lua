@@ -895,15 +895,29 @@ local std_type = func(i32, i32, function(f, nextpc)
 	f:load(nextpc)
 end)
 
--- _luwa.lexgen(src): token string, value vec & token offset -> line table
+-- _luwa.lexgen(src): token string, value vec & token offset -> line table.
+-- On a lexing error: false, the error code, where the token starts & where its text ends
 local std_lexgen = func(function(f)
+	local _lex = require '_lex'
 	local vs = f:locals(R.vec)
 	local ls = f:locals(R.tbl)
 	loadparam(f, 0)
 	f:refcast(R.str)
-	f:call(require('_lex').lex)
+	f:call(_lex.lex)
 	f:store(ls)
 	f:store(vs)
+	f:loadg(_lex.err)
+	f:iff(function()
+		alloc.lfalse(f)
+		f:call(tmppush)
+		for _, g in ipairs{ _lex.err, _lex.errs, _lex.erre } do
+			f:loadg(g)
+			f:i64extends()
+			f:call(newi64)
+			f:call(tmppush)
+		end
+		f:ret()
+	end)
 	f:call(tmppush)
 	f:load(vs)
 	f:call(tmppush)

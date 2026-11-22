@@ -1869,7 +1869,7 @@ end
 function os.difftime(t2, t1)
 	return t2 - t1
 end
-function os.setlocal(locale)
+function os.setlocale(locale)
 	if not locale or locale == '' or locale == 'C' then
 		return 'C'
 	else
@@ -2299,6 +2299,40 @@ function debug.getinfo(co, f, what)
 end
 
 -- Source name to show in messages, like C Lua's luaO_chunkid
+-- Lexing errors from _luwa.lexgen, by code
+local lexerrors = {
+	'invalid escape sequence', 'hexadecimal digit expected', 'decimal escape too large',
+	"missing '{' in \\u{xxxx}", 'UTF-8 value too large', "missing '}' in \\u{xxxx}",
+	'unfinished string', 'unfinished long string', 'unfinished long comment',
+	'unexpected symbol', 'invalid long string delimiter', 'malformed number',
+}
+-- C Lua's message for a lexing error. The token's text is src[s+1, e], or <eof> when e is -1.
+-- The line counts line ends before the text's last char
+local function lexerror(chunk, src, code, s, e)
+	local stop = e < 0 and #src or e - 1
+	local line, i = 1, 1
+	while i <= stop do
+		local c = string_byte(src, i)
+		if c == 10 or c == 13 then
+			line = line + 1
+			-- \r\n & \n\r are one line end
+			if string_byte(src, i + 1) == 23 - c then
+				i = i + 1
+			end
+		end
+		i = i + 1
+	end
+	local near = '<eof>'
+	if e >= 0 then
+		local txt = string_sub(src, s + 1, e)
+		local c = string_byte(txt)
+		if code == 10 and (c < 32 or c >= 127) then
+			txt = '<\\' .. c .. '>'
+		end
+		near = "'" .. txt .. "'"
+	end
+	return chunk .. ':' .. line .. ': ' .. lexerrors[code] .. ' near ' .. near
+end
 local function chunkid(src)
 	local c = string_byte(src)
 	if c == 61 then -- =name
@@ -2435,9 +2469,9 @@ local function _load(src, name, mode, env)
 		src = table.concat(parts)
 	end
 	local short = chunkid(name)
-	local lx, vals, lines = _luwa.lexgen(src)
+	local lx, vals, lines, errend = _luwa.lexgen(src)
 	if not lx then
-		return nil, vals
+		return nil, lexerror(short, src, vals, lines, errend)
 	end
 	local ok, root = _pcall(astgen, lx, vals, lines, short)
 	if not ok then
