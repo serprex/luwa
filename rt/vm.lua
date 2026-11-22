@@ -1098,7 +1098,7 @@ defMop('Typeck', function(mop, ctx)
 	end)
 end)
 
--- Builtins written in wasm. Reads its own 1 byte arg: which builtin
+-- Builtins written in wasm. Reads its own 1 byte arg: which builtin, numbered by rt/sys.lua
 defMop('Syscall', function(mop, ctx)
 	cg(ctx, function(f, scopes)
 		-- required here: these modules require vm
@@ -1106,186 +1106,114 @@ defMop('Syscall', function(mop, ctx)
 		local stdcoro = require 'stdcoro'
 		local stddebug = require 'stddebug'
 		local stdmath = require 'stdmath'
-			f:switch(function()
-				f:load(ctx.bc.r)
-				f:load(ctx.pc.r)
-				f:i32(1)
-				f:add()
-				f:tee(ctx.pc.r)
-				f:add()
-				f:i32load8u(str.base - 1)
-			end, 0, function()
-				f:call(std.pcall)
-				f:br(scopes.nop)
-			end, 1, function()
-				f:call(std.select)
-				f:br(scopes.nop)
-			end, 2, function()
-				f:call(stdcoro.coro_status)
-				f:br(scopes.nop)
-			end, 3, function()
-				f:call(stdcoro.coro_running)
-				f:br(scopes.nop)
-			end, 4, function()
-				f:call(stddebug.debug_getmetatable)
-				f:br(scopes.nop)
-			end, 5, function()
-				f:call(stddebug.debug_setmetatable)
-				f:br(scopes.nop)
-			end, 6, function()
-				f:call(stdmath.math_type)
-				f:br(scopes.nop)
-			end, 7, function()
-				f:call(std.error)
-				f:br(scopes.nop)
-			end, 8, function()
-				f:call(stdcoro.coro_create)
-				f:br(scopes.nop)
-			end, 9, function()
-				f:call(stdcoro.coro_resume)
-				f:br(scopes.nop)
-			end, 10, function()
-				f:call(stdcoro.coro_yield)
-				f:br(scopes.nop)
-			end, 11, function()
-				f:call(std.type)
-				f:br(scopes.nop)
-			end, 12, function()
-				-- _stdin
-				f:i32(NIL)
-				f:call(tmppush)
-				f:br(scopes.nop)
-			end, 13, function()
-				-- _stdout
-				f:i32(NIL)
-				f:call(tmppush)
-				f:br(scopes.nop)
-			end, 14, function()
-				-- _ioread
-				f:unreachable()
-			end, 15, function()
-				-- _iowrite
-				f:unreachable()
-			end, 16, function()
-				-- _ioflush
-				f:unreachable()
-			end, 17, function()
-				-- _ioclose
-				f:unreachable()
-			end, 18, function()
-				-- _iosetvbuf
-				f:unreachable()
-			end, 19, function()
-				-- _fn_set_localc
-				f:call(std.fn_set_localc)
-				f:br(scopes.nop)
-			end, 20, function()
-				-- _fn_set_paramc
-				f:call(std.fn_set_paramc)
-				f:br(scopes.nop)
-			end, 21, function()
-				-- _fn_set_isdotdotdot
+
+		-- Store the 2nd param into field `field` of the function in the 1st param
+		local function fnset(field, store, value)
+			return function()
 				f:call(param0)
 				f:i32load(vec.base)
 				f:call(param0)
 				f:i32load(vec.base + 4)
+				if value then value() end
+				store(f, field)
+			end
+		end
+		local function pushnil()
+			f:i32(NIL)
+			f:call(tmppush)
+		end
+
+		-- Each builtin is a wasm func to call, a function that writes its code inline, or 'nyi' to trap
+		local impl = {
+			pcall = std.pcall,
+			select = std.select,
+			error = std.error,
+			type = std.type,
+			rawget = std.rawget,
+			rawset = std.rawset,
+			next = std.next,
+			string_byte = std.string_byte,
+			string_char = std.string_char,
+			coro_status = stdcoro.coro_status,
+			coro_running = stdcoro.coro_running,
+			coro_create = stdcoro.coro_create,
+			coro_resume = stdcoro.coro_resume,
+			coro_yield = stdcoro.coro_yield,
+			debug_getmetatable = stddebug.debug_getmetatable,
+			debug_setmetatable = stddebug.debug_setmetatable,
+			math_type = stdmath.math_type,
+			math_abs = stdmath.math_abs,
+			math_ceil = stdmath.math_ceil,
+			math_floor = stdmath.math_floor,
+			math_sin = stdmath.math_sin,
+			math_cos = stdmath.math_cos,
+			math_tan = stdmath.math_tan,
+			math_asin = stdmath.math_asin,
+			math_acos = stdmath.math_acos,
+			math_exp = stdmath.math_exp,
+			math_log = stdmath.math_log,
+			math_atan = stdmath.math_atan,
+			-- No files exist yet, so stdin/stdout are nil & io.type is always nil
+			_stdin = pushnil,
+			_stdout = pushnil,
+			io_type = pushnil,
+			_ioread = 'nyi',
+			_iowrite = 'nyi',
+			_ioflush = 'nyi',
+			_ioclose = 'nyi',
+			_iosetvbuf = 'nyi',
+			_fn_set_localc = std.fn_set_localc,
+			_fn_set_paramc = std.fn_set_paramc,
+			_fn_set_isdotdotdot = fnset(functy.isdotdotdot, f.i32store8, function()
 				-- truthy: not nil or false
 				f:i32(TRUE)
 				f:geu()
-				f:i32store8(functy.isdotdotdot)
-				f:br(scopes.nop)
-			end, 22, function()
-				-- _fn_set_bc
-				f:call(param0)
-				f:i32load(vec.base)
-				f:call(param0)
-				f:i32load(vec.base + 4)
-				f:i32store(functy.bc)
-				f:br(scopes.nop)
-			end, 23, function()
-				-- _fn_set_frees
-				f:call(param0)
-				f:i32load(vec.base)
-				f:call(param0)
-				f:i32load(vec.base + 4)
-				f:i32store(functy.frees)
-				f:br(scopes.nop)
-			end, 24, function()
-				-- _fn_set_consts
-				f:call(param0)
-				f:i32load(vec.base)
-				f:call(param0)
-				f:i32load(vec.base + 4)
-				f:i32store(functy.consts)
-				f:br(scopes.nop)
-			end, 25, function()
-				-- _vec_new
-				f:call(std.vec_new)
-				f:br(scopes.nop)
-			end, 26, function()
+			end),
+			_fn_set_bc = fnset(functy.bc, f.i32store),
+			_fn_set_frees = fnset(functy.frees, f.i32store),
+			_fn_set_consts = fnset(functy.consts, f.i32store),
+			_vec_new = std.vec_new,
+			_fn_new = std.fn_new,
+			_lex = function()
 				f:call(param0)
 				f:i32load(vec.base)
 				f:call(tmppush)
 				f:call(require('_lex').lex)
-				f:br(scopes.nop)
-			end, 27, function()
-				f:call(std.rawget)
-				f:br(scopes.nop)
-			end, 28, function()
-				f:call(std.rawset)
-				f:br(scopes.nop)
-			end, 29, function()
-				f:call(std.next)
-				f:br(scopes.nop)
-			end, 30, function()
+			end,
+			_random = function()
 				f:call(rt.random)
 				f:call(newf64)
 				f:call(tmppush)
-				f:br(scopes.nop)
-			end, 31, function()
-				f:call(stdmath.math_abs)
-				f:br(scopes.nop)
-			end, 32, function()
-				f:call(stdmath.math_ceil)
-				f:br(scopes.nop)
-			end, 33, function()
-				f:call(stdmath.math_floor)
-				f:br(scopes.nop)
-			end, 34, function()
-				f:call(stdmath.math_sin)
-				f:br(scopes.nop)
-			end, 35, function()
-				f:call(stdmath.math_cos)
-				f:br(scopes.nop)
-			end, 36, function()
-				f:call(stdmath.math_tan)
-				f:br(scopes.nop)
-			end, 37, function()
-				f:call(stdmath.math_asin)
-				f:br(scopes.nop)
-			end, 38, function()
-				f:call(stdmath.math_acos)
-				f:br(scopes.nop)
-			end, 39, function()
-				f:call(stdmath.math_exp)
-				f:br(scopes.nop)
-			end, 40, function()
-				f:call(stdmath.math_log)
-				f:br(scopes.nop)
-			end, 41, function()
-				f:call(stdmath.math_atan)
-				f:br(scopes.nop)
-			end, 42, function()
-				f:call(std.string_byte)
-				f:br(scopes.nop)
-			end, 43, function()
-				f:call(std.string_char)
-				f:br(scopes.nop)
-			end, 44, function()
-				f:call(std.fn_new)
-				f:br(scopes.nop)
-			end)
-			f:unreachable()
+			end,
+		}
+
+		local cases = {}
+		for i, name in ipairs(require 'sys') do
+			local body = assert(impl[name], 'Syscall has no impl: ' .. name)
+			cases[#cases+1] = i-1
+			cases[#cases+1] = function()
+				if body == 'nyi' then
+					f:unreachable()
+				else
+					if type(body) == 'function' then
+						body()
+					else
+						f:call(body)
+					end
+					f:br(scopes.nop)
+				end
+			end
+		end
+		f:switch(function()
+			f:load(ctx.bc.r)
+			f:load(ctx.pc.r)
+			f:i32(1)
+			f:add()
+			f:tee(ctx.pc.r)
+			f:add()
+			f:i32load8u(str.base - 1)
+		end, table.unpack(cases))
+		f:unreachable()
 	end)
 end)
 
