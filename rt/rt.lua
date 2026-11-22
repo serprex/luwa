@@ -158,19 +158,20 @@ local image = M.data(memory, addStatics(4, {
 	'rawget', 'rawset', 'rawlen', 'rawequal', 'next',
 	'create', 'resume', 'yield', 'running', 'status',
 	'abs', 'ceil', 'floor', 'sin', 'cos', 'tan', 'asin', 'acos', 'exp', 'log', 'atan',
+	'byte', 'char',
 	'_VERSION', Version,
 	-- begin _luwa fields
 	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc', 'lpeg',
 	'stdin', 'stdout', 'ioread', 'iowrite', 'ioflush', 'ioclose',
 	'iosetvbuf', 'vec_new', 'random',
-	'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
+	'fn_new', 'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
 	'fn_set_bc', 'fn_set_frees', 'fn_set_consts',
 	{'error', 2, false, SYS(0x07)},
 	{'next', 2, false, SYS(0x1d) .. RET},
 	{'pcall', 1, true, SYS(0x00)},
 	{'rawget', 2, false, SYS(0x1b) .. RET},
 	{'rawset', 3, false, SYS(0x1c) .. LOADPARAM0 .. RET},
-	{'select', 1, true, SYS(0x01)},
+	{'select', 1, true, SYS(0x01) .. RET},
 	{'type', 1, false, SYS(0x0b) .. RET},
 	{'coro_create', 1, false, SYS(0x08) .. RET},
 	{'coro_resume', 1, true, SYS(0x09)},
@@ -205,9 +206,12 @@ local image = M.data(memory, addStatics(4, {
 	{'_fn_set_bc', 2, false, SYS(0x16) .. RET},
 	{'_fn_set_frees', 2, false, SYS(0x17) .. RET},
 	{'_fn_set_consts', 2, false, SYS(0x18) .. RET},
-	{'_vec_new', 1, false, SYS(0x19) .. RET},
+	{'_vec_new', 0, true, SYS(0x19) .. RET},
+	{'_fn_new', 0, false, SYS(44) .. RET},
 	{'_lex', 1, false, SYS(0x1a) .. RET},
 	{'_random', 0, false, SYS(0x1e) .. RET},
+	{'string_byte', 3, false, SYS(42) .. RET},
+	{'string_char', 0, true, SYS(43) .. RET},
 	(BOOTRT or doboot)()
 ))
 
@@ -227,6 +231,7 @@ local atan2 = importfunc('', 'atan2', f64, f64, f64)
 local random = importfunc('', 'random', f64)
 local exp = importfunc('', 'exp', f64, f64)
 local log = importfunc('', 'log', f64, f64)
+local pow = importfunc('', 'pow', f64, f64, f64)
 
 local setluastack = func(i32, void, function(f, x)
 	f:load(x)
@@ -266,6 +271,7 @@ return {
 	random = random,
 	exp = exp,
 	log = log,
+	pow = pow,
 	setluastack = setluastack,
 	getluastack = getluastack,
 	echodrop = echodrop,

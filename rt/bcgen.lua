@@ -163,6 +163,18 @@ end
 function asmmeta:storename(name)
 	return self:opnamety(namety_stores, name, self.namety[name])
 end
+-- A captured local gets a fresh box each time it's declared,
+-- so closures made in a loop each keep their own variable
+function asmmeta:boxname(name)
+	local namety = self.namety[name]
+	if namety and namety.free and namety.func == self and not namety.isparam then
+		self:push(bc.BoxLocal, self:nameidx(namety))
+	end
+end
+function asmmeta:declname(name)
+	self:boxname(name)
+	return self:storename(name)
+end
 
 local nextNode = {}
 for k,ty in pairs(ast) do
@@ -235,8 +247,8 @@ local function multiNodes(self, node, ty, fn, ...)
 		fn(self, node, ...)
 	end
 end
-local function scopeNode(self, node, ty)
-	return singleNode(self, node, ty, visitScope[ty])
+local function scopeNode(self, node, ty, ...)
+	return singleNode(self, node, ty, visitScope[ty], ...)
 end
 local function emitNode(self, node, ty, ...)
 	return singleNode(self, node, ty, visitEmit[ty], ...)
@@ -248,41 +260,51 @@ local function emitNodes(self, node, ty, ...)
 	return multiNodes(self, node, ty, visitEmit[ty], ...)
 end
 
-local ExpValue = ast.Exp+64
+local ExpUnop, ExpValue = ast.Exp+32, ast.Exp+64
 local precedenceTable = {7, 7, 8, 8, 8, 9, 8, 5, 4, 3, 6, 6, 2, 1, 1, 1, 1, 1, 1}
+-- Unary ops bind tighter than everything but ^
+local unopPrecedence = 8.5
 local function precedence(node)
-	if (node.type&31) == ast.Binop then
+	local ty = node.type&31
+	if ty == ast.Binop then
 		return precedenceTable[node.type >> 5]
+	elseif ty == ast.Unop then
+		return unopPrecedence
 	else
 		return 0
 	end
 end
+-- An Exp's values & operators in postfix order, as a list.
+-- The parser nests `#a + b` as #(a + b), so unary ops are reordered here too
 local function shunt(node)
-	return coroutine.wrap(function()
-		local ops = {}
-		while node.type == ExpValue and #node == 3 do
-			local lson, op, rson = table.unpack(node)
-			coroutine.yield(lson)
-			while #ops > 0 do
-				local oprec = precedence(op)
-				if precedence(ops[#ops]) < oprec or oprec == 9 then
-					break
-				end
-				coroutine.yield(ops[#ops])
-				ops[#ops] = nil
+	local out, ops = {}, {}
+	while true do
+		while node.type == ExpUnop do
+			ops[#ops+1] = selectNode(node, ast.Unop)
+			node = selectNode(node, ast.Exp)
+		end
+		if #node ~= 3 then
+			break
+		end
+		local lson, op, rson = table.unpack(node)
+		out[#out+1] = lson
+		while #ops > 0 do
+			local oprec = precedence(op)
+			-- ^ is right associative
+			if precedence(ops[#ops]) < oprec or oprec == 9 then
+				break
 			end
-			ops[#ops+1] = op
-			node = rson
+			out[#out+1] = ops[#ops]
+			ops[#ops] = nil
 		end
-		if node.type == ExpValue then
-			coroutine.yield(selectNode(node, ast.Value))
-		else
-			coroutine.yield(node)
-		end
-		for i=#ops, 1, -1 do
-			coroutine.yield(ops[i])
-		end
-	end)
+		ops[#ops+1] = op
+		node = rson
+	end
+	out[#out+1] = selectNode(node, ast.Value)
+	for i=#ops, 1, -1 do
+		out[#out+1] = ops[i]
+	end
+	return out
 end
 
 scopeStatSwitch = {
@@ -382,7 +404,8 @@ local function emitCall(self, node, outputs)
 		self:push(bc.Idx)
 		self:push(bc.LoadLocal, temp)
 	end
-	return emitNode(self, node, ast.Args, outputs)
+	-- a method call passes self as an extra first arg
+	return emitNode(self, node, ast.Args, outputs, methname and 1 or 0)
 end
 local function emitExplist(self, node, outputs)
 	local n, lastv = 0
@@ -485,7 +508,8 @@ emitStatSwitch = {
 				self:push(bc.JifNot, 0)
 			elseif ty == ast.Block then
 				visitEmit[ast.Block](self, child)
-				if i > 2 then
+				-- jump to the end, unless this is the last branch
+				if i < #node then
 					eob[#eob+1] = #self.bc+2
 					self:push(bc.Jmp, 0)
 				end
@@ -524,18 +548,19 @@ emitStatSwitch = {
 		self:push(bc.LoadLocal, tempi)
 		self:push(bc.LoadLocal, tempc)
 		self:push(bc.LoadLocal, temptemp)
+		-- exit when i < c for a negative step, i > c otherwise
 		local cmp0 = #self.bc+2
 		self:push(bc.Jif, 0)
 		self:push(bc.CmpLt)
 		local cmp1 = #self.bc+2
 		self:push(bc.Jmp, 0)
-		self:push(bc.CmpGt)
 		self:patch(cmp0, #self.bc)
+		self:push(bc.CmpGt)
 		self:patch(cmp1, #self.bc)
 		local forxit = #self.bc+2
 		self:push(bc.Jif, 0)
 		self:push(bc.LoadLocal, tempi)
-		self:storename(selectIdent(node))
+		self:declname(selectIdent(node))
 		self:breakscope(function()
 			emitNode(self, node, ast.Block)
 			self:push(bc.LoadLocal, tempi)
@@ -564,7 +589,7 @@ emitStatSwitch = {
 		end
 		self:push(bc.Call, #vars, 1, 2) -- f(s, ctl): 2 args
 		for i=#vars,2,-1 do
-			self:storename(vars[i])
+			self:declname(vars[i])
 		end
 		self:push(bc.StoreLocal, tempv)
 		self:push(bc.LoadLocal, tempv)
@@ -573,7 +598,7 @@ emitStatSwitch = {
 		local forxit = #self.bc+2
 		self:push(bc.Jif, 0)
 		self:push(bc.LoadLocal, tempv)
-		self:storename(vars[1])
+		self:declname(vars[1])
 		self:breakscope(function()
 			emitNode(self, node, ast.Block)
 			self:push(bc.Jmp, begfor)
@@ -603,8 +628,11 @@ emitStatSwitch = {
 		end
 	end,
 	function(self, node) -- 13 local func
+		-- box first, so a recursive function captures its own box
+		local name = selectIdent(node)
+		self:boxname(name)
 		emitNode(self, node, ast.Funcbody)
-		self:storename(selectIdent(node))
+		self:storename(name)
 	end,
 	function(self, node) -- 14 locals=exps
 		local vars = {}
@@ -613,7 +641,7 @@ emitStatSwitch = {
 		end
 		emitExplist(self, node, #vars)
 		for i=#vars,1,-1 do
-			self:storename(vars[i])
+			self:declname(vars[i])
 		end
 	end,
 }
@@ -852,11 +880,10 @@ visitEmit = {
 			local n, res = emitExplist(self, node, -1)
 			if type(res) == 'number' then
 				self:push(bc.Return)
-			elseif not res.varg then
-				assert(#res > 0, 'None varg, no call, yet complex return')
-				self:push(bc.ReturnCall, #res, table.unpack(res))
 			elseif #res > 0 then
-				self:push(bc.ReturnCallVarg, #res, table.unpack(res))
+				-- No tail calls yet: call keeping all results (retc 0xffff), then return them
+				self:push(res.varg and bc.CallVarg or bc.Call, 0xffff, #res, table.unpack(res))
+				self:push(bc.Return)
 			else
 				self:push(bc.ReturnVarg)
 			end
@@ -881,28 +908,21 @@ visitEmit = {
 		end
 	end,
 	[ast.Exp] = function(self, node, out)
-		if node.type >> 5 == 1 then
-			emitNode(self, node, ast.Exp, 1)
-			emitNode(self, node, ast.Unop)
-			return 1
-		else
-			if #node == 1 then
-				return visitEmit[ast.Value](self, node[1], out)
+		if node.type == ExpValue and #node == 1 then
+			return visitEmit[ast.Value](self, node[1], out)
+		end
+		for _, op in ipairs(shunt(node)) do
+			local ty = op.type & 31
+			if ty == ast.Binop then
+				visitEmit[ast.Binop](self, op)
+			elseif ty == ast.Unop then
+				visitEmit[ast.Unop](self, op)
 			else
-				for op in shunt(node) do
-					local ty = op.type & 31
-					if ty == ast.Binop then
-						visitEmit[ast.Binop](self, op)
-					elseif ty == ast.Value then
-						visitEmit[ast.Value](self, op, 1)
-					else
-						assert(op.type >> 5 == 1)
-						visitEmit[ast.Exp](self, op, 1)
-					end
-				end
-				return 1
+				assert(ty == ast.Value)
+				visitEmit[ast.Value](self, op, 1)
 			end
 		end
+		return 1
 	end,
 	[ast.Prefix] = function(self, node)
 		if node.type >> 5 == 1 then
@@ -911,7 +931,7 @@ visitEmit = {
 			emitNode(self, node, ast.ExpOr, 1)
 		end
 	end,
-	[ast.Args] = function(self, node, outputs)
+	[ast.Args] = function(self, node, outputs, selfargs)
 		local ty, res = node.type >> 5
 		if ty == 1 then
 			local n
@@ -929,6 +949,7 @@ visitEmit = {
 			self:push(bc.LoadConst, self:const(node[1].arg))
 			res = { 1 }
 		end
+		res[1] = res[1] + selfargs
 		if outputs == -1 then
 			return res
 		else

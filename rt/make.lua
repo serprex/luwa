@@ -413,12 +413,15 @@ function funcmeta:switch(expr, ...)
 		expr(scames)
 		local scdef = scames[-1]
 		if scdef then
-			for i=1,maxsc-1 do
+			for i=1,maxsc do
 				if not scopes[i] then
 					scopes[i] = scdef
 				end
 			end
+			-- br_table's last target is the default, for values past the last case
+			scopes[maxsc+1] = scdef
 		else
+			-- no default: the last case also takes values past it
 			assert(maxsc > 0 and #scopes == maxsc)
 		end
 		return self:brtable(table.unpack(scopes))

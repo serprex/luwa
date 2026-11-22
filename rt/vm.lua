@@ -7,7 +7,7 @@ local types, obj, num, str, vec, buf, tbl, functy, coro, allocsizef, nextid, new
 	alloc.allocsizef, alloc.nextid, alloc.newobj, alloc.newi64, alloc.newf64, alloc.newstrbuf, alloc.newvec, alloc.newvec1, alloc.newtbl
 
 local _table = require '_table'
-local tblget, tblset = _table.tblget, _table.tblset
+local tblget, tblset, tbllen = _table.tblget, _table.tblset, _table.tbllen
 
 local stack = require 'stack'
 local tmppush, tmppop, nthtmp, setnthtmp, extendtmp =
@@ -490,7 +490,14 @@ end)
 defMop('LoadTblLen', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i32load(tbl.len)
+		f:call(tbllen)
+	end)
+end)
+defMop('StrCmp', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:call(_string.strcmp)
 	end)
 end)
 defMop('LoadFuncParamc', function(mop, ctx)
@@ -762,6 +769,133 @@ defMop('BXor', function(mop, ctx)
 		f:xor()
 	end)
 end)
+-- Lua's // and %: round toward minus infinity, so the remainder takes the divisor's sign
+-- TODO int x//0 and x%0 trap in wasm, Lua raises an error. minint//-1 also traps
+defMop('IDiv', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	if isfloat(mop[1].out) then
+		cg(ctx, function(f)
+			f:div()
+			f:floor()
+		end)
+	else
+		local ra, rb = newreg(ctx, 'i64'), newreg(ctx, 'i64')
+		cg(ctx, function(f)
+			f:store(rb.r)
+			f:tee(ra.r)
+			f:load(rb.r)
+			f:divs()
+			-- subtract 1 when there's a remainder & the signs differ
+			f:load(ra.r)
+			f:load(rb.r)
+			f:rems()
+			f:i64(0)
+			f:ne()
+			f:load(ra.r)
+			f:load(rb.r)
+			f:xor()
+			f:i64(0)
+			f:lts()
+			f:band()
+			f:i64extendu()
+			f:sub()
+		end)
+	end
+end)
+defMop('Mod', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	if isfloat(mop[1].out) then
+		-- a - floor(a/b)*b
+		-- TODO differs from Lua's fmod based % when b is inf
+		local ra, rb = newreg(ctx, 'f64'), newreg(ctx, 'f64')
+		cg(ctx, function(f)
+			f:store(rb.r)
+			f:tee(ra.r)
+			f:load(ra.r)
+			f:load(rb.r)
+			f:div()
+			f:floor()
+			f:load(rb.r)
+			f:mul()
+			f:sub()
+		end)
+	else
+		local rb, rr = newreg(ctx, 'i64'), newreg(ctx, 'i64')
+		cg(ctx, function(f)
+			f:tee(rb.r)
+			f:rems()
+			f:tee(rr.r)
+			-- add b when there's a remainder & its sign differs from b
+			f:load(rb.r)
+			f:i64(0)
+			f:load(rr.r)
+			f:i64(0)
+			f:ne()
+			f:load(rr.r)
+			f:load(rb.r)
+			f:xor()
+			f:i64(0)
+			f:lts()
+			f:band()
+			f:select()
+			f:add()
+		end)
+	end
+end)
+defMop('Pow', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:call(rt.pow)
+	end)
+end)
+-- Lua shifts are logical. Shifting 64 or more either way gives 0, a negative count shifts the other way
+local shl64 = func(i64, i64, i64, function(f, a, n)
+	f:load(n)
+	f:i64(63)
+	f:add()
+	f:i64(126)
+	f:gtu()
+	f:iff(i64, function()
+		f:i64(0)
+	end, function()
+		f:load(n)
+		f:i64(0)
+		f:ges()
+		f:iff(i64, function()
+			f:load(a)
+			f:load(n)
+			f:shl()
+		end, function()
+			f:load(a)
+			f:i64(0)
+			f:load(n)
+			f:sub()
+			f:shru()
+		end)
+	end)
+end)
+defMop('Shl', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:call(shl64)
+	end)
+end)
+defMop('Shr', function(mop, ctx)
+	resolve(ctx, mop[1])
+	local rn = newreg(ctx, 'i64')
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:store(rn.r)
+		f:i64(0)
+		f:load(rn.r)
+		f:sub()
+		f:call(shl64)
+	end)
+end)
 defMop('ToString', function(mop, ctx)
 	-- TODO rt has no obj2str yet, prelude's tostring is written in Lua
 	error('ToString: no obj2str in rt yet')
@@ -890,6 +1024,19 @@ local microready = {
 	[ops.Sub] = true,
 	[ops.Mul] = true,
 	[ops.Not] = true,
+	[ops.Div] = true,
+	[ops.IDiv] = true,
+	[ops.Mod] = true,
+	[ops.Pow] = true,
+	[ops.BAnd] = true,
+	[ops.BOr] = true,
+	[ops.BXor] = true,
+	[ops.Shl] = true,
+	[ops.Shr] = true,
+	[ops.CmpLe] = true,
+	[ops.CmpLt] = true,
+	[ops.CmpGe] = true,
+	[ops.CmpGt] = true,
 }
 local eval = func(i32, function(f)
 	local a, b, c, d, e,

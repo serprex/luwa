@@ -30,6 +30,7 @@ local table_unpack = table.unpack
 local co_create, co_resume, co_running = coroutine.create, coroutine.resume, coroutine.running
 local math_floor, math_ceil = math.floor, math.ceil
 
+
 debug_setmetatable('', { __index = string })
 
 local function _assert(v, ...)
@@ -43,6 +44,34 @@ local function _assert(v, ...)
 end
 assert = _assert
 
+local function _unpack(t, i, j)
+	if i <= j then
+		return t[i], _unpack(t, i + 1, j)
+	end
+end
+function table.unpack(t, i, j)
+	return _unpack(t, i or 1, j or #t)
+end
+table_unpack = table.unpack
+
+-- Only the '<i4' format for now, which is all luwa's compiler needs
+-- TODO the other formats
+function string.pack(fmt, ...)
+	_assert(fmt == '<i4', 'string.pack: only <i4 is supported')
+	local x = ...
+	return string_char(x & 255, x >> 8 & 255, x >> 16 & 255, x >> 24 & 255)
+end
+function string.unpack(fmt, s, pos)
+	_assert(fmt == '<i4', 'string.unpack: only <i4 is supported')
+	pos = pos or 1
+	local a, b, c, d = string_byte(s, pos, pos + 3)
+	local x = a | b << 8 | c << 16 | d << 24
+	if x >= 0x80000000 then
+		x = x - 0x100000000
+	end
+	return x, pos + 4
+end
+
 local function _getmetatable(object)
 	object = debug_getmetatable(object)
 	return (_type(object) == 'table' and _rawget(object, '__metatable')) or object
@@ -50,7 +79,7 @@ end
 getmetatable = _getmetatable
 
 function setmetatable(table, metatable)
-	_assert(_type(tablety) == 'table')
+	_assert(_type(table) == 'table')
 	_assert(metatable == nil or _type(metatable) == 'table')
 	local mt = debug_getmetatable(table)
 	if mt then
@@ -524,12 +553,12 @@ function pairs(t)
 end
 local _pairs = pairs
 
+-- ipairs' iterator: key then value, stops at the first nil
 local function inext(a, b)
 	b = b + 1
-	if b < 1 or b > #a then
-		return nil
-	else
-		return a[b], b
+	local v = a[b]
+	if v ~= nil then
+		return b, v
 	end
 end
 function ipairs(t)
@@ -583,6 +612,7 @@ fakereqenv = {
 	assert = _assert,
 	error = _error,
 	getmetatable = _getmetatable,
+	ipairs = ipairs,
 	pairs = _pairs,
 	pcall = _pcall,
 	require = fakereq,
@@ -604,6 +634,7 @@ fakereqenv = {
 		unpack = string.unpack,
 	},
 	table = {
+		insert = table.insert,
 		sort = table.sort,
 		unpack = table_unpack,
 	},
@@ -619,7 +650,6 @@ local function _load(src, name, mode, env)
 	end
 	-- TODO use _pcall once vm has pcall & error unwinding. Until then a parse error aborts
 	local root = astgen(lx, vals)
-	-- TODO need to signal _ENV is free
 	local bcg = bcgen(root)
 	local fn = _luwa.fn_new()
 	_luwa.fn_set_localc(fn, #bcg.locals)
@@ -628,7 +658,12 @@ local function _load(src, name, mode, env)
 	_luwa.fn_set_bc(fn, string_char(table_unpack(bcg.bc)))
 	_luwa.fn_set_frees(fn, _luwa.vec_new(env or _ENV))
 	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(bcg.consts)))
-	return fn
+	-- compiled chunks take _ENV as their first param, like the prelude does
+	-- TODO make _ENV the chunk's first free instead, saving this extra call
+	env = env or _ENV
+	return function(...)
+		return fn(env, ...)
+	end
 end
 loadstring = _load
 load = _load

@@ -2,8 +2,8 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
-local tbl, vec = alloc.tbl, alloc.vec
-local newvec = alloc.newvec
+local tbl, vec, num = alloc.tbl, alloc.vec, alloc.num
+local newvec, newi64 = alloc.newvec, alloc.newi64
 
 local _obj = require 'obj'
 local hash = _obj.hash
@@ -220,7 +220,75 @@ tblget = func(i32, i32, i32, function(f, tab, key)
 	end)
 end)
 
+-- Length of a table's sequence: a border n where t[n] ~= nil and t[n+1] == nil (or n == 0).
+-- Tables are hash only for now, so probe integer keys, starting from the last length found.
+-- One int object is allocated and reused as the probe key
+local tbllen = func(i32, i32, function(f, tab)
+	local n, key = f:locals(i32, 2)
+
+	f:load(tab)
+	f:storeg(otmp)
+	f:i64(0)
+	f:call(newi64)
+	f:store(key)
+	-- newi64 may move tab
+	f:loadg(otmp)
+	f:tee(tab)
+	f:i32load(tbl.len)
+	f:store(n)
+
+	-- grow while t[n+1] ~= nil
+	f:block(function(done)
+		f:loop(function(loop)
+			f:load(key)
+			f:load(n)
+			f:i32(1)
+			f:add()
+			f:i64extendu()
+			f:i64store(num.val)
+			f:load(tab)
+			f:load(key)
+			f:call(tblget)
+			f:eqz()
+			f:brif(done)
+			f:load(n)
+			f:i32(1)
+			f:add()
+			f:store(n)
+			f:br(loop)
+		end)
+	end)
+
+	-- shrink while t[n] == nil
+	f:block(function(done)
+		f:loop(function(loop)
+			f:load(n)
+			f:eqz()
+			f:brif(done)
+			f:load(key)
+			f:load(n)
+			f:i64extendu()
+			f:i64store(num.val)
+			f:load(tab)
+			f:load(key)
+			f:call(tblget)
+			f:brif(done)
+			f:load(n)
+			f:i32(1)
+			f:sub()
+			f:store(n)
+			f:br(loop)
+		end)
+	end)
+
+	f:load(tab)
+	f:load(n)
+	f:i32store(tbl.len)
+	f:load(n)
+end)
+
 return {
 	tblget = tblget,
 	tblset = tblset,
+	tbllen = tbllen,
 }

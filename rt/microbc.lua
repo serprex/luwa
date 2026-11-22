@@ -443,6 +443,8 @@ local FillFromStack = mkMop('FillFromStack', {
 })
 -- Mops used by op sketches below. Signatures only, vm.lua doesn't compile these yet
 local Mod = mkMop('Mod', GenericBinOp)
+-- Lua's //: floors, int//int stays int
+local IDiv = mkMop('IDiv', GenericBinOp)
 local Pow = mkMop('Pow', GenericBinOp)
 local Shl = mkMop('Shl', GenericBinOp)
 local Shr = mkMop('Shr', GenericBinOp)
@@ -731,9 +733,8 @@ local function cmpop(op, cmpop, strlogic)
 				cmpop(LoadFlt(a), Int64Flt(LoadInt(b))),
 				True(), False()
 			)),
-			(function()
-				-- TODO metamethod fallbacks, error otherwise
-			end)()
+			-- TODO metamethod fallbacks
+			Error()
 		)
 	end)())
 end
@@ -758,7 +759,9 @@ local function binmathop(op, floatlogic, intlogic, metamethod)
 			Push(NumObj(floatlogic(Int64Flt(LoadInt(a)), LoadFlt(b)))),
 			types.float,
 			types.int,
-			Push(NumObj(floatlogic(LoadFlt(a), Int64Flt(LoadInt(b)))))
+			Push(NumObj(floatlogic(LoadFlt(a), Int64Flt(LoadInt(b))))),
+			-- TODO metamethod fallback
+			Error()
 		)
 	end)())
 end
@@ -774,24 +777,7 @@ binmathop(bc.Div,
 		return Div(Int64Flt(a), Int64Flt(b))
 	end,
 	'__div')
-mkOp(bc.IDiv, (function()
-	local b = Pop() -- top of stack is right operand
-	local a = Seq(b, Pop())
-	return Typeck(2, a, b,
-		types.int,
-		types.int,
-		Push(NumObj(Div(LoadInt(a), LoadInt(b)))),
-		types.float,
-		types.float,
-		Push(NumObj(Div(Flt64Int(LoadFlt(a)), Flt64Int(LoadFlt(b))))),
-		types.int,
-		types.float,
-		Push(NumObj(Div(LoadInt(a), Flt64Int(LoadFlt(b))))),
-		types.float,
-		types.int,
-		Push(NumObj(Div(Flt64Int(LoadFlt(a)), LoadInt(b))))
-	)
-end)())
+binmathop_mono(bc.IDiv, IDiv, '__idiv')
 binmathop(bc.Pow,
 	Pow,
 	function(a, b)
@@ -816,7 +802,9 @@ local function binbitop(op, mop, metamethod)
 			Push(NumObj(mop(LoadInt(a), Flt64Int(LoadFlt(b))))),
 			types.float,
 			types.int,
-			Push(NumObj(mop(Flt64Int(LoadFlt(a)), LoadInt(b))))
+			Push(NumObj(mop(Flt64Int(LoadFlt(a)), LoadInt(b)))),
+			-- TODO metamethod fallback
+			Error()
 		)
 	end)())
 end

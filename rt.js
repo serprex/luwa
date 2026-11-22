@@ -114,7 +114,11 @@ FFI.prototype.rawobj2jsCore = function(p, memta = new Uint8Array(this.mem.buffer
 	if (p&7) return "Unaligned object @ " + p;
 	switch (memta[p+4]) {
 		case 0:
-			return new Uint32Array(memta.slice(p+5, p+13).buffer);
+		{
+			// int64: a plain number when it fits, else a BigInt
+			const n = new BigInt64Array(memta.slice(p+5, p+13).buffer)[0];
+			return Number.isSafeInteger(Number(n)) ? Number(n) : n;
+		}
 		case 1:
 			return new Float64Array(memta.slice(p+5, p+13).buffer)[0];
 		case 2:

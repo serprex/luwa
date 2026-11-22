@@ -36,7 +36,7 @@ mod:export('gccollect', gccollect)
 export(_lex, 'lex')
 export(_env, 'genesis', 'initPrelude')
 import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos', 'tan',
-	'asin', 'acos', 'atan', 'atan2', 'random', 'exp', 'log')
+	'asin', 'acos', 'atan', 'atan2', 'random', 'exp', 'log', 'pow')
 mod:data(_rt.image)
 local chunks = mod:compile()
 

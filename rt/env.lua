@@ -116,6 +116,7 @@ local initPrelude = func(i32, function(f)
 		GS.ioflush, GF._ioflush,
 		GS.ioclose, GF._ioclose,
 		GS.iosetvbuf, GF._iosetvbuf,
+		GS.fn_new, GF._fn_new,
 		GS.fn_set_localc, GF._fn_set_localc,
 		GS.fn_set_paramc, GF._fn_set_paramc,
 		GS.fn_set_isdotdotdot, GF._fn_set_isdotdotdot,
@@ -150,7 +151,9 @@ local initPrelude = func(i32, function(f)
 		GS.atan, GF.math_atan)
 	addmod(GS.os)
 	addmod(GS.package)
-	addmod(GS.string)
+	addmod(GS.string,
+		GS.byte, GF.string_byte,
+		GS.char, GF.string_char)
 	addmod(GS.table)
 	addmod(GS.utf8)
 

@@ -2,7 +2,7 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
-local types, obj, num, str, tbl, vec, buf, coro, newi64 = alloc.types, alloc.obj, alloc.num, alloc.str, alloc.tbl, alloc.vec, alloc.buf, alloc.coro, alloc.newi64
+local types, obj, num, str, tbl, vec, buf, coro, functy, newi64, newstr, newvec, newfunc = alloc.types, alloc.obj, alloc.num, alloc.str, alloc.tbl, alloc.vec, alloc.buf, alloc.coro, alloc.functy, alloc.newi64, alloc.newstr, alloc.newvec, alloc.newfunc
 
 local stack = require 'stack'
 local tmppush, extendtmp = stack.tmppush, stack.extendtmp
@@ -13,10 +13,17 @@ local _obj = require 'obj'
 local util = require 'util'
 local memcpy4, toint = util.memcpy4, util.toint
 
+local rt = require 'rt'
 local vm = require 'vm'
 local dataframe, calltypes = vm.dataframe, vm.calltypes
 
+-- TODO unwind to pcall. For now print the message & trap
 local std_error = func(function(f)
+	f:call(param0)
+	f:i32load(vec.base)
+	f:call(rt.echoptr)
+	f:drop()
+	f:unreachable()
 end)
 
 local std_next = func(function(f)
@@ -174,28 +181,26 @@ local std_rawset = func(function(f)
 	f:call(_table.tblset)
 end)
 
+-- select('#', ...) pushes the vararg count. select(n, ...) pushes the varargs from n on,
+-- negative n counts from the end. The builtin's Return then returns everything pushed
+-- TODO bad n should raise an error, it traps for now
 local std_select = func(function(f)
-	-- L.stack[base] == '#' ? L.stack.len - base - 1 : L.stack[base + L.stack[base]:]
-	local framebase, base, dotdotdot, p0, stack = f:locals(i32, 5)
-	local dddlen, p0v = f:locals(i64, 2)
+	local framebase, base, n, cnt, p0 = f:locals(i32, 5)
 
 	f:call(loadframebase)
 	f:tee(framebase)
 	f:i32load(dataframe.base)
-	f:tee(base)
+	f:store(base)
 
+	-- cnt = vararg count
 	f:load(framebase)
-	f:i32load(dataframe.locals)
+	f:i32load16u(dataframe.locals)
 	f:load(framebase)
-	f:i32load(dataframe.dotdotdot)
-	f:tee(dotdotdot)
+	f:i32load16u(dataframe.dotdotdot)
 	f:sub()
-	f:i64extendu()
-	f:store(dddlen)
-
-	f:load(dotdotdot)
-	f:add()
-	f:tee(dotdotdot)
+	f:i32(2)
+	f:shru()
+	f:store(cnt)
 
 	f:loadg(oluastack)
 	f:i32load(coro.stack)
@@ -219,9 +224,8 @@ local std_select = func(function(f)
 		f:eq()
 		f:band()
 		f:iff(function()
-			f:load(dddlen)
-			f:i64(2)
-			f:shru()
+			f:load(cnt)
+			f:i64extendu()
 			f:call(newi64)
 			f:call(tmppush)
 			f:ret()
@@ -231,54 +235,317 @@ local std_select = func(function(f)
 	f:load(p0)
 	f:call(toint)
 	f:tee(p0)
-	f:iff(function(err)
-		f:load(dddlen)
-		f:load(p0)
-		f:i64load(num.val)
-		f:load(p0v)
+	f:eqz()
+	f:iff(function()
+		f:unreachable()
+	end)
+
+	-- n = index of first vararg to return, from 0
+	f:load(p0)
+	f:i64load(num.val)
+	f:i32wrap()
+	f:tee(n)
+	f:i32(0)
+	f:lts()
+	f:iff(i32, function()
+		f:load(cnt)
+		f:load(n)
+		f:add()
+	end, function()
+		f:load(n)
+		f:i32(1)
 		f:sub()
-		f:tee(dddlen)
-		f:i64(0)
-		f:lts()
-		f:brif(f)
+	end)
+	f:tee(n)
+	f:i32(0)
+	f:lts()
+	f:iff(function()
+		f:unreachable()
+	end)
+	f:load(n)
+	f:load(cnt)
+	f:gts()
+	f:iff(function()
+		f:load(cnt)
+		f:store(n)
+	end)
 
-		f:load(p0v)
-		f:i32wrap()
-		f:store(p0)
-
-		local exlen, oldtmplen = framebase, base
-
-		-- oldtmplen, exlen = stack.len, dddlen - p0.val
-		-- extendtmp exlen
-		-- memcpy4 tmp+oldtmplen, tmp+dotdotdot+p0.val, exlen
-
+	-- cnt = bytes to copy, p0 = old stack len
+	f:load(cnt)
+	f:load(n)
+	f:sub()
+	f:i32(2)
+	f:shl()
+	f:tee(cnt)
+	f:iff(function()
 		f:loadg(oluastack)
 		f:i32load(coro.stack)
 		f:i32load(buf.len)
-		f:tee(oldtmplen)
-
-		f:load(dddlen)
-		f:i32wrap()
-		f:tee(exlen)
+		f:store(p0)
+		f:load(cnt)
 		f:call(extendtmp)
 
+		-- extendtmp may have moved the stack, reload
 		f:loadg(oluastack)
 		f:i32load(coro.stack)
-		f:tee(stack)
-		f:load(oldtmplen)
+		f:i32load(buf.ptr)
+		f:i32(vec.base)
 		f:add()
-
-		f:load(stack)
-		f:load(dotdotdot)
-		f:add()
+		f:tee(base)
 		f:load(p0)
 		f:add()
 
-		f:load(exlen)
+		f:load(base)
+		f:load(framebase)
+		f:i32load(dataframe.base)
+		f:add()
+		f:load(framebase)
+		f:i32load16u(dataframe.dotdotdot)
+		f:add()
+		f:load(n)
+		f:i32(2)
+		f:shl()
+		f:add()
+
+		f:load(cnt)
 		f:call(memcpy4)
-		f:ret()
 	end)
-	f:unreachable()
+end)
+
+-- Integer value of a param, or dflt when it's nil. Traps when it isn't an integer
+-- TODO raise an error once error unwinding works
+local function intparam(f, off, dflt)
+	local tmp = f:locals(i32)
+	f:call(param0)
+	f:i32load(vec.base + off)
+	f:tee(tmp)
+	f:iff(i32, function()
+		f:load(tmp)
+		f:call(toint)
+		f:tee(tmp)
+		f:eqz()
+		f:iff(function()
+			f:unreachable()
+		end)
+		f:load(tmp)
+		f:i64load(num.val)
+		f:i32wrap()
+	end, dflt)
+end
+
+-- string.byte(s, i=1, j=i): push the bytes s[i..j] as integers. Negative i, j count from the end
+local std_string_byte = func(function(f)
+	local len, i, j = f:locals(i32, 3)
+
+	f:call(param0)
+	f:i32load(vec.base)
+	f:tee(len)
+	f:i32load8u(obj.type)
+	f:i32(types.str)
+	f:ne()
+	f:iff(function()
+		f:unreachable()
+	end)
+	f:load(len)
+	f:i32load(str.len)
+	f:store(len)
+
+	intparam(f, 4, function()
+		f:i32(1)
+	end)
+	f:store(i)
+	intparam(f, 8, function()
+		f:load(i)
+	end)
+	f:store(j)
+
+	-- negative: from the end
+	f:load(i)
+	f:i32(0)
+	f:lts()
+	f:iff(function()
+		f:load(len)
+		f:load(i)
+		f:add()
+		f:i32(1)
+		f:add()
+		f:store(i)
+	end)
+	f:load(j)
+	f:i32(0)
+	f:lts()
+	f:iff(function()
+		f:load(len)
+		f:load(j)
+		f:add()
+		f:i32(1)
+		f:add()
+		f:store(j)
+	end)
+	-- clamp to 1..len
+	f:load(i)
+	f:i32(1)
+	f:lts()
+	f:iff(function()
+		f:i32(1)
+		f:store(i)
+	end)
+	f:load(j)
+	f:load(len)
+	f:gts()
+	f:iff(function()
+		f:load(len)
+		f:store(j)
+	end)
+
+	f:block(function(done)
+		f:loop(function(loop)
+			f:load(i)
+			f:load(j)
+			f:gts()
+			f:brif(done)
+			-- s is reloaded each time, pushing can move the stack
+			f:call(param0)
+			f:i32load(vec.base)
+			f:load(i)
+			f:add()
+			f:i32load8u(str.base - 1)
+			f:i64extendu()
+			f:call(newi64)
+			f:call(tmppush)
+			f:load(i)
+			f:i32(1)
+			f:add()
+			f:store(i)
+			f:br(loop)
+		end)
+	end)
+end)
+
+-- string.char(...): string made of the given byte values
+local std_string_char = func(function(f)
+	local framebase, n, k, s, b = f:locals(i32, 5)
+
+	-- n = vararg count*4
+	f:call(loadframebase)
+	f:tee(framebase)
+	f:i32load16u(dataframe.locals)
+	f:load(framebase)
+	f:i32load16u(dataframe.dotdotdot)
+	f:sub()
+	f:tee(n)
+	f:i32(2)
+	f:shru()
+	f:call(newstr)
+	f:storeg(otmp)
+
+	f:block(function(done)
+		f:loop(function(loop)
+			f:load(k)
+			f:load(n)
+			f:geu()
+			f:brif(done)
+
+			-- vararg k: frames can't move here, but the stack buffer can
+			f:call(loadframebase)
+			f:tee(framebase)
+			f:i32load(dataframe.base)
+			f:load(framebase)
+			f:i32load16u(dataframe.dotdotdot)
+			f:add()
+			f:load(k)
+			f:add()
+			f:loadg(oluastack)
+			f:i32load(coro.stack)
+			f:i32load(buf.ptr)
+			f:add()
+			f:i32load(vec.base)
+			f:call(toint)
+			f:tee(b)
+			f:eqz()
+			f:iff(function()
+				f:unreachable()
+			end)
+
+			f:loadg(otmp)
+			f:load(k)
+			f:i32(2)
+			f:shru()
+			f:add()
+			f:load(b)
+			f:i64load(num.val)
+			f:i32wrap()
+			f:i32store8(str.base)
+
+			f:load(k)
+			f:i32(4)
+			f:add()
+			f:store(k)
+			f:br(loop)
+		end)
+	end)
+
+	f:loadg(otmp)
+	f:call(tmppush)
+end)
+
+-- _luwa.fn_new(): an empty function object, filled in by the fn_set_* calls
+local std_fn_new = func(function(f)
+	f:call(newfunc)
+	f:call(tmppush)
+end)
+
+-- _luwa.fn_set_localc(fn, n) & fn_set_paramc(fn, n)
+local function fnsetcount(field)
+	return func(function(f)
+		local n = f:locals(i32)
+		intparam(f, 4, function()
+			f:i32(0)
+		end)
+		f:store(n)
+		f:call(param0)
+		f:i32load(vec.base)
+		f:load(n)
+		f:i32store(functy[field])
+	end)
+end
+local std_fn_set_localc = fnsetcount('localc')
+local std_fn_set_paramc = fnsetcount('paramc')
+
+-- _luwa.vec_new(...): a vec holding the args
+local std_vec_new = func(function(f)
+	local framebase, n = f:locals(i32, 2)
+	f:call(loadframebase)
+	f:tee(framebase)
+	f:i32load16u(dataframe.locals)
+	f:load(framebase)
+	f:i32load16u(dataframe.dotdotdot)
+	f:sub()
+	f:tee(n)
+	f:call(newvec)
+	f:storeg(otmp)
+
+	-- newvec may move the stack, find the varargs after it
+	f:loadg(otmp)
+	f:i32(vec.base)
+	f:add()
+	f:call(loadframebase)
+	f:tee(framebase)
+	f:i32load(dataframe.base)
+	f:load(framebase)
+	f:i32load16u(dataframe.dotdotdot)
+	f:add()
+	f:loadg(oluastack)
+	f:i32load(coro.stack)
+	f:i32load(buf.ptr)
+	f:add()
+	f:i32(vec.base)
+	f:add()
+	f:load(n)
+	f:call(memcpy4)
+
+	f:loadg(otmp)
+	f:call(tmppush)
 end)
 
 local std_type = func(function(f)
@@ -324,4 +591,10 @@ return {
 	rawset = std_rawset,
 	select = std_select,
 	type = std_type,
+	string_byte = std_string_byte,
+	fn_new = std_fn_new,
+	fn_set_localc = std_fn_set_localc,
+	fn_set_paramc = std_fn_set_paramc,
+	vec_new = std_vec_new,
+	string_char = std_string_char,
 }
