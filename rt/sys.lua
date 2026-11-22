@@ -58,4 +58,5 @@ return {
 	'_fn_info',
 	'_frame',
 	'_seterrfns',
+	'_upvalid',
 }

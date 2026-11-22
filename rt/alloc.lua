@@ -86,7 +86,8 @@ coro:define{
 	{ M.refnull(frames), mut = true, name = 'data' },
 }
 -- Captured variable, stored in a local's slot. Not a Lua value
-local box = M.struct({ { V, mut = true, name = 'val' } }, { name = 'box' })
+-- id is 0 until debug.upvalueid asks for one
+local box = M.struct({ { V, mut = true, name = 'val' }, { i32, mut = true, name = 'id' } }, { name = 'box' })
 
 -- Nullable ref of each type, what locals & fields use
 local R = {
@@ -233,6 +234,7 @@ end)
 
 local newbox = func(V, M.ref(box), function(f, v)
 	f:load(v)
+	f:i32(0)
 	f:structnew(box)
 end)
 

@@ -1097,6 +1097,7 @@ defMop('Syscall', function(mop, ctx)
 			_vec_new = std.vec_new,
 			_fn_new = std.fn_new,
 			_objid = std.objid,
+			_upvalid = std.upvalid,
 			string_sub = std.string_sub,
 			_reinterp = std.reinterp,
 			_host = std.host,

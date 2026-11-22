@@ -20,6 +20,10 @@ local function Assembler()
 		gotos = {},
 		labelscope = {},
 		gotoscope = {},
+		-- label node -> how many names its block has declared where it is
+		labelcount = {},
+		-- label node -> count to use when it ends its block, see visitScope Block
+		endlabel = {},
 		funcs = {},
 		namety = {},
 		rconsts = {
@@ -106,13 +110,14 @@ end
 -- Declare a global name, or with n = '*' the default for names not declared.
 -- names['*'] is nil (all names are global), { strict = true } (names must be declared), or a global * declaration
 function asmmeta:globaldecl(n, decl)
-	if n ~= '*' and not self.names['*'] then
-		self:globaldecl('*', { strict = true })
-	end
 	decl.prev = self.names[n]
 	decl.global = true
 	self.scopes[#self.scopes+1] = n
 	self.names[n] = decl
+	-- after n, so a goto error names n rather than this implicit '*'
+	if n ~= '*' and not self.names['*'] then
+		self:globaldecl('*', { strict = true })
+	end
 end
 
 local function consterr(n)
@@ -134,6 +139,9 @@ function asmmeta:usename(node, isstore)
 		self.namety[node] = name
 	else
 		name = assert(self.names._ENV)
+		if name.global then
+			error("_ENV is global when accessing variable '" .. node.arg .. "'")
+		end
 		self.namety[node] = { env = name }
 	end
 	if name.func ~= self then
@@ -227,6 +235,12 @@ function asmmeta:boxname(name)
 	if namety and namety.free and namety.func == self and not namety.isparam then
 		self:push(bc.BoxLocal, self:nameidx(namety))
 	end
+end
+-- Raise "global 'x' already defined" if global x isn't nil, before global x = e sets it
+function asmmeta:checkglobal(name)
+	self:loadname(name)
+	self.desc = nil
+	self:push(bc.ErrNNil, self:const(name.arg))
 end
 function asmmeta:declname(name)
 	self:boxname(name)
@@ -413,10 +427,18 @@ scopeStatSwitch = {
 			self.labelscope[self.scopes] = ls
 		end
 		ls[name] = node
+		self.labelcount[node] = self.endlabel[node] or #self.scopes
 	end,
 	nop, -- 4 break
 	function(self, node) -- 5 goto
-		self.gotoscope[node] = self.scopes
+		-- remember how many names each block around has declared here,
+		-- so a goto forward past a declaration can be caught
+		local counts, sc = {}, self.scopes
+		while sc do
+			counts[sc] = #sc
+			sc = sc.prev
+		end
+		self.gotoscope[node] = { sc = self.scopes, counts = counts }
 	end,
 	function(self, node) -- 6 do-end
 		self:scope(function()
@@ -431,7 +453,7 @@ scopeStatSwitch = {
 	end,
 	function(self, node) -- 8 repeat
 		self:scope(function()
-			scopeNode(self, node, ast.Block)
+			scopeNode(self, node, ast.Block, true)
 			scopeNode(self, node, ast.ExpOr)
 		end)
 	end,
@@ -525,12 +547,15 @@ scopeStatSwitch = {
 	end,
 	function(self, node) -- 17 globals=exps
 		scopeNodes(self, node, ast.ExpOr)
+		local hasexps = selectNode(node, ast.ExpOr)
 		for i, v in ipairs(attnames(node)) do
 			if v.attrib == 'close' then
 				error('global variables cannot be to-be-closed')
 			end
 			self:globaldecl(v.name.arg, { attrib = v.attrib })
-			self:usename(v.name)
+			if hasexps then
+				self:usename(v.name)
+			end
 		end
 	end,
 }
@@ -609,13 +634,24 @@ emitStatSwitch = {
 		local name = selectIdent(node)
 		local namei = name.arg
 		-- the nearest label of that name in this block or one around it
-		local sc, label = self.gotoscope[node]
-		while sc and not label do
+		local info = self.gotoscope[node]
+		local sc, label = info.sc
+		while sc do
 			label = self.labelscope[sc] and self.labelscope[sc][namei]
+			if label then
+				break
+			end
 			sc = sc.prev
 		end
 		if not label then
 			error("no visible label '" .. namei .. "' for goto")
+		end
+		-- the label can't see a name the goto doesn't
+		local gc = info.counts[sc]
+		if self.labelcount[label] > gc then
+			-- sc has at least gc+1 names of its own, so sc[gc+1] is its own
+			error("<goto " .. namei .. "> at line " .. (node.line or self.curline or 0) ..
+				" jumps into the scope of '" .. sc[gc + 1] .. "'")
 		end
 		self.gotos[#self.bc+2] = label
 		self:push(bc.Jmp, 0)
@@ -791,21 +827,21 @@ emitStatSwitch = {
 		end
 	end,
 	function(self, node) -- 15 global func
-		-- TODO error if the global is already defined
 		emitNode(self, node, ast.Funcbody)
+		self:checkglobal(selectIdent(node))
 		self:storename(selectIdent(node))
 	end,
 	nop, -- 16 global *
 	function(self, node) -- 17 globals=exps
 		-- without = the globals keep their values
 		if selectNode(node, ast.ExpOr) then
-			-- TODO error if a global is already defined
 			local vars = {}
 			for i, v in selectIdents(node) do
 				vars[#vars+1] = v
 			end
 			emitExplist(self, node, #vars)
 			for i=#vars,1,-1 do
+				self:checkglobal(vars[i])
 				self:storename(vars[i])
 			end
 		end
@@ -892,7 +928,22 @@ emitFieldSwitch = {
 	end
 }
 visitScope = {
-	[ast.Block] = function(self, node)
+	[ast.Block] = function(self, node, isrepeat)
+		-- Labels with only labels after them end the block, so the block's names are out of scope there.
+		-- Not so before a return, or in repeat, where until can see the names
+		if not isrepeat and not hasToken(node, lex._return) then
+			local stats = {}
+			for i, st in selectNodes(node, ast.Stat) do
+				stats[#stats+1] = st
+			end
+			local start = #self.scopes
+			for i=#stats, 1, -1 do
+				if stats[i].type >> 5 ~= 3 then
+					break
+				end
+				self.endlabel[stats[i]] = start
+			end
+		end
 		scopeNodes(self, node, ast.Stat, node)
 		scopeNodes(self, node, ast.ExpOr)
 	end,

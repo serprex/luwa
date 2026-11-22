@@ -29,6 +29,52 @@ function math.tointeger(x)
 	end
 end
 
+-- Remainder of a / b, rounded toward zero, so it has the sign of a, like C fmod
+function math.fmod(a, b)
+	if math.type(a) == 'integer' and math.type(b) == 'integer' then
+		if b == 0 then
+			error("bad argument #2 to 'fmod' (zero)", 2)
+		elseif b == -1 then
+			return 0 -- avoids minint % -1
+		end
+		local m = a % b
+		-- Lua's % has the sign of b, flip it to the sign of a
+		if m ~= 0 and (m ~ a) < 0 then
+			m = m - b
+		end
+		return m
+	end
+	local x, y = tonumber(a), tonumber(b)
+	if not x then
+		error("bad argument #1 to 'fmod' (number expected, got " .. type(a) .. ")", 2)
+	elseif not y then
+		error("bad argument #2 to 'fmod' (number expected, got " .. type(b) .. ")", 2)
+	end
+	x, y = x + 0.0, y + 0.0
+	if x ~= x or y ~= y or y == 0 or x == 1 / 0 or x == -1 / 0 then
+		return 0.0 / 0.0
+	end
+	local r, d = x < 0 and -x or x, y < 0 and -y or y
+	if r < d then
+		return x
+	end
+	-- Long division in binary. Each subtraction is exact since t <= r < 2t
+	local t = d
+	while t * 2 <= r do
+		t = t * 2
+	end
+	while t >= d do
+		if r >= t then
+			r = r - t
+		end
+		t = t / 2
+	end
+	if x < 0 then
+		return -r
+	end
+	return r
+end
+
 -- capture globals so that behavior doesn't change if rebound
 local _rawget, _type = rawget, type
 local _error, _next, _select, _pcall = error, next, select, pcall
@@ -1276,44 +1322,64 @@ function string.format(fmt, ...)
 	return table.concat(out)
 end
 
--- utf8, strict: no surrogates or values past 10FFFF
-local function utf8dec(s, i)
+-- utf8, like lutf8lib.c. Strict unless lax: no surrogates or values past 10FFFF.
+-- Lax allows up to 7FFFFFFF in up to 6 bytes
+local utf8limits = { 0x80, 0x800, 0x10000, 0x200000, 0x4000000 }
+local function iscont(c)
+	return c and c & 0xc0 == 0x80
+end
+-- Gives codepoint & index after it, or nil
+local function utf8dec(s, i, strict)
 	local c = string_byte(s, i)
+	local res
 	if c < 0x80 then
-		return c, i + 1
-	end
-	local n, cp, min
-	if c >= 0xf0 and c < 0xf8 then
-		n, cp, min = 3, c & 7, 0x10000
-	elseif c >= 0xe0 then
-		n, cp, min = 2, c & 15, 0x800
-	elseif c >= 0xc0 then
-		n, cp, min = 1, c & 31, 0x80
+		res = c
 	else
-		return nil
-	end
-	if c >= 0xf8 then
-		return nil
-	end
-	for k = 1, n do
-		local cc = string_byte(s, i + k)
-		if not cc or cc & 0xc0 ~= 0x80 then
+		local count = 0
+		res = 0
+		while c & 0x40 ~= 0 do
+			count = count + 1
+			local cc = string_byte(s, i + count)
+			if not iscont(cc) then
+				return nil
+			end
+			res = res << 6 | (cc & 0x3f)
+			c = c << 1
+		end
+		if count == 0 or count > 5 then -- a lone continuation byte, or too long
 			return nil
 		end
-		cp = cp << 6 | (cc & 0x3f)
+		res = res | ((c & 0x7f) << (count * 5))
+		if res > 0x7fffffff or res < utf8limits[count] then
+			return nil
+		end
+		i = i + count
 	end
-	if cp < min or cp > 0x10ffff or (cp >= 0xd800 and cp <= 0xdfff) then
+	if strict and (res > 0x10ffff or (res >= 0xd800 and res <= 0xdfff)) then
 		return nil
 	end
-	return cp, i + n + 1
+	return res, i + 1
 end
-function utf8.len(s, i, j)
+local function utf8int(x, n, fname)
+	local v = tointeger(x)
+	if v == nil then
+		_error("bad argument #" .. n .. " to '" .. fname .. "' (number expected, got " .. _type(x) .. ")")
+	end
+	return v
+end
+function utf8.len(s, i, j, lax)
 	local len = #s
-	i = posrelat(i or 1, len)
-	j = posrelat(j or -1, len)
+	i = posrelat(utf8int(i or 1, 2, 'len'), len)
+	j = posrelat(utf8int(j or -1, 3, 'len'), len)
+	if i < 1 or i - 1 > len then
+		_error("bad argument #2 to 'len' (initial position out of bounds)")
+	end
+	if j > len then
+		_error("bad argument #3 to 'len' (final position out of bounds)")
+	end
 	local n = 0
 	while i <= j do
-		local cp, ni = utf8dec(s, i)
+		local cp, ni = utf8dec(s, i, not lax)
 		if not cp then
 			return nil, i
 		end
@@ -1322,29 +1388,48 @@ function utf8.len(s, i, j)
 	end
 	return n
 end
+local function utf8enc(x)
+	if x < 0x80 then
+		return string_char(x)
+	end
+	-- bytes come out last first, so flip them after
+	local b, mfb = {}, 0x3f
+	repeat
+		b[#b + 1] = 0x80 | (x & 0x3f)
+		x = x >> 6
+		mfb = mfb >> 1
+	until x <= mfb
+	b[#b + 1] = (~mfb << 1 | x) & 0xff
+	local n = #b
+	for k = 1, n // 2 do
+		b[k], b[n + 1 - k] = b[n + 1 - k], b[k]
+	end
+	return string_char(table_unpack(b))
+end
 function utf8.char(...)
 	local out = {}
 	for k = 1, _select('#', ...) do
-		local c = _select(k, ...)
-		if c < 0x80 then
-			out[k] = string_char(c)
-		elseif c < 0x800 then
-			out[k] = string_char(0xc0 | c >> 6, 0x80 | c & 0x3f)
-		elseif c < 0x10000 then
-			out[k] = string_char(0xe0 | c >> 12, 0x80 | c >> 6 & 0x3f, 0x80 | c & 0x3f)
-		else
-			out[k] = string_char(0xf0 | c >> 18, 0x80 | c >> 12 & 0x3f, 0x80 | c >> 6 & 0x3f, 0x80 | c & 0x3f)
+		local c = utf8int(_select(k, ...), k, 'char')
+		if c < 0 or c > 0x7fffffff then
+			_error("bad argument #" .. k .. " to 'char' (value out of range)")
 		end
+		out[k] = utf8enc(c)
 	end
 	return table.concat(out)
 end
-function utf8.codepoint(s, i, j)
+function utf8.codepoint(s, i, j, lax)
 	local len = #s
-	i = posrelat(i or 1, len)
-	j = posrelat(j or i, len)
+	i = posrelat(utf8int(i or 1, 2, 'codepoint'), len)
+	j = posrelat(utf8int(j or i, 3, 'codepoint'), len)
+	if i < 1 then
+		_error("bad argument #2 to 'codepoint' (out of bounds)")
+	end
+	if j > len then
+		_error("bad argument #3 to 'codepoint' (out of bounds)")
+	end
 	local out = {}
 	while i <= j do
-		local cp, ni = utf8dec(s, i)
+		local cp, ni = utf8dec(s, i, not lax)
 		if not cp then
 			_error('invalid UTF-8 code')
 		end
@@ -1353,23 +1438,84 @@ function utf8.codepoint(s, i, j)
 	end
 	return table_unpack(out)
 end
-function utf8.codes(s)
-	return function(s, i)
-		if i > 0 then
-			local _, ni = utf8dec(s, i)
-			i = ni
-		else
-			i = 1
+function utf8.offset(s, n, i)
+	local len = #s
+	n = utf8int(n, 2, 'offset')
+	i = posrelat(utf8int(i or (n >= 0 and 1 or len + 1), 3, 'offset'), len)
+	-- i is 0 based from here, like lutf8lib.c
+	if i < 1 or i - 1 > len then
+		_error("bad argument #3 to 'offset' (position out of bounds)")
+	end
+	i = i - 1
+	if n == 0 then
+		while i > 0 and iscont(string_byte(s, i + 1)) do
+			i = i - 1
 		end
-		if i > #s then
+	else
+		if iscont(string_byte(s, i + 1)) then
+			_error('initial position is a continuation byte')
+		end
+		if n < 0 then
+			while n < 0 and i > 0 do
+				repeat
+					i = i - 1
+				until i <= 0 or not iscont(string_byte(s, i + 1))
+				n = n + 1
+			end
+		else
+			n = n - 1
+			while n > 0 and i < len do
+				repeat
+					i = i + 1
+				until not iscont(string_byte(s, i + 1))
+				n = n - 1
+			end
+		end
+	end
+	if n ~= 0 then
+		return nil
+	end
+	local start = i + 1
+	local c = string_byte(s, i + 1)
+	if c and c & 0x80 ~= 0 then
+		if iscont(c) then
+			_error('initial position is a continuation byte')
+		end
+		while iscont(string_byte(s, i + 2)) do
+			i = i + 1
+		end
+	end
+	return start, i + 1
+end
+local function utf8iter(strict)
+	return function(s, n)
+		local len = #s
+		n = tointeger(n) or 0
+		-- n is the 1 based start of the last char, so n is the 0 based index after its first byte
+		if n < 0 then
 			return nil
 		end
-		local cp = utf8dec(s, i)
-		if not cp then
+		if n < len then
+			while iscont(string_byte(s, n + 1)) do
+				n = n + 1
+			end
+		end
+		if n >= len then
+			return nil
+		end
+		local cp, ni = utf8dec(s, n + 1, strict)
+		if not cp or iscont(string_byte(s, ni)) then
 			_error('invalid UTF-8 code')
 		end
-		return i, cp
-	end, s, 0
+		return n + 1, cp
+	end
+end
+local utf8strict, utf8lax = utf8iter(true), utf8iter(false)
+function utf8.codes(s, lax)
+	if iscont(string_byte(s, 1)) then
+		_error("bad argument #1 to 'codes' (invalid UTF-8 code)")
+	end
+	return lax and utf8lax or utf8strict, s, 0
 end
 
 -- concat halves, so long lists don't copy the same bytes over & over
@@ -1396,7 +1542,7 @@ function table.concat(t, sep, i, j)
 	return concatrange(t, sep or '', i, j)
 end
 
-utf8.charpattern = "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
+utf8.charpattern = "[\0-\x7F\xC2-\xFD][\x80-\xBF]*"
 
 function table.pack(...)
 	return { n = _select('#', ...), ... }
@@ -1961,6 +2107,8 @@ local function rterror(kind, a, b)
 		msg = ta == tb and 'attempt to compare two ' .. ta .. ' values' or 'attempt to compare ' .. ta .. ' with ' .. tb
 	elseif kind == 'len' then
 		msg = 'attempt to get length of a ' .. _type(a) .. ' value' .. nm(1)
+	elseif kind == 'defined' then
+		msg = "global '" .. a .. "' already defined"
 	else
 		msg = 'invalid operation'
 	end
@@ -2388,6 +2536,22 @@ local function _require(modname)
 	return _error("module '" .. modname .. "' not found:" .. table.concat(msg))
 end
 require = _require
+
+-- An integer id where Lua gives a light userdata. Same id means same variable
+local upvalid = _luwa.upvalid
+function debug.upvalueid(f, n)
+	if _type(f) ~= 'function' then
+		_error("bad argument #1 to 'upvalueid' (function expected, got " .. _type(f) .. ")")
+	end
+	local i = tointeger(n)
+	if not i then
+		_error("bad argument #2 to 'upvalueid' (number expected, got " .. _type(n) .. ")")
+	end
+	if i < 1 or i > 0x7fffffff then
+		return nil
+	end
+	return upvalid(f, i)
+end
 
 local registry = {}
 function debug.getregistry()

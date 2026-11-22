@@ -691,6 +691,56 @@ local std_objid = func(function(f)
 	f:call(tmppush)
 end)
 
+-- _luwa.upvalid(fn, n): an id for fn's nth upvalue, the same for functions sharing it.
+-- Nothing when fn has no nth upvalue
+local std_upvalid = func(function(f)
+	local frees = f:locals(R.vals)
+	local n = f:locals(i32)
+	local b = f:locals(R.box)
+	loadparam(f, 0)
+	f:call(typeof)
+	f:i32(types.functy)
+	f:ne()
+	f:iff(function()
+		f:ret()
+	end)
+	loadparam(f, 0)
+	f:refcast(R.functy)
+	f:structget(functy, 'frees')
+	f:tee(frees)
+	f:refisnull()
+	f:iff(function()
+		f:ret()
+	end)
+	intparam(f, 1, function() f:i32(0) end)
+	f:i32(1)
+	f:sub()
+	f:tee(n)
+	f:load(frees)
+	f:arraylen()
+	f:geu()
+	f:iff(function()
+		f:ret()
+	end)
+	f:load(frees)
+	f:load(n)
+	f:arrayget(vals)
+	f:refcast(R.box)
+	f:tee(b)
+	f:structget(alloc.box, 'id')
+	f:eqz()
+	f:iff(function()
+		f:load(b)
+		f:call(alloc.nextid)
+		f:structset(alloc.box, 'id')
+	end)
+	f:load(b)
+	f:structget(alloc.box, 'id')
+	f:i64extendu()
+	f:call(newi64)
+	f:call(tmppush)
+end)
+
 -- _luwa.fn_new(): an empty function object, filled in by the fn_set_* calls
 local std_fn_new = func(function(f)
 	f:call(alloc.newfunc)
@@ -834,6 +884,7 @@ return {
 	host = std_host,
 	fn_new = std_fn_new,
 	objid = std_objid,
+	upvalid = std_upvalid,
 	fn_set_localc = std_fn_set_localc,
 	fn_set_paramc = std_fn_set_paramc,
 	fn_set_isdotdotdot = std_fn_set_isdotdotdot,

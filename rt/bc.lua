@@ -63,4 +63,5 @@ return {
 	BoxLocal = 61,
 	LoadFunc = 62,
 	VargCount = 63,
+	ErrNNil = 64,
 }
