@@ -11,24 +11,25 @@ rt().then(async runt => {
 	if (process.argv.length < 3) {
 		if (process.stdin.isTTY) {
 			console.log(`Luwa ${pjson.version} https://github.com/serprex/luwa`);
-			const line = runt.newstr('return 1+2');
-			console.log(await runt.eval(env, line));
-			runt.free(line);
-			return;
 			const rl = readline.createInterface({
 				input: process.stdin,
 				output: process.stdout,
 				prompt: '> ',
 			});
-			rl.on('line', async ioline => {
-				const line = runt.newstr(ioline.replace(/^\s*=/, 'return '));
-				try {
-					console.log(await runt.eval(env, line));
-				} catch (e) {
-					console.log(e);
-				}
-				runt.free(line);
-			}).on('close', () => process.exit(0));
+			// the vm has one stack, so run lines one at a time
+			let pending = Promise.resolve();
+			rl.on('line', ioline => {
+				pending = pending.then(async () => {
+					const line = runt.newstr(ioline.replace(/^\s*=/, 'return '));
+					try {
+						console.log(await runt.eval(env, line));
+					} catch (e) {
+						console.log(e);
+					}
+					runt.free(line);
+					rl.prompt();
+				});
+			}).on('close', () => pending.then(() => process.exit(0)));
 			rl.prompt();
 		} else {
 			const result = [];
