@@ -1,5 +1,4 @@
 lua-5.3.4-tests/
-quire.js
 trace.js
 .ninja_deps
 .ninja_log

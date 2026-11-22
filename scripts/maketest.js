@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-"use strict";
 // Tests make.lua's WasmGC support: builds scripts/maketest.lua's module & runs it
-const assert = require("assert");
-const { execFileSync } = require("child_process");
-const fs = require("fs"), os = require("os"), path = require("path");
+import assert from "node:assert";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const out = path.join(os.tmpdir(), "luwa-maketest.wasm");
-execFileSync("lua", ["scripts/maketest.lua", out], { cwd: path.join(__dirname, ".."), stdio: "inherit" });
+execFileSync("lua", ["scripts/maketest.lua", out], { cwd: path.join(import.meta.dirname, ".."), stdio: "inherit" });
 
 WebAssembly.instantiate(fs.readFileSync(out)).then(({ instance }) => {
 	const e = instance.exports;

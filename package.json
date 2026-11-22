@@ -8,7 +8,8 @@
     "url": "https://github.com/serprex/luwa"
   },
   "scripts": { "test": "./scripts/test.js" },
-  "main": "./luwa.js",
+  "type": "module",
+  "main": "./rt.js",
   "bin": "./main.js",
   "license": "MIT"
 }

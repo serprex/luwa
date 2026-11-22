@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-"use strict";
-const assert = require("assert");
-const mkrt = require("../rt");
+import assert from "node:assert";
+import mkrt from "../rt.js";
 
 // rt.js echoes every op through console.log, so mute it while lua runs
 const log = console.log;

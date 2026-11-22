@@ -1,12 +1,12 @@
 // rt.wasm keeps Lua values as WasmGC objects, so JS holds them directly
+import * as util from './util.js';
+
+const wasmurl = new URL('rt.wasm', import.meta.url);
 const isnode = typeof process !== 'undefined' && process.versions && process.versions.node;
 const rtwa = isnode ?
-	// node has fetch too now, so check for node first
-	new Promise((resolve, reject) =>
-		require('fs').readFile(__dirname + '/rt.wasm',
-			(err, data) => err ? reject(err) : resolve(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)))
-	) :
-	fetch('rt.wasm', {cache:'no-cache'}).then(r => r.arrayBuffer());
+	// node has fetch too, but it can't fetch file: urls
+	import('node:fs/promises').then(fs => fs.readFile(wasmurl)) :
+	fetch(wasmurl, {cache:'no-cache'}).then(r => r.arrayBuffer());
 
 async function rtwathen(ab) {
 	const ffi = new FFI();
@@ -33,8 +33,9 @@ async function rtwathen(ab) {
 	ffi.mod = inst.instance.exports;
 	return ffi;
 }
-module.exports = () => rtwa.then(rtwathen);
-const util = require('./util');
+export default function mkrt() {
+	return rtwa.then(rtwathen);
+}
 
 // Handles are left from when the GC moved objects. Now they only wrap a value
 function Handle(val) {

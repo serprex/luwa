@@ -1,8 +1,8 @@
-#!/bin/node
-'use strict';
-const readline = require('readline'),
-	rt = require('./rt'),
-	pjson = require('./package.json');
+#!/usr/bin/env node
+import readline from 'node:readline';
+import fs from 'node:fs';
+import rt from './rt.js';
+const pjson = JSON.parse(fs.readFileSync(new URL('package.json', import.meta.url)));
 
 rt().then(async runt => {
 	runt.mod.genesis();

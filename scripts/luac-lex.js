@@ -1,14 +1,13 @@
 #!/usr/bin/env node
-"use strict";
 // Lexes a file with scripts/lex.wasm, writes the tokens & values for scripts/luac.lua:
 // token string as <s4, value count as <i4, then each value as a type byte & its data
-const fs = require('fs');
+import fs from 'node:fs';
 
 function int2buf(x) {
 	return Buffer.from([x, x>>8, x>>16, x>>24]);
 }
 (async function() {
-	const wasm = fs.readFileSync(__dirname + '/lex.wasm');
+	const wasm = fs.readFileSync(new URL('lex.wasm', import.meta.url));
 	const { instance } = await WebAssembly.instantiate(wasm);
 	const mod = instance.exports;
 	const bytes = s => {
