@@ -72,6 +72,9 @@ local coro = {
 	sizeof = 24,
 }
 
+-- Set true to collect garbage when out of memory, instead of only growing memory
+USEGC = false
+
 local function allocsizef(x)
 	return x+(-x&7)
 end
@@ -106,7 +109,11 @@ local newobj = func(i32, i32, i32, function(f, sz, t)
 	f:currentmemory()
 	f:geu()
 	f:iff(function()
-		f:call(gccollect)
+		-- GC is off for now: it has bugs, & the plan is to move to WasmGC.
+		-- Without it we just grow memory below
+		if USEGC then
+			f:call(gccollect)
+		end
 
 		f:loadg(heaptip)
 		f:tee(p)

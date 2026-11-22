@@ -513,7 +513,7 @@ end
 
 function pairs(t)
 	local mt = _getmetatable(t)
-	if not mt then
+	if mt then
 		local __pairs = mt.__pairs
 		if __pairs then
 			local a, b, c = __pairs(t)
@@ -522,10 +522,11 @@ function pairs(t)
 	end
 	return _next, t, nil
 end
+local _pairs = pairs
 
 local function inext(a, b)
 	b = b + 1
-	if b < 1 or b >= #a then
+	if b < 1 or b > #a then
 		return nil
 	else
 		return a[b], b
@@ -616,15 +617,10 @@ local function _load(src, name, mode, env)
 	if not lx then
 		return nil, vals
 	end
-	local result, root = _pcall(astgen, lx, vals)
-	if not result then
-		return nil, root
-	end
+	-- TODO use _pcall once vm has pcall & error unwinding. Until then a parse error aborts
+	local root = astgen(lx, vals)
 	-- TODO need to signal _ENV is free
-	local result, bcg = _pcall(bcgen, root)
-	if not result then
-		return nil, bcg
-	end
+	local bcg = bcgen(root)
 	local fn = _luwa.fn_new()
 	_luwa.fn_set_localc(fn, #bcg.locals)
 	_luwa.fn_set_paramc(fn, #bcg.params)

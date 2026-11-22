@@ -15,6 +15,8 @@ local stack = require 'stack'
 local tmppush, tmppop, nthtmp, setnthtmp = stack.tmppush, stack.tmppop, stack.nthtmp, stack.setnthtmp
 
 local util = require 'util'
+local chex, memcpy1rl, pushstr, pushvec, unbufstr, unbufvec =
+	util.chex, util.memcpy1rl, util.pushstr, util.pushvec, util.unbufstr, util.unbufvec
 
 local _table = require '_table'
 local tblget, tblset = _table.tblget, _table.tblset

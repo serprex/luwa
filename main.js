@@ -36,7 +36,8 @@ rt().then(async runt => {
 			process.stdin.on('data', buf => result.push(buf));
 			process.stdin.on('end', () => {
 				const src = Buffer.concat(result);
-				runt.eval(env, src.toString());
+				const line = runt.newstr(src.toString());
+				runt.eval(env, line).then(() => runt.free(line));
 			});
 		}
 	} else {

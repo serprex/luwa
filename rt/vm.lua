@@ -18,8 +18,11 @@ local _obj = require 'obj'
 
 local ops = require 'bc'
 
+local util = require 'util'
+
 local rt = require 'rt'
 local microbc = require 'microbc'
+local vmlegacy = require 'vmlegacy'
 
 local dataframe = {
 	type = str.base + 0,
@@ -192,8 +195,11 @@ param0 = func(i32, function(f)
 end)
 
 local mopcomp = {}
+local function isfloat(mty)
+	return mty == 'f32' or mty == 'f64'
+end
 local function defMop(opName, func)
-	mopcomp[microbc.mops[opName]] = func
+	mopcomp[assert(microbc.mops[opName], 'defMop: unknown mop ' .. opName)] = func
 end
 local microTypeToWasmTypeTable = {
 	i32 = i32,
@@ -214,69 +220,76 @@ local function emitOp(ctx, scopes, f)
 		ctx.code[i](f, scopes)
 	end
 end
+-- Queue code to emit. Analysis runs first, so wasm locals exist by the time code is emitted
 local function cg(ctx, fn)
 	ctx.code[#ctx.code+1] = fn
 end
+-- A register is a table whose .r gets filled in with a wasm local by genLocals
 local function newreg(ctx, mty)
 	local wty = microTypeToWasmType(mty)
-	local rtbl = ctx.regdef[wty]
-	assert(rtbl, "Invalid register type")
-	rtbl[#rtbl+1] = {}
+	local rtbl = assert(ctx.regdef[wty], "Invalid register type")
+	local r = {}
+	rtbl[#rtbl+1] = r
+	return r
 end
-local function resolvefirst(ctx, ast, wty)
+local resolve
+local function resolvefirst(ctx, ast)
 	local r = newreg(ctx, ast.out)
 	ctx.temps[ast] = r
 	mopcomp[ast.op](ast, ctx)
 	return r
 end
+-- Evaluate for side effects, dropping any result
 local function resolvevoid(ctx, ast)
 	if ast.out then
-		local r = ctx.temps[ast]
-		if not r then
-			r = resolvefirst(ctx, ast)
+		if not ctx.temps[ast] then
+			resolve(ctx, ast)
 			cg(ctx, function(f)
-				f:store(r.r)
+				f:drop()
 			end)
 		end
 	else
 		mopcomp[ast.op](ast, ctx)
 	end
 end
-local function resolve(ctx, ast)
-	local mty = ast.out
-	local wty = microTypeToWasmType(mty)
+-- Evaluate, leaving result on wasm stack.
+-- Nodes used more than once are kept in a register after their first evaluation
+function resolve(ctx, ast)
+	local wty = microTypeToWasmType(ast.out)
 	if wty == void then
 		return resolvevoid(ctx, ast)
 	end
 	-- TODO when mty == 'obj', track on tempstack
 	local r = ctx.temps[ast]
-	local reglife = ctx.reglife[ast]
-	local rcount = reglife.rcount + 1
-	assert(rcount <= reglife.usage, 'AST node resolved too many times')
-	local lastuse = rcount == reglife.usage
-	reglife.rcount = rcount
-	if lastuse then
-		-- TODO mark register dead, ie reusable
-	end
 	if r then
 		cg(ctx, function(f)
 			f:load(r.r)
 		end)
-	elseif lastuse then
-		-- When declaration is same as last use, no need to juggle registers
+		return
+	end
+	local reglife = assert(ctx.reglife[ast], 'AST node missing from liveness analysis')
+	reglife.rcount = reglife.rcount + 1
+	if reglife.usage == 1 then
+		-- Only use, no need to juggle registers
 		mopcomp[ast.op](ast, ctx)
 	else
-		resolvefirst(ctx, ast)
+		r = resolvefirst(ctx, ast)
 		cg(ctx, function(f)
 			f:tee(r.r)
 		end)
 	end
 end
-local function resolvethunk(ctx, ast)
+-- Compile ast into separate code, for If/loop bodies
+-- TODO a value first computed inside a branch is unset on the other path
+local function resolvethunk(ctx, ast, void)
 	local subctx = setmetatable({
 		code = {},
 	}, { __index = ctx })
-	resolve(subctx, ast)
+	if void then
+		resolvevoid(subctx, ast)
+	else
+		resolve(subctx, ast)
+	end
 	return function(f, scopes)
 		for i=1,#subctx.code do
 			subctx.code[i](f, scopes)
@@ -286,70 +299,84 @@ end
 local function resolvereg(ctx, mop)
 	local r = ctx.regs[mop]
 	if not r then
-		assert(mop.op == microbc.mops.NewReg)
+		assert(mop.op == microbc.mops.Reg32)
 		r = newreg(ctx, 'i32')
 		ctx.regs[mop] = r
 	end
 	return r
 end
+-- Count how many times each node is used. Children are only counted
+-- on a node's first visit, since the node itself is only evaluated once
 local function initreglife(ctx, ast)
 	local data = ctx.reglife[ast]
-	if not data then
-		data = { usage = 0, rcount = 0 }
-		ctx.reglife[ast] = data
+	if data then
+		data.usage = data.usage + 1
+		return
 	end
-	data.usage = data.usage + 1
+	ctx.reglife[ast] = { usage = 1, rcount = 0 }
+	local arg = ast.arg or {}
 	for i=1,#ast do
-		local ai = ast.arg[i]
-		if ai ~= 'atom' and ai ~= 'r32' then
-			initreglife(ctx, ast[i])
+		local child = ast[i]
+		if type(child) == 'table' and arg[i] ~= 'r32' then
+			initreglife(ctx, child)
 		end
 	end
 end
-local function mkcgctx(f)
-	bc = {}
-	pc = {}
-	base ={}
-	objbase = {}
-	framebase = {}
-	return setmetatable({
+-- Bytes of bytecode args read by an op, from its highest Arg index
+local function argsize(ast, seen)
+	if type(ast) ~= 'table' or seen[ast] then
+		return 0
+	end
+	seen[ast] = true
+	local n = 0
+	if ast.op == microbc.mops.Arg then
+		n = (ast[1] + 1) * 4
+	end
+	for i=1,#ast do
+		n = math.max(n, argsize(ast[i], seen))
+	end
+	return n
+end
+-- L holds eval's existing wasm locals
+local function mkcgctx(f, L)
+	return {
 		f = f,
 		regdef = {
-			i32 = {bc, pc, base, objbase, framebase},
-			i64 = {},
-			f32 = {},
-			f64 = {},
+			[i32] = {},
+			[i64] = {},
+			[f32] = {},
+			[f64] = {},
 		},
-		bc = bc,
-		pc = pc,
-		base = base,
-		objbase = objbase,
-		framebase = framebase,
-	}, ctxmt)
+		bc = { r = L.bc },
+		pc = { r = L.pc },
+		base = { r = L.base },
+		objbase = { r = L.objbase },
+		framebase = { r = L.framebase },
+	}
 end
 local function genOp(ctx, op)
+	local opast = assert(microbc.ops[op], 'genOp: no microcode for op')
 	local subctx = setmetatable({
 		reglife = {},
 		regs = {},
 		temps = {},
 		code = {},
-	}, ctx)
-	initreglife(ctx, microbc.ops[op])
-	resolvevoid(microbc.ops[op], subctx)
+	}, { __index = ctx })
+	initreglife(subctx, opast)
+	resolvevoid(subctx, opast)
+	local argoffset = argsize(opast, {})
+	-- TODO Phase 2: reserve spill slots on tmp stack, stackspace
 	return function(scopes)
 		local f = ctx.f
-		if stackspace > 0 then
-			f:i32(stackspace)
-			f:call(extendtmp)
-		end
 		emitOp(subctx, scopes, f)
+		-- SetPc branches out before this, so jumps skip it
 		if argoffset > 0 then
 			f:load(ctx.pc.r)
 			f:i32(argoffset)
 			f:add()
 			f:store(ctx.pc.r)
 		end
-		f:br(scopes.exit)
+		f:br(scopes.nop)
 	end
 end
 
@@ -359,24 +386,24 @@ defMop('Seq', function(mop, ctx)
 	for i=1, #mop-1 do
 		resolvevoid(ctx, mop[i])
 	end
-	resolve(ctx, mop, #mop)
+	resolve(ctx, mop[#mop])
 end)
 defMop('Int', function(mop, ctx)
 	cg(ctx, function(f)
 		f:i32(mop[1])
 	end)
 end)
-defMop('Int64', function(mop)
+defMop('Int64', function(mop, ctx)
 	cg(ctx, function(f)
 		f:i64(mop[1])
 	end)
 end)
-defMop('Flt', function(mop)
+defMop('Flt', function(mop, ctx)
 	cg(ctx, function(f)
 		f:f32(mop[1])
 	end)
 end)
-defMop('Flt64', function(mop)
+defMop('Flt64', function(mop, ctx)
 	cg(ctx, function(f)
 		f:f64(mop[1])
 	end)
@@ -387,8 +414,13 @@ defMop('Load', function(mop, ctx)
 		f:i32load(mop[2] or 0)
 	end)
 end)
-defMop('NewReg', function(mop, ctx)
-	error('Cannot resolve NewReg')
+defMop('Obj', function(mop, ctx)
+	cg(ctx, function(f)
+		f:i32(mop[1])
+	end)
+end)
+defMop('Reg32', function(mop, ctx)
+	error('Reg32 is only used through LoadReg/StoreReg')
 end)
 defMop('StoreReg', function(mop, ctx)
 	resolve(ctx, mop[2])
@@ -398,8 +430,9 @@ defMop('StoreReg', function(mop, ctx)
 	end)
 end)
 defMop('LoadReg', function(mop, ctx)
+	local r = resolvereg(ctx, mop[1])
 	cg(ctx, function(f)
-		f:load(resolvereg(ctx, mop[1]))
+		f:load(r.r)
 	end)
 end)
 defMop('Type', function(mop, ctx)
@@ -433,13 +466,13 @@ end)
 defMop('LoadInt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i64load(num.base)
+		f:i64load(num.val)
 	end)
 end)
 defMop('LoadFlt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:f64load(num.base)
+		f:f64load(num.val)
 	end)
 end)
 defMop('LoadStrLen', function(mop, ctx)
@@ -490,7 +523,7 @@ end)
 defMop('IntObjFromInt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:extends()
+		f:i64extends()
 		f:call(newi64)
 	end)
 end)
@@ -506,10 +539,10 @@ defMop('FltObjFromFlt', function(mop, ctx)
 		f:call(newf64)
 	end)
 end)
-defMop('FltInt64', function(mop, ctx)
+defMop('Flt64Int', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f)
-		f:i64converts()
+		f:i64truncs()
 	end)
 end)
 defMop('Int64Flt', function(mop, ctx)
@@ -526,28 +559,31 @@ defMop('Push', function(mop, ctx)
 end)
 defMop('Pop', function(mop, ctx)
 	cg(ctx, function(f)
-		f:call(tmppop)
+		f:loadg(oluastack)
+		f:i32load(coro.stack)
+		f:call(util.popvec)
+	end)
+end)
+defMop('Peek', function(mop, ctx)
+	cg(ctx, function(f)
+		f:i32(4)
+		f:call(nthtmp)
 	end)
 end)
 defMop('SetPc', function(mop, ctx)
 	resolve(ctx, mop[1])
 	cg(ctx, function(f, scopes)
 		f:store(ctx.pc.r)
-		f:br(scopes.exit)
+		f:br(scopes.nop)
 	end)
 end)
+-- Arg n is the nth 4 byte arg after the opcode. pc already points past the opcode
 defMop('Arg', function(mop, ctx)
 	cg(ctx, function(f)
-		f:load(ctx.bc)
-		f:load(ctx.pc)
+		f:load(ctx.bc.r)
+		f:load(ctx.pc.r)
 		f:add()
-		if mop[1] ~= 0 then
-			f:i32(mop[1])
-			f:i32(4)
-			f:mul()
-			f:add()
-		end
-		f:i32load(str.base)
+		f:i32load(str.base + mop[1] * 4)
 	end)
 end)
 defMop('Const', function(mop, ctx)
@@ -618,8 +654,9 @@ end)
 defMop('Truthy', function(mop, ctx)
 	-- Could be a macroop
 	resolve(ctx, mop[1])
+	-- nil & false are the only values below TRUE
 	cg(ctx, function(f)
-		f:i32(FALSE)
+		f:i32(TRUE)
 		f:geu()
 	end)
 end)
@@ -633,30 +670,69 @@ end)
 defMop('Lt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	resolve(ctx, mop[2])
+	local isflt = isfloat(mop[1].out)
 	cg(ctx, function(f)
-		f:lts()
+		if isflt then
+			f:lt()
+		else
+			f:lts()
+		end
 	end)
 end)
 defMop('Le', function(mop, ctx)
 	resolve(ctx, mop[1])
 	resolve(ctx, mop[2])
+	local isflt = isfloat(mop[1].out)
 	cg(ctx, function(f)
-		f:les()
+		if isflt then
+			f:le()
+		else
+			f:les()
+		end
 	end)
 end)
 defMop('Gt', function(mop, ctx)
 	resolve(ctx, mop[1])
 	resolve(ctx, mop[2])
+	local isflt = isfloat(mop[1].out)
 	cg(ctx, function(f)
-		f:gts()
+		if isflt then
+			f:gt()
+		else
+			f:gts()
+		end
 	end)
 end)
 defMop('Ge', function(mop, ctx)
 	resolve(ctx, mop[1])
 	resolve(ctx, mop[2])
+	local isflt = isfloat(mop[1].out)
 	cg(ctx, function(f)
-		f:ges()
+		if isflt then
+			f:ge()
+		else
+			f:ges()
+		end
 	end)
+end)
+local function binop(name, emit)
+	defMop(name, function(mop, ctx)
+		resolve(ctx, mop[1])
+		resolve(ctx, mop[2])
+		local isflt = isfloat(mop[1].out)
+		cg(ctx, function(f)
+			emit(f, isflt)
+		end)
+	end)
+end
+binop('Sub', function(f) f:sub() end)
+binop('Mul', function(f) f:mul() end)
+binop('Div', function(f, isflt)
+	if isflt then
+		f:div()
+	else
+		f:divs()
+	end
 end)
 defMop('Add', function(mop, ctx)
 	resolve(ctx, mop[1])
@@ -687,10 +763,8 @@ defMop('BXor', function(mop, ctx)
 	end)
 end)
 defMop('ToString', function(mop, ctx)
-	resolve(ctx, mop[1])
-	cg(ctx, function(f)
-		f:call(obj2str)
-	end)
+	-- TODO rt has no obj2str yet, prelude's tostring is written in Lua
+	error('ToString: no obj2str in rt yet')
 end)
 defMop('Error', function(mop, ctx)
 	cg(ctx, function(f)
@@ -707,8 +781,9 @@ defMop('If', function(mop, ctx)
 	local ifty = mop.out
 	local wifty = microTypeToWasmType(ifty)
 	assert(mop[3] or wifty == void)
-	local mop2 = resolvethunk(ctx, mop[2])
-	local mop3 = mop[3] and resolvethunk(ctx, mop[3])
+	local isvoid = wifty == void
+	local mop2 = resolvethunk(ctx, mop[2], isvoid)
+	local mop3 = mop[3] and resolvethunk(ctx, mop[3], isvoid)
 	cg(ctx, function(f, scopes)
 		f:iff(wifty,
 			function()
@@ -740,7 +815,7 @@ defMop('ForRange', function(mop, ctx)
 			f:tee(r.r)
 			f:load(rto.r)
 			f:ltu()
-			f:br(loop)
+			f:brif(loop)
 		end)
 	end)
 end)
@@ -757,12 +832,16 @@ defMop('Typeck', function(mop, ctx)
 			f:store(rs[i].r)
 		end)
 	end
+	-- Layout after the operands: groups of a1 type ids then a body, then an optional default body.
+	-- i is where a group starts; when i == alen it's the default
+	local wty = microTypeToWasmType(mop.out)
+	local isvoid = wty == void
 	local rthunks = {}
 	for i=a1+2,alen,a1+1 do
-		rthunks[i] = resolvethunk(ctx, mop[i])
+		local body = i == alen and mop[i] or mop[i+a1]
+		rthunks[i] = resolvethunk(ctx, body, isvoid)
 	end
-	local wty = microTypeToWasmType(mop.out)
-	cg(ctx, function(f)
+	cg(ctx, function(f, scopes)
 		local function rec(i)
 			if i < alen then
 				return function()
@@ -774,17 +853,25 @@ defMop('Typeck', function(mop, ctx)
 							f:band()
 						end
 					end
-					f:iff(wty, rthunks[i], rec(i+a1))
+					local nxt = rec(i+a1+1)
+					f:iff(wty, function()
+						rthunks[i](f, scopes)
+					end, nxt)
 				end
 			elseif i == alen then
-				return rthunks[i]
+				return function()
+					rthunks[i](f, scopes)
+				end
 			end
 		end
-		rec(a1+2)
+		local top = rec(a1+2)
+		if top then
+			top()
+		end
 	end)
 end)
 
-local function genLocals(wty, regdef)
+local function genLocals(f, wty, regdef)
 	if #regdef > 0 then
 		local rs = table.pack(f:locals(wty, #regdef))
 		for i=1,#regdef do
@@ -792,25 +879,23 @@ local function genLocals(wty, regdef)
 		end
 	end
 end
+-- Ops compiled from microbc. Everything else uses vmlegacy's hand written handlers.
+-- Grow this list one op at a time, checking the REPL still works after each
+local microready = {
+	[ops.LoadNil] = true,
+	[ops.LoadFalse] = true,
+	[ops.LoadTrue] = true,
+	[ops.Pop] = true,
+	[ops.Jmp] = true,
+	[ops.Sub] = true,
+	[ops.Mul] = true,
+	[ops.Not] = true,
+}
 local eval = func(i32, function(f)
-	local ctx = mkcgctx(f)
-
-	local switchparams = {}
-	for k,v in pairs(ops) do
-		switchparams[#switchparams+1] = v
-		switchparams[#switchparams+1] = genOp(ctx, v)
-	end
-	switchparams[#switchparams+1] = 'exit'
-
-	genLocals(i32, ctx.regdef.i32)
-	genLocals(i64, ctx.regdef.i64)
-	genLocals(f32, ctx.regdef.f32)
-	genLocals(f64, ctx.regdef.f64)
-	local objbase = ctx.objbase.r
-	local framebase = ctx.framebase.r
-	local base = ctx.base.r
-	local bc = ctx.bc.r
-	local pc = ctx.pc.r
+	local a, b, c, d, e,
+		meta_callty, meta_retb, meta_retc, meta_key, meta_off,
+		framebase, objbase, base, bc, pc = f:locals(i32, 5+5+5)
+	local a64 = f:locals(i64, 1)
 
 	local function loadframe()
 		f:call(loadframebase)
@@ -822,6 +907,50 @@ local eval = func(i32, function(f)
 		f:i32load(dataframe.pc)
 		f:store(pc)
 	end
+	local function readArg()
+		f:load(bc)
+		f:load(pc)
+		f:i32(4)
+		f:add()
+		f:tee(pc)
+		f:add()
+		f:i32load(str.base - 4)
+	end
+	local function readArg4()
+		readArg()
+		f:i32(2)
+		f:shl()
+	end
+
+	local L = {
+		a = a, b = b, c = c, d = d, e = e,
+		meta_callty = meta_callty, meta_retb = meta_retb, meta_retc = meta_retc,
+		meta_key = meta_key, meta_off = meta_off,
+		framebase = framebase, objbase = objbase, base = base, bc = bc, pc = pc,
+		a64 = a64,
+		readArg = readArg, readArg4 = readArg4,
+		dataframe = dataframe, objframe = objframe, calltypes = calltypes,
+	}
+	local ctx = mkcgctx(f, L)
+
+	-- Keep legacy order: a handler can only branch to labels after it
+	local arms = vmlegacy(f, L)
+	local switchparams = {}
+	for i=1,#arms,2 do
+		local label, arm = arms[i], arms[i+1]
+		if microready[label] then
+			arm = genOp(ctx, label)
+		end
+		switchparams[i] = label
+		switchparams[i+1] = arm
+	end
+	switchparams[#switchparams+1] = 'nop'
+
+	-- Registers microbc asked for during genOp
+	genLocals(f, i32, ctx.regdef[i32])
+	genLocals(f, i64, ctx.regdef[i64])
+	genLocals(f, f32, ctx.regdef[f32])
+	genLocals(f, f64, ctx.regdef[f64])
 
 	loadframe()
 

@@ -127,16 +127,18 @@ local function idxtbl(tbl, namety)
 end
 function asmmeta:nameidx(namety)
 	assert(namety)
-	if namety.isparam then
-		return namety.isparam
-	elseif namety.func ~= self then
+	-- check outer function's names first: their params are our frees
+	if namety.func ~= self then
 		return self.frees[namety] or idxtbl(self.frees, namety)
+	elseif namety.isparam then
+		return namety.isparam
 	else
 		return self.locals[namety] or idxtbl(self.locals, namety)
 	end
 end
 function asmmeta:opnamety(ops, name, namety)
-	local idx = self:nameidx(namety)
+	-- globals ({env = _ENV's namety}) have no slot of their own, don't give them one
+	local idx = not namety.env and self:nameidx(namety)
 	if namety.env then
 		self:opnamety(namety_loads, nil, namety.env)
 		self:push(bc.LoadConst, self:const(name.arg))
@@ -399,6 +401,12 @@ local function emitExplist(self, node, outputs)
 	end
 	if lastv then
 		return n, visitEmit[ast.ExpOr](self, lastv, outputs)
+	elseif outputs > 0 then
+		-- no expressions, eg `local a, b`: all nil
+		for i=1,outputs do
+			self:push(bc.LoadNil)
+		end
+		return n, outputs
 	else
 		return n, 0
 	end
@@ -554,7 +562,7 @@ emitStatSwitch = {
 		for i, v in selectIdents(node) do
 			vars[#vars+1] = v
 		end
-		self:push(bc.Call, #vars, 1, 1)
+		self:push(bc.Call, #vars, 1, 2) -- f(s, ctl): 2 args
 		for i=#vars,2,-1 do
 			self:storename(vars[i])
 		end
@@ -746,18 +754,13 @@ visitScope = {
 		asm:genBoxPrologue()
 		emitNode(asm, node, ast.Block)
 		asm:synth()
+		-- Capture exactly asm's frees in index order. This includes frees only
+		-- passed through to nested functions, which aren't in asm.namety
 		local func = { func = asm }
-		local already = {}
-		for k, v in pairs(asm.namety) do
-			if v.free and v.free[asm] and v.func ~= asm and not already[v] then
-				already[v] = true
-				v.free[self] = true
-				func[#func+1] = v
-			end
+		for i, v in ipairs(asm.frees) do
+			v.free[self] = true
+			func[i] = v
 		end
-		table.sort(func, function(a, b)
-			return asm:nameidx(a) < asm:nameidx(b)
-		end)
 		self.funcs[node] = func
 	end,
 	[ast.Table] = function(self, node)
@@ -812,25 +815,29 @@ local function emitShortCircuitFactory(ty, opcode)
 		if #node == 1 then
 			prod = visitEmit[ty](self, node[1], out)
 		else
-			local lab
+			-- Jump between operands, all jumps land after the last operand.
+			-- Note selectNodes' i is the next child index, not a count
+			local labs, first = {}, true
 			for i, n in selectNodes(node, ty) do
-				visitEmit[ty](self, n, 1)
-				if lab then
-					self:patch(lab, #self.bc)
-				end
-				if i > 1 then
-					lab = #self.bc+2
+				if not first then
+					labs[#labs+1] = #self.bc+2
 					self:push(opcode, 0)
 				end
+				first = false
+				visitEmit[ty](self, n, 1)
+			end
+			for j=1,#labs do
+				self:patch(labs[j], #self.bc)
 			end
 			prod = 1
 		end
 		if out ~= -1 then
+			-- too few values: pad with nil. too many: pop the extra
 			for i=prod+1, out do
-				self:push(bc.Pop)
+				self:push(bc.LoadNil)
 			end
 			for i=prod-1, out, -1 do
-				self:push(bc.LoadNil)
+				self:push(bc.Pop)
 			end
 			return out
 		else
@@ -912,7 +919,8 @@ visitEmit = {
 			if type(res) == 'number' then
 				res = { n + res }
 			else
-				res[#res+1] = n
+				-- Call reads arg counts outermost call first
+				table.insert(res, 1, n)
 			end
 		elseif ty == 2 then
 			emitNode(self, node, ast.Table)
@@ -989,11 +997,12 @@ visitEmit = {
 	[ast.Value] = function(self, node, outputs)
 		local results = emitValueSwitch[node.type >> 5](self, node, outputs)
 		if outputs ~= -1 then
+			-- too few values: pad with nil. too many: pop the extra
 			for i=results+1, outputs do
-				self:push(bc.Pop)
+				self:push(bc.LoadNil)
 			end
 			for i=results-1, outputs, -1 do
-				self:push(bc.LoadNil)
+				self:push(bc.Pop)
 			end
 			return outputs
 		else

@@ -1,4 +1,5 @@
-const rtwa = typeof fetch !== 'undefined' ?
+// node has fetch too now, so check for node first
+const rtwa = typeof process === 'undefined' || !process.versions || !process.versions.node ?
 	fetch('rt.wasm', {cache:'no-cache'}).then(r => r.arrayBuffer()) :
 	new Promise((resolve, reject) =>
 		require('fs').readFile(__dirname + '/rt.wasm',
@@ -29,6 +30,7 @@ function rtwathen(ab) {
 		acos: Math.acos,
 		atan: Math.atan,
 		atan2: Math.atan2,
+		random: Math.random,
 		exp: Math.exp,
 		log: Math.log,
 		pow: Math.pow,
@@ -88,8 +90,8 @@ FFI.prototype.newf64 = function(f) {
 	return this.mkref(this.mod.newf64(f));
 }
 FFI.prototype.nil = new Handle(0);
-FFI.prototype.true = new Handle(8);
-FFI.prototype.false = new Handle(16);
+FFI.prototype.false = new Handle(8);
+FFI.prototype.true = new Handle(16);
 FFI.prototype.gettypeid = function(h) {
 	const memta = new Uint8Array(this.mem.buffer);
 	return memta[h.val+4];
@@ -190,7 +192,9 @@ FFI.prototype.rawexec = function(fn, ...param) {
 		this.mod.tmppush(v);
 	}
 	this.mod.init(fn);
-	return this.evalWait();
+	// Resolves to top of stack once done. With several results that's the last one.
+	// Raw pointer: only valid until next allocation
+	return this.evalWait().then(() => this.mod.nthtmp(4));
 }
 FFI.prototype.exec = function(fn, ...param) {
 	return this.rawexec(fn.val, ...param.map(x => x.val))
@@ -205,5 +209,5 @@ FFI.prototype.compile = function(env, str) {
 FFI.prototype.eval = async function(env, str, ...param) {
 	const fn = await this.compile(env, str);
 	if (!fn) throw new Error("Failed to compile");
-	return this.rawexec(fn, ...param.map(x => x.val));
+	return this.rawobj2js(await this.rawexec(fn, ...param.map(x => x.val)));
 }

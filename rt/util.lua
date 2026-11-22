@@ -248,6 +248,34 @@ local extendvec = func(i32, i32, i32, function(f, dst, n)
 		f:load(s)
 		f:i32store(buf.ptr)
 	end)
+
+	-- Set new slots to nil (0), so gc never sees stale or garbage pointers.
+	-- Assumes n is a multiple of 4. s is reused as the index
+	f:load(len)
+	f:load(n)
+	f:sub()
+	f:store(s)
+	f:block(function(done)
+		f:loop(function(loop)
+			f:load(s)
+			f:load(len)
+			f:geu()
+			f:brif(done)
+
+			f:load(dst)
+			f:i32load(buf.ptr)
+			f:load(s)
+			f:add()
+			f:i32(0)
+			f:i32store(vec.base)
+
+			f:load(s)
+			f:i32(4)
+			f:add()
+			f:store(s)
+			f:br(loop)
+		end)
+	end)
 	f:load(dst)
 end)
 
@@ -428,7 +456,8 @@ local memcpy4 = func(i32, i32, i32, void, function(f, dst, src, len)
 	end)
 end)
 
-local memcpy8 = func(i32, i32, i32, void, function(f, dst, src, len)
+-- global: gc.lua & earlier functions here call it before this line
+memcpy8 = func(i32, i32, i32, void, function(f, dst, src, len)
 	local n = f:locals(i32)
 	f:loop(function(loop)
 		f:load(n)
@@ -455,7 +484,12 @@ local memcpy8 = func(i32, i32, i32, void, function(f, dst, src, len)
 end)
 
 -- returns exponent on current lua stack
-local frexp = func(f64, f64, function(f, x)
+-- declared first so it can call itself
+local frexp
+frexp = func(f64, f64, function(f, x)
+	-- stack requires util, so look it up here. Body runs after all modules load
+	local stack = require 'stack'
+	local tmppush, nthtmp, setnthtmp = stack.tmppush, stack.nthtmp, stack.setnthtmp
 	local xi, ee = f:locals(i64, 2)
 	f:load(x)
 	f:i64reinterpret()

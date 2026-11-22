@@ -31,10 +31,12 @@ export(_vm, 'init', 'eval')
 export(_alloc, 'newi64', 'newf64', 'newtbl', 'newstr', 'newvec', 'newvec1',
 	'newstrbuf', 'newvecbuf', 'newfunc', 'newcoro')
 export(_gc, 'gcmark')
+-- for tests & debugging: force a collection
+mod:export('gccollect', gccollect)
 export(_lex, 'lex')
 export(_env, 'genesis', 'initPrelude')
 import(_rt, 'memory', 'igcfix', 'igcmark', 'echo', 'echoptr', 'sin', 'cos', 'tan',
-	'asin', 'acos', 'atan', 'atan2', 'exp', 'log')
+	'asin', 'acos', 'atan', 'atan2', 'random', 'exp', 'log')
 mod:data(_rt.image)
 local chunks = mod:compile()
 

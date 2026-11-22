@@ -10,6 +10,9 @@ local tmppush, extendtmp = stack.tmppush, stack.extendtmp
 local _table = require '_table'
 local _obj = require 'obj'
 
+local util = require 'util'
+local memcpy4, toint = util.memcpy4, util.toint
+
 local vm = require 'vm'
 local dataframe, calltypes = vm.dataframe, vm.calltypes
 

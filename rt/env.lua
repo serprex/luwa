@@ -136,7 +136,18 @@ local initPrelude = func(i32, function(f)
 		GS.setmetatable, GF.debug_setmetatable)
 	addmod(GS.io)
 	addmod(GS.math,
-		GS.type, GF.math_type)
+		GS.type, GF.math_type,
+		GS.abs, GF.math_abs,
+		GS.ceil, GF.math_ceil,
+		GS.floor, GF.math_floor,
+		GS.sin, GF.math_sin,
+		GS.cos, GF.math_cos,
+		GS.tan, GF.math_tan,
+		GS.asin, GF.math_asin,
+		GS.acos, GF.math_acos,
+		GS.exp, GF.math_exp,
+		GS.log, GF.math_log,
+		GS.atan, GF.math_atan)
 	addmod(GS.os)
 	addmod(GS.package)
 	addmod(GS.string)
