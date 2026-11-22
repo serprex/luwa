@@ -16,7 +16,9 @@ function int2buf(x) {
 		return r;
 	};
 
-	const srcbuf = fs.readFileSync(process.argv[2]);
+	let srcbuf = fs.readFileSync(process.argv[2]);
+	// skip a first line starting with #, like lua does. As a comment, so line numbers stay the same
+	if (srcbuf[0] == 35) srcbuf = Buffer.concat([Buffer.from("--"), srcbuf]);
 	const src = mod.newstr(srcbuf.length);
 	for (let i = 0; i < srcbuf.length; i++) mod.strset(src, i, srcbuf[i]);
 	const [tokens, values] = mod.lex(src);

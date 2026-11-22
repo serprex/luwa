@@ -18,6 +18,23 @@ local tonum = func(V, V, function(f, x)
 	end)
 end)
 
+-- Whether a float has an integer value that fits in an i64, so i64.trunc_s won't trap.
+-- -2^63 is exact as a float, 2^63 is just past the max int
+local fltisint = func(f64, i32, function(f, x)
+	f:load(x)
+	f:trunc()
+	f:load(x)
+	f:eq()
+	f:load(x)
+	f:f64(-2^63)
+	f:ge()
+	f:band()
+	f:load(x)
+	f:f64(2^63)
+	f:lt()
+	f:band()
+end)
+
 -- x as an int object if it has an integer value, else nil
 local toint = func(V, V, function(f, x)
 	local fl = f:locals(f64)
@@ -32,9 +49,7 @@ local toint = func(V, V, function(f, x)
 		f:refcast(M.ref(float))
 		f:structget(float, 'val')
 		f:tee(fl)
-		f:load(fl)
-		f:trunc()
-		f:eq()
+		f:call(fltisint)
 		f:iff(function()
 			f:load(fl)
 			f:i64truncs()
@@ -71,6 +86,7 @@ local inti64 = func(V, i64, function(f, x)
 end)
 
 return {
+	fltisint = fltisint,
 	tonum = tonum,
 	toint = toint,
 	numf64 = numf64,

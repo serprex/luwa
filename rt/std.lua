@@ -25,11 +25,11 @@ local function loadparam(f, i)
 	f:call(param)
 end
 
--- TODO unwind to pcall. For now print the message & trap
-local std_error = func(function(f)
+-- error(msg): unwind to the nearest pcall, see frame.throw. Returns the pc to run next
+-- TODO level, & adding the position to string messages
+local std_error = func(i32, i32, function(f, nextpc)
 	loadparam(f, 0)
-	f:call(rt.echoobj)
-	f:unreachable()
+	f:call(frame.throw)
 end)
 
 -- next(t, k): the next key & value, or just nil at the end
@@ -51,9 +51,29 @@ local std_next = func(function(f)
 	end)
 end)
 
--- TODO needs error unwinding
-local std_pcall = func(function(f)
-	f:unreachable()
+-- pcall(fn, ...): push true, fn & the args, then call fn in a prot frame.
+-- fn's results land after the true, & pcall's Return at nextpc gives them back.
+-- On an error frame.throw finds the prot frame & turns the true into false
+-- TODO a non-function fn traps in setupframe
+local std_pcall = func(i32, i32, function(f, nextpc)
+	local n = f:locals(i32)
+	f:i32(stack.df.pc)
+	f:load(nextpc)
+	f:call(stack.fset)
+	alloc.ltrue(f)
+	f:call(tmppush)
+	loadparam(f, 0)
+	f:call(tmppush)
+	f:call(frame.pushvarg)
+	f:store(n)
+	f:i32(frame.calltypes.prot)
+	f:call(stacklen)
+	f:load(n)
+	f:sub()
+	f:i32(frame.RETALL)
+	f:call(frame.pushframe)
+	f:call(frame.setupframe)
+	f:i32(0)
 end)
 
 local std_rawget = func(function(f)
@@ -324,6 +344,16 @@ local std_string_char = func(function(f)
 	f:call(tmppush)
 end)
 
+-- _luwa.objid(o): o's id as an integer. o must be a table, function or coroutine
+local std_objid = func(function(f)
+	loadparam(f, 0)
+	f:refcast(R.idobj)
+	f:structget(alloc.idobj, 'id')
+	f:i64extends()
+	f:call(newi64)
+	f:call(tmppush)
+end)
+
 -- _luwa.fn_new(): an empty function object, filled in by the fn_set_* calls
 local std_fn_new = func(function(f)
 	f:call(alloc.newfunc)
@@ -445,6 +475,7 @@ return {
 	string_byte = std_string_byte,
 	string_char = std_string_char,
 	fn_new = std_fn_new,
+	objid = std_objid,
 	fn_set_localc = std_fn_set_localc,
 	fn_set_paramc = std_fn_set_paramc,
 	fn_set_isdotdotdot = std_fn_set_isdotdotdot,

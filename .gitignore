@@ -2,4 +2,4 @@
 rt.wasm
 scripts/lex.wasm
 ./bootrt.lua
-lua-5.3.4-tests/
+lua-*-tests/

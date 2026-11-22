@@ -48,6 +48,10 @@ local genesis = func(function(f)
 	f:loadg(oluastack)
 	f:loadg(gstack)
 	f:structset(coro, 'stack')
+	-- the main coro is always running or normal
+	f:loadg(oluastack)
+	f:i32(alloc.corostate.live)
+	f:structset(coro, 'state')
 	f:call(rt.initstatics)
 end)
 
@@ -125,7 +129,8 @@ local initPrelude = func(R.tbl, function(f)
 		GS.fn_set_frees, GF._fn_set_frees,
 		GS.fn_set_consts, GF._fn_set_consts,
 		GS.vec_new, GF._vec_new,
-		GS.random, GF._random)
+		GS.random, GF._random,
+		GS.objid, GF._objid)
 
 	addmod(GS.coroutine,
 		GS.create, GF.coro_create,

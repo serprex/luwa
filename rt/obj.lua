@@ -4,6 +4,7 @@ local func = M.func
 local alloc = require 'alloc'
 local types, R, typeof = alloc.types, alloc.R, alloc.typeof
 local int, float, str, bytes, idobj = alloc.int, alloc.float, alloc.str, alloc.bytes, alloc.idobj
+local util = require 'util'
 
 -- nil & false are the only falsy values
 local truthy = func(V, i32, function(f, o)
@@ -167,10 +168,9 @@ local hash = func(V, i32, function(f, o)
 		f:ret()
 	end, types.float, function()
 		fltval(f, o)
-		f:tee(fl)
+		f:store(fl)
 		f:load(fl)
-		f:trunc()
-		f:eq()
+		f:call(util.fltisint)
 		f:iff(function()
 			-- integral floats hash like the int they equal
 			f:load(fl)

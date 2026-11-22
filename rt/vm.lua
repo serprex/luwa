@@ -787,16 +787,6 @@ defMop('Shr', function(mop, ctx)
 		f:call(shl64)
 	end)
 end)
-defMop('ToString', function(mop, ctx)
-	-- TODO rt has no obj2str yet, prelude's tostring is written in Lua
-	error('ToString: no obj2str in rt yet')
-end)
-defMop('Error', function(mop, ctx)
-	cg(ctx, function(f)
-		-- TODO stack unwinding etc
-		f:unreachable()
-	end)
-end)
 defMop('Str', function(mop, ctx)
 	local s = assert(GS[mop[1]], 'Str: string missing from rt statics')
 	cg(ctx, function(f)
@@ -832,7 +822,9 @@ callmop('ObjMetalessEq', _obj.eq)
 callmop('MetaGet', frame.metaget)
 callmop('BinMeta', frame.binmeta)
 callmop('IdxWalk', frame.idxwalk)
+callmop('NewIdxWalk', frame.newidxwalk)
 callmop('StrConcat', _string.strconcat)
+callmop('ToString', _string.numtostr)
 callmop('MakeClosure', frame.makeclosure)
 callmop('VargPushN', frame.loadvarg)
 callmop('AppendN', frame.appendn)
@@ -859,6 +851,14 @@ local function switchframe(f, ctx, scopes)
 	end)
 	f:br(scopes.nop)
 end
+-- TODO say what went wrong, eg which operand had a bad type
+defMop('Error', function(mop, ctx)
+	cg(ctx, function(f, scopes)
+		f:loadg(GS['invalid operation'])
+		f:call(frame.throw)
+		switchframe(f, ctx, scopes)
+	end)
+end)
 defMop('CallMeta', function(mop, ctx)
 	for i=2,#mop do
 		resolve(ctx, mop[i])
@@ -866,10 +866,13 @@ defMop('CallMeta', function(mop, ctx)
 			f:call(tmppush)
 		end)
 	end
-	local callty = assert(calltypes[mop[1]], 'CallMeta: unknown call type')
+	-- 'none' is a norm call that keeps no results
+	local retc = mop[1] == 'none' and 0 or 1
+	local callty = assert(calltypes[mop[1] == 'none' and 'norm' or mop[1]], 'CallMeta: unknown call type')
 	cg(ctx, function(f, scopes)
 		f:i32(#mop-2)
 		f:i32(callty)
+		f:i32(retc)
 		f:load(ctx.pc.r)
 		f:i32(ctx.argoffset)
 		f:add()
@@ -987,11 +990,13 @@ defMop('Syscall', function(mop, ctx)
 			f:call(tmppush)
 		end
 
-		-- Each builtin is a wasm func to call, a function that writes its code inline, or 'nyi' to trap
+		-- Each builtin is a wasm func to call, a function that writes its code inline, or 'nyi' to trap.
+		-- { sw = fn } is a builtin that may switch frames: fn gets the pc after the syscall
+		-- & returns the pc to run next, the way call ops do
 		local impl = {
-			pcall = std.pcall,
+			pcall = { sw = std.pcall },
 			select = std.select,
-			error = std.error,
+			error = { sw = std.error },
 			type = std.type,
 			rawget = std.rawget,
 			rawset = std.rawset,
@@ -1001,8 +1006,8 @@ defMop('Syscall', function(mop, ctx)
 			coro_status = stdcoro.coro_status,
 			coro_running = stdcoro.coro_running,
 			coro_create = stdcoro.coro_create,
-			coro_resume = stdcoro.coro_resume,
-			coro_yield = stdcoro.coro_yield,
+			coro_resume = { sw = stdcoro.coro_resume },
+			coro_yield = { sw = stdcoro.coro_yield },
 			debug_getmetatable = stddebug.debug_getmetatable,
 			debug_setmetatable = stddebug.debug_setmetatable,
 			math_type = stdmath.math_type,
@@ -1034,6 +1039,7 @@ defMop('Syscall', function(mop, ctx)
 			_fn_set_consts = std.fn_set_consts,
 			_vec_new = std.vec_new,
 			_fn_new = std.fn_new,
+			_objid = std.objid,
 			_lex = std.lexgen,
 			_random = function()
 				f:call(rt.random)
@@ -1052,6 +1058,10 @@ defMop('Syscall', function(mop, ctx)
 				else
 					if type(body) == 'function' then
 						body()
+					elseif type(body) == 'table' and rawget(body, 'sw') then
+						f:load(ctx.pc.r)
+						f:call(body.sw)
+						switchframe(f, ctx, scopes)
 					else
 						f:call(body)
 					end

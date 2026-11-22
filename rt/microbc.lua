@@ -165,10 +165,11 @@ local As = mkMop('As', function(args)
 		out = args[2],
 	}
 end)
+-- A number (int or float) as a string
 mkMop('ToString', {
 	alloc = true,
 	arg = {'obj'},
-	out = 'obj',
+	out = 'str',
 })
 local LoadInt = mkMop('LoadInt', {
 	arg = {'int'},
@@ -391,12 +392,20 @@ mkMop('IdxWalk', {
 	arg = {'obj', 'obj'},
 	out = 'obj',
 })
+-- a[b] = c following __newindex tables. Gives nil once stored, or an __newindex
+-- function to call with IdxSelf, b & c. a has to be a table or have a __newindex
+mkMop('NewIdxWalk', {
+	stmt = true,
+	alloc = true,
+	arg = {'obj', 'obj', 'obj'},
+	out = 'obj',
+})
 mkMop('IdxSelf', {
 	stmt = true,
 	out = 'obj',
 })
 -- Call a function with some args, its 1 result is pushed when it returns.
--- First arg is the call type: 'norm', or 'bool' to make the result true/false.
+-- First arg is the call type: 'norm', 'bool' to make the result true/false, or 'none' to keep no result.
 -- Leaves the op, so it has to come last. Pushes each arg as it goes
 mkMop('CallMeta', function(args)
 	local arg = { 'atom' }
@@ -756,14 +765,20 @@ op(bc.TblAdd, function(b)
 	local t = As(b:Peek(), 'tbl')
 	b:TblSet(t, k, v)
 end)
--- TODO __newindex
 op(bc.TblSet, function(b)
 	local k = b:Pop()
 	local t = b:Pop()
 	local v = b:Pop()
+	local function walk(b)
+		local h = b:NewIdxWalk(t, k, v)
+		b:If(Truthy(h), function(b) b:CallMeta('none', h, b:IdxSelf(), k, v) end)
+	end
+	-- non tables need a __newindex
 	b:Typeck({t}, {
-		{types.tbl, function(b, t) b:TblSet(t, k, v) end},
-	}, function(b) b:Error() end)
+		{types.tbl, walk},
+	}, function(b)
+		b:If(Truthy(b:MetaGet(t, Str('__newindex'))), walk, function(b) b:Error() end)
+	end)
 end)
 
 op(bc.CmpEq, function(b)
@@ -907,10 +922,23 @@ end)
 op(bc.Concat, function(b)
 	local y = b:Pop()
 	local x = b:Pop()
-	b:Typeck({x, y}, {
-		{types.str, types.str, function(b, x, y) b:Push(b:StrConcat(x, y)) end},
-		-- TODO numbers: rt has no number to string yet
-	}, function(b)
+	-- strings & numbers concat directly, numbers turn into strings first
+	local function asstr(b, v)
+		if out(v) == 'str' then
+			return v
+		end
+		return b:ToString(v)
+	end
+	local cases = {}
+	local strnum = {types.str, types.int, types.float}
+	for _, tx in ipairs(strnum) do
+		for _, ty in ipairs(strnum) do
+			cases[#cases+1] = {tx, ty, function(b, x, y)
+				b:Push(b:StrConcat(asstr(b, x), asstr(b, y)))
+			end}
+		end
+	end
+	b:Typeck({x, y}, cases, function(b)
 		MetaOr(b, b:BinMeta(x, y, Str('__concat')), 'norm', x, y)
 	end)
 end)

@@ -1,7 +1,7 @@
 local _luwa = ...
 _G = _ENV
 
-math.mininteger = -9223372036854775808
+math.mininteger = -9223372036854775807 - 1 -- 9223372036854775808 alone is a float
 math.maxinteger = 9223372036854775807
 math.pi = 0x1.921fb54442d18p1
 math.huge = 1./0.
@@ -19,6 +19,16 @@ package.loaded = {
 	utf8 = utf8,
 }
 
+-- A float with an integer value becomes that integer, anything else but an integer gives nil
+function math.tointeger(x)
+	local ty = math.type(x)
+	if ty == 'integer' then
+		return x
+	elseif ty == 'float' and x >= -0x1p63 and x < 0x1p63 and x == x // 1 then
+		return math.floor(x)
+	end
+end
+
 -- capture globals so that behavior doesn't change if rebound
 local _rawget, _type = rawget, type
 local _error, _next, _select, _pcall = error, next, select, pcall
@@ -31,7 +41,9 @@ local co_create, co_resume, co_running = coroutine.create, coroutine.resume, cor
 local math_floor, math_ceil = math.floor, math.ceil
 
 
-debug_setmetatable('', { __index = string })
+-- String metatable. Arith metamethods get added below, like Lua 5.4
+local strmt = { __index = string }
+debug_setmetatable('', strmt)
 
 local function _assert(v, ...)
 	if v then
@@ -88,15 +100,33 @@ function setmetatable(table, metatable)
 	return debug_setmetatable(table, metatable)
 end
 
+-- Object id as 8 hex digits, what tostring shows in place of an address
+local hexdigits = '0123456789abcdef'
+local function hexid(v)
+	local id = _luwa.objid(v) & 0xffffffff
+	local out = {}
+	for i = 8, 1, -1 do
+		out[i] = string_byte(hexdigits, (id & 15) + 1)
+		id = id >> 4
+	end
+	return '0x' .. string_char(table_unpack(out, 1, 8))
+end
+
 local function _tostring(v)
 	local ty = _type(v)
 	if ty == 'string' then
 		return v
 	elseif ty == 'number' then
 		return v .. ''
+	elseif v == nil then
+		return 'nil'
+	elseif v == true then
+		return 'true'
+	elseif v == false then
+		return 'false'
 	else
-		local mt = _getmetatable(v)
-		local __tostring = mt.__tostring
+		local mt = debug_getmetatable(v)
+		local __tostring = mt and _rawget(mt, '__tostring')
 		if __tostring then
 			local s = __tostring(v)
 			local sty = _type(s)
@@ -108,7 +138,7 @@ local function _tostring(v)
 				_error("'__tostring' must return a string")
 			end
 		else
-			return ty .. ': ' .. _luwa.hexid(v)
+			return ty .. ': ' .. hexid(v)
 		end
 	end
 end
@@ -122,27 +152,116 @@ for i=10,35 do
 	digits[55+i] = i
 	digits[87+i] = i
 end
+local string_unpack = string.unpack
+-- whitespace that tonumber skips around a number
+local spaces = { [9] = true, [10] = true, [11] = true, [12] = true, [13] = true, [32] = true }
+-- First & last non space position of s, and whether there's a sign there.
+-- Returns i, j, neg, where s[i..j] is what's left after the sign
+local function numbounds(s)
+	local i, j = 1, #s
+	while i <= j and spaces[string_byte(s, i)] do
+		i = i + 1
+	end
+	while i <= j and spaces[string_byte(s, j)] do
+		j = j - 1
+	end
+	local ch = i <= j and string_byte(s, i)
+	local neg = ch == 45 -- '-'
+	if neg or ch == 43 then -- '+'
+		i = i + 1
+	end
+	return i, j, neg
+end
+-- Count of digits (in base 10, or 16 if hex) starting at s[i], up to j
+local function digitrun(s, i, j, hex)
+	local n = 0
+	while i + n <= j do
+		local d = digits[string_byte(s, i + n)] -- i + n <= j, so never nil
+		if not d or d >= (hex and 16 or 10) then
+			break
+		end
+		n = n + 1
+	end
+	return n
+end
+-- Whether s[i..j] is a Lua numeral, & whether it's a plain decimal integer
+local function isnumeral(s, i, j)
+	local hex = false
+	local a, b = string_byte(s, i, i + 1)
+	if i + 1 <= j and a == 48 and (b == 120 or b == 88) then -- 0x
+		hex = true
+		i = i + 2
+	end
+	local n = digitrun(s, i, j, hex)
+	i = i + n
+	local plain = not hex
+	if i <= j and string_byte(s, i) == 46 then -- '.'
+		plain = false
+		local m = digitrun(s, i + 1, j, hex)
+		i = i + 1 + m
+		n = n + m
+	end
+	if n == 0 then
+		return false
+	end
+	local e = string_byte(s, i)
+	if i <= j and (hex and (e == 112 or e == 80) or not hex and (e == 101 or e == 69)) then
+		plain = false
+		i = i + 1
+		e = string_byte(s, i)
+		if e == 43 or e == 45 then
+			i = i + 1
+		end
+		local m = digitrun(s, i, j, false)
+		if m == 0 then
+			return false
+		end
+		i = i + m
+	end
+	return i == j + 1, plain
+end
 function tonumber(num, base)
 	if base == nil then
-		return _luwa.tonumber(num)
-	else
-		base = assert(tointeger(base), "bad argument #2 to 'tonumber' (number expected, got string)")
-		assert(type(num) == 'string', "bad argument #1 to 'tonumber' (string expected, got number)")
-		assert(base > 1 and base < 37, "bad argument #2 to 'tonumber' (base out of range)")
-		if num == '' then
+		if _type(num) == 'number' then
+			return num
+		elseif _type(num) ~= 'string' then
 			return nil
 		end
+		local i, j, neg = numbounds(num)
+		local ok, plain = isnumeral(num, i, j)
+		if not ok then
+			return nil
+		end
+		-- the lexer gives the exact value. A valid numeral lexes as 1 number token
+		-- no string.sub yet, so copy out the numeral byte by byte
+		local lx, vals = _luwa.lexgen(string_char(string_byte(num, i, j)))
+		local v = vals[string_unpack('<i4', lx, 2) + 1]
+		if neg then
+			-- -9223372036854775808 fits in an integer, but the lexer only saw 9223372036854775808
+			if plain and v == 0x1p63 then
+				return -0x7fffffffffffffff - 1
+			end
+			v = -v
+		end
+		return v
+	else
+		base = _assert(tointeger(base), "bad argument #2 to 'tonumber' (number expected, got string)")
+		_assert(_type(num) == 'string', "bad argument #1 to 'tonumber' (string expected, got number)")
+		_assert(base > 1 and base < 37, "bad argument #2 to 'tonumber' (base out of range)")
+		local i, j, neg = numbounds(num)
+		if i > j then
+			return nil
+		end
+		-- integers wrap on overflow, like Lua
 		local ret = 0
-		local e = 1
-		for i=#num,1 do
-			local ch = digits[string_byte(num, i)]
+		for k = i, j do
+			local ch = digits[string_byte(num, k)]
 			if not ch or ch >= base then
 				return nil
 			end
-			ret = ret + ch * e
-			e = e * base
+			ret = ret * base + ch
 		end
-		return ret
+		return neg and -ret or ret
 	end
 end
 
@@ -213,12 +332,13 @@ function string:len()
 	_assert(_type(self) == "string", "bad argument #1 to 'len' (string expected)")
 	return #self
 end
-function smtfb(meth, x, y)
+-- Fallback when a string won't convert: try y's metamethod
+local function smtfb(meth, x, y)
 	local yt = _type(y)
 	if yt ~= 'string' then
-		local mt = getmetatable(y)
-		if mt and mt then
-			local fn = mt[meth]
+		local mt = debug_getmetatable(y)
+		if mt then
+			local fn = _rawget(mt, meth)
 			if fn then
 				return fn(x, y)
 			end
@@ -226,7 +346,7 @@ function smtfb(meth, x, y)
 	end
 	return error("attempt to " .. meth .. " a '" .. _type(x) .. "' with a '" .. yt .. "'")
 end
-function string.__add(x, y)
+function strmt.__add(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
 	if nx ~= nil and ny ~= nil then
 		return nx + ny
@@ -234,7 +354,7 @@ function string.__add(x, y)
 		return smtfb('__add', x, y)
 	end
 end
-function string.__sub(x, y)
+function strmt.__sub(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
 	if nx ~= nil and ny ~= nil then
 		return nx - ny
@@ -242,7 +362,7 @@ function string.__sub(x, y)
 		return smtfb('__sub', x, y)
 	end
 end
-function string.__mul(x, y)
+function strmt.__mul(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
 	if nx ~= nil and ny ~= nil then
 		return nx * ny
@@ -250,7 +370,7 @@ function string.__mul(x, y)
 		return smtfb('__mul', x, y)
 	end
 end
-function string.__mod(x, y)
+function strmt.__mod(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
 	if nx ~= nil and ny ~= nil then
 		return nx % ny
@@ -258,7 +378,7 @@ function string.__mod(x, y)
 		return smtfb('__mod', x, y)
 	end
 end
-function string.__pow(x, y)
+function strmt.__pow(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
 	if nx ~= nil and ny ~= nil then
 		return nx ^ ny
@@ -266,7 +386,7 @@ function string.__pow(x, y)
 		return smtfb('__pow', x, y)
 	end
 end
-function string.__div(x, y)
+function strmt.__div(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
 	if nx ~= nil and ny ~= nil then
 		return nx / ny
@@ -274,7 +394,7 @@ function string.__div(x, y)
 		return smtfb('__div', x, y)
 	end
 end
-function string.__idiv(x, y)
+function strmt.__idiv(x, y)
 	local nx, ny = tonumber(x), tonumber(y)
 	if nx ~= nil and ny ~= nil then
 		return nx // ny
@@ -282,7 +402,7 @@ function string.__idiv(x, y)
 		return smtfb('__idiv', x, y)
 	end
 end
-function string:__unm()
+function strmt:__unm()
 	local nx = tonumber(self)
 	if nx ~= nil then
 		return -nx
@@ -476,7 +596,7 @@ iometa.setvbuf = _luwa.iosetvbuf
 
 function iometa:__tostring()
 	_assert(io_type(self), "bad argument #1 to '__tostring'")
-	return 'file (' .. _luwa.hexid(self) .. ')'
+	return 'file (' .. hexid(self) .. ')'
 end
 function iometa:seek(whence, offset)
 	_assert(io_type(self), "bad argument #1 to 'seek'")
@@ -526,8 +646,8 @@ function coroutine.wrap(f)
 	end
 end
 function coroutine.isyieldable()
-	local a, b = co_running()
-	return b
+	local a, ismain = co_running()
+	return not ismain
 end
 
 function print(...)
@@ -669,9 +789,15 @@ local function _load(src, name, mode, env)
 	if not lx then
 		return nil, vals
 	end
-	-- TODO use _pcall once vm has pcall & error unwinding. Until then a parse error aborts
-	local root = astgen(lx, vals)
-	local fn = asm2fn(bcgen(root))
+	local ok, root = _pcall(astgen, lx, vals)
+	if not ok then
+		return nil, root
+	end
+	local ok, asm = _pcall(bcgen, root)
+	if not ok then
+		return nil, asm
+	end
+	local fn = asm2fn(asm)
 	_luwa.fn_set_frees(fn, _luwa.vec_new(env or _ENV))
 	-- compiled chunks take _ENV as their first param, like the prelude does
 	-- TODO make _ENV the chunk's first free instead, saving this extra call
@@ -686,13 +812,17 @@ local function _loadfile(fname, mode, env)
 	local file
 	if not fname then
 		file = io_in
-	elseif _type(file) == 'string' then
+	elseif _type(fname) == 'string' then
 		file = _assert(_luwa.ioopen(fname, 'r'))
 	else
 		return _error('bad argument #1 to loadfile')
 	end
 	local src = _luwa.ioread(file, 'a')
 	_luwa.ioclose(file)
+	-- skip a first line starting with #, like a #! line. As a comment, so line numbers stay the same
+	if string_byte(src, 1) == 35 then
+		src = '--' .. src
+	end
 	return _load(src, fname or 'stdin', mode, env)
 end
 

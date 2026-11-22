@@ -9,6 +9,7 @@ local alloc = require 'alloc'
 local types, R, typeof, tbl, vec, vals, int, functy, bytes, coro, nextid, newi64 =
 	alloc.types, alloc.R, alloc.typeof, alloc.tbl, alloc.vec, alloc.vals, alloc.int, alloc.functy, alloc.bytes, alloc.coro,
 	alloc.nextid, alloc.newi64
+local corostate, lfalse = alloc.corostate, alloc.lfalse
 
 local _table = require '_table'
 local tblget, tblset = _table.tblget, _table.tblset
@@ -20,7 +21,7 @@ local tmppush, extendtmp, stacklen, setstacklen, sget, sset, scopy, df, fget, fs
 	stack.tmppush, stack.extendtmp, stack.stacklen, stack.setstacklen, stack.sget, stack.sset, stack.scopy,
 	stack.df, stack.fget, stack.fset, stack.fpush, stack.fpop
 
-require 'rt' -- GS, oluastack, ostrmt
+local rt = require 'rt' -- also makes GS, oluastack, ostrmt
 
 local objframe = {
 	bc = 0,
@@ -249,6 +250,73 @@ local idxwalk = func(V, V, V, function(f, a, b)
 	f:unreachable()
 end)
 
+-- a[b] = c, following __newindex tables. Stores & returns nil, or when it reaches
+-- an __newindex function returns that function & sets idxself to the value to call it with.
+-- a is a table, or has a __newindex
+local newidxwalk = func(V, V, V, V, function(f, a, b, c)
+	local h = f:locals(V)
+	f:refnull(M.heap.eq)
+	f:storeg(idxself)
+	f:loop(function(loop)
+		-- TODO Lua limits chains to 2000 length to try detect infinite loops
+		f:load(a)
+		f:call(typeof)
+		f:i32(types.tbl)
+		f:eq()
+		f:iff(function()
+			-- a key already there, or no __newindex: raw set
+			f:load(a)
+			f:refcast(R.tbl)
+			f:load(b)
+			f:call(tblget)
+			f:refisnull()
+			f:iff(i32, function()
+				f:load(a)
+				f:loadg(GS.__newindex)
+				f:call(metaget)
+				f:tee(h)
+				f:refisnull()
+			end, function()
+				f:i32(1)
+			end)
+			f:iff(function()
+				f:load(a)
+				f:refcast(R.tbl)
+				f:load(b)
+				f:load(c)
+				f:call(tblset)
+				f:refnull(M.heap.eq)
+				f:ret()
+			end)
+		end, function()
+			f:load(a)
+			f:loadg(GS.__newindex)
+			f:call(metaget)
+			f:tee(h)
+			f:refisnull()
+			f:iff(function()
+				-- TODO error: attempt to index a value
+				f:unreachable()
+			end)
+		end)
+		f:load(h)
+		f:call(typeof)
+		f:i32(types.functy)
+		f:eq()
+		f:iff(function()
+			f:load(a)
+			f:storeg(idxself)
+			f:load(h)
+			f:ret()
+		end)
+		-- __newindex is a table: set in it next
+		f:load(h)
+		f:store(a)
+		f:br(loop)
+	end)
+	f:unreachable()
+end)
+
 -- Push a frame. dotdotdot, locals & frame are filled in by setupframe
 local pushframe = func(i32, i32, i32, void, function(f, callty, base, retc)
 	f:call(fpush)
@@ -331,33 +399,70 @@ end)
 
 -- Finish the top frame, its function is at base-1
 local setupframe = func(function(f)
-	local fn = f:locals(V)
+	local fn, h = f:locals(V, 2)
+	local base, n = f:locals(i32, 2)
 	getf(f, 'base')
 	f:i32(1)
 	f:sub()
 	f:call(sget)
-	f:tee(fn)
-	-- TODO __call metamethod, error otherwise
-	f:call(typeof)
-	f:i32(types.functy)
-	f:ne()
-	f:iff(function()
-		f:unreachable()
+	f:store(fn)
+	f:loop(function(loop)
+		f:load(fn)
+		f:call(typeof)
+		f:i32(types.functy)
+		f:ne()
+		f:iff(function()
+			-- not a function: call its __call with it as the first arg
+			-- TODO error when there's no __call
+			f:load(fn)
+			f:loadg(GS.__call)
+			f:call(metaget)
+			f:tee(h)
+			f:refisnull()
+			f:iff(function()
+				f:unreachable()
+			end)
+			-- shift fn & args up 1 slot, then put h where fn was
+			getf(f, 'base')
+			f:tee(base)
+			f:call(stacklen)
+			f:load(base)
+			f:sub()
+			f:i32(1)
+			f:add()
+			f:store(n)
+			f:i32(1)
+			f:call(extendtmp)
+			f:load(base)
+			f:load(base)
+			f:i32(1)
+			f:sub()
+			f:load(n)
+			f:call(scopy)
+			f:load(base)
+			f:i32(1)
+			f:sub()
+			f:load(h)
+			f:call(sset)
+			f:load(h)
+			f:store(fn)
+			f:br(loop)
+		end)
 	end)
 	f:load(fn)
 	f:refcast(R.functy)
 	f:call(framefor)
 end)
 
--- Call the function under the top argc values, keeping 1 result.
+-- Call the function under the top argc values, keeping retc results.
 -- nextpc is where the current frame carries on after
-local callmeta = func(i32, i32, i32, i32, function(f, argc, callty, nextpc)
+local callmeta = func(i32, i32, i32, i32, i32, function(f, argc, callty, retc, nextpc)
 	setf(f, 'pc', function() f:load(nextpc) end)
 	f:load(callty)
 	f:call(stacklen)
 	f:load(argc)
 	f:sub()
-	f:i32(1)
+	f:load(retc)
 	f:call(pushframe)
 	f:call(setupframe)
 	f:i32(0)
@@ -631,6 +736,123 @@ end
 local callchain = mkcallchain(false)
 local callchainvarg = mkcallchain(true)
 
+-- Make co the running coro: its stack & frames become gstack & gframes
+local switchto = func(R.coro, void, function(f, co)
+	f:load(co)
+	f:storeg(oluastack)
+	f:load(co)
+	f:structget(coro, 'stack')
+	f:storeg(gstack)
+	f:load(co)
+	f:structget(coro, 'data')
+	f:storeg(gframes)
+end)
+
+-- Push n values of another coro's stack, starting at slot i
+local pushfrom = func(R.stack, i32, i32, void, function(f, src, i, n)
+	local len = f:locals(i32)
+	f:call(stacklen)
+	f:store(len)
+	f:load(n)
+	f:call(extendtmp)
+	f:loadg(gstack)
+	f:structget(alloc.stack, 'arr')
+	f:load(len)
+	f:load(src)
+	f:structget(alloc.stack, 'arr')
+	f:load(i)
+	f:load(n)
+	f:arraycopy(vals, vals)
+end)
+
+-- The running coro stops & goes back to its caller, leaving itself in state st.
+-- The caller's resume returns ok, then n values from slot i of the coro's stack.
+-- Returns the caller's pc
+local coroback = func(i32, i32, i32, i32, i32, function(f, ok, i, n, st)
+	local co = f:locals(R.coro)
+	local src = f:locals(R.stack)
+	f:loadg(oluastack)
+	f:tee(co)
+	f:load(st)
+	f:structset(coro, 'state')
+	f:loadg(gstack)
+	f:store(src)
+	f:load(co)
+	f:structget(coro, 'caller')
+	f:call(switchto)
+	f:load(co)
+	f:refnull(coro)
+	f:structset(coro, 'caller')
+	f:loadg(oluastack)
+	f:i32(corostate.live)
+	f:structset(coro, 'state')
+	f:load(ok)
+	f:refi31()
+	f:call(tmppush)
+	f:load(src)
+	f:load(i)
+	f:load(n)
+	f:call(pushfrom)
+	getf(f, 'pc')
+end)
+
+-- Raise an error with value msg. Unwinds to the nearest pcall in this coro & makes it return false, msg.
+-- With no pcall a coroutine dies & its resume returns false, msg. Returns the pc to run next
+local throw = func(V, i32, function(f, msg)
+	local ty, base = f:locals(i32, 2)
+	f:loop(function(loop)
+		getf(f, 'type')
+		f:tee(ty)
+		f:i32(calltypes.prot)
+		f:eq()
+		f:iff(function()
+			-- pcall put true below the function, make it false & put msg where the function was
+			getf(f, 'base')
+			f:tee(base)
+			f:i32(2)
+			f:sub()
+			lfalse(f)
+			f:call(sset)
+			f:load(base)
+			f:i32(1)
+			f:sub()
+			f:call(setstacklen)
+			f:load(msg)
+			f:call(tmppush)
+			f:call(fpop)
+			getf(f, 'pc')
+			f:ret()
+		end)
+		f:load(ty)
+		f:i32(calltypes.init)
+		f:eq()
+		f:iff(function()
+			f:loadg(oluastack)
+			f:structget(coro, 'caller')
+			f:refisnull()
+			f:iff(function()
+				-- nothing catches it: print it & stop
+				f:load(msg)
+				f:call(rt.echoobj)
+				f:unreachable()
+			end)
+			f:load(msg)
+			f:call(tmppush)
+			f:i32(0)
+			f:call(stacklen)
+			f:i32(1)
+			f:sub()
+			f:i32(1)
+			f:i32(corostate.dead)
+			f:call(coroback)
+			f:ret()
+		end)
+		f:call(fpop)
+		f:br(loop)
+	end)
+	f:unreachable()
+end)
+
 -- Return op: results are everything after the objframe
 local retframe = func(i32, function(f)
 	local base, retb, ty, c, e, key, len = f:locals(i32, 7)
@@ -665,8 +887,15 @@ local retframe = func(i32, function(f)
 				f:i32(-1)
 				f:ret()
 			end)
-			-- TODO a coroutine finished: hand results to the caller
-			f:unreachable()
+			-- a coroutine finished: its resume returns true & the results
+			f:i32(1)
+			f:load(e)
+			f:load(len)
+			f:load(e)
+			f:sub()
+			f:i32(corostate.dead)
+			f:call(coroback)
+			f:ret()
 		end)
 
 		-- first result made true/false, false if none
@@ -776,6 +1005,7 @@ return {
 	binmeta = binmeta,
 	idxself = idxself,
 	idxwalk = idxwalk,
+	newidxwalk = newidxwalk,
 	pushframe = pushframe,
 	framefor = framefor,
 	setupframe = setupframe,
@@ -783,6 +1013,10 @@ return {
 	callchain = callchain,
 	callchainvarg = callchainvarg,
 	retframe = retframe,
+	switchto = switchto,
+	pushfrom = pushfrom,
+	coroback = coroback,
+	throw = throw,
 	pushvarg = pushvarg,
 	loadvarg = loadvarg,
 	appendn = appendn,

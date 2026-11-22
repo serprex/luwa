@@ -1,6 +1,7 @@
 local M = require 'make'
 
 local alloc = require 'alloc'
+local _float = require '_float'
 local str, bytes, R = alloc.str, alloc.bytes, alloc.R
 
 -- -1, 0 or 1 as a is before, same as or after b, by bytes
@@ -97,7 +98,99 @@ local strconcat = M.func(R.str, R.str, M.ref(str), function(f, a, b)
 	f:call(alloc.strfrombytes)
 end)
 
+-- Decimal digits of an integer, like Lua's %d
+local inttostr = M.func(i64, M.ref(str), function(f, x)
+	local buf, outb = f:locals(R.bytes, 2)
+	local k, neg = f:locals(i32, 2)
+	local u = f:locals(i64)
+	-- filled from the end, 19 digits & a sign at most
+	f:i32(20)
+	f:arraynewdefault(bytes)
+	f:store(buf)
+	f:i32(20)
+	f:store(k)
+	f:load(x)
+	f:i64(0)
+	f:lts()
+	f:store(neg)
+	-- u = |x|. The min int negates to itself, which is still right read as unsigned
+	f:i64(0)
+	f:load(x)
+	f:sub()
+	f:load(x)
+	f:load(neg)
+	f:select()
+	f:store(u)
+	f:loop(function(loop)
+		f:load(k)
+		f:i32(1)
+		f:sub()
+		f:store(k)
+		f:load(buf)
+		f:load(k)
+		f:load(u)
+		f:i64(10)
+		f:remu()
+		f:i32wrap()
+		f:i32(48)
+		f:add()
+		f:arrayset(bytes)
+		f:load(u)
+		f:i64(10)
+		f:divu()
+		f:tee(u)
+		f:i64(0)
+		f:ne()
+		f:brif(loop)
+	end)
+	f:load(neg)
+	f:iff(function()
+		f:load(k)
+		f:i32(1)
+		f:sub()
+		f:store(k)
+		f:load(buf)
+		f:load(k)
+		f:i32(45) -- '-'
+		f:arrayset(bytes)
+	end)
+	f:i32(20)
+	f:load(k)
+	f:sub()
+	f:arraynewdefault(bytes)
+	f:tee(outb)
+	f:i32(0)
+	f:load(buf)
+	f:load(k)
+	f:i32(20)
+	f:load(k)
+	f:sub()
+	f:arraycopy(bytes, bytes)
+	f:load(outb)
+	f:call(alloc.strfrombytes)
+end)
+
+-- A number as a string. x must be an int or a float
+local numtostr = M.func(V, M.ref(str), function(f, x)
+	f:load(x)
+	f:call(alloc.typeof)
+	f:i32(alloc.types.int)
+	f:eq()
+	f:iff(M.ref(str), function()
+		f:load(x)
+		f:refcast(M.ref(alloc.int))
+		f:structget(alloc.int, 'val')
+		f:call(inttostr)
+	end, function()
+		f:load(x)
+		f:refcast(M.ref(alloc.float))
+		f:structget(alloc.float, 'val')
+		f:call(_float.flttostr)
+	end)
+end)
+
 return {
 	strcmp = strcmp,
 	strconcat = strconcat,
+	numtostr = numtostr,
 }

@@ -469,7 +469,7 @@ emitStatSwitch = {
 		while gotosc ~= labelsc do
 			gotosc = gotosc.prev
 			if not gotosc then
-				error('Jmp out of scope', nami)
+				error('goto ' .. tostring(namei) .. ' jumps out of scope')
 			end
 		end
 		self.gotos[#self.bc+2] = namei
@@ -615,7 +615,7 @@ emitStatSwitch = {
 					first = false
 				else
 					self:push(bc.LoadConst, self:const(nlast.arg))
-					self:push(bc.TblGet)
+					self:push(bc.Idx)
 				end
 			end
 			nlast = name

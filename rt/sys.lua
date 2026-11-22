@@ -48,4 +48,5 @@ return {
 	'string_char',
 	'_fn_new',
 	'io_type',
+	'_objid',
 }
