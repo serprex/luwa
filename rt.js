@@ -336,20 +336,71 @@ function hexfloat(x, p) {
 FFI.prototype.rawobj2js = function(v) {
 	return this.obj2js(v);
 }
+// Lua traceback of the running coro, read from its frames. For wasm traps,
+// where the Lua state is left as it was when the op trapped
+FFI.prototype.traceback = function() {
+	const m = this.mod, out = [], n = m.framelen();
+	const key = s => this.newstr(s).val;
+	const kshort = key('short_src'), klines = key('lines'), kwhat = key('what'), kdef = key('linedefined');
+	// like C Lua only the first 10 & last 11 frames, deep recursion has millions
+	const skipfrom = n > 22 ? 10 : n, skipto = n > 22 ? n - 11 : n;
+	let above = -1, inC = false;
+	for (let i = 0; i < n; i++) {
+		const ty = m.framefield(i, 0), pc = m.framefield(i, 1), base = m.framefield(i, 2);
+		// a frame under a call type frame (3) is an outer call that hasn't started
+		const pending = above === 3;
+		above = ty;
+		if (i >= skipfrom && i < skipto) {
+			if (i === skipfrom) out.push(`...\t(skipping ${skipto - skipfrom} frames)`);
+			inC = false;
+			continue;
+		}
+		if (pending) continue;
+		const fn = base > 0 && base <= m.stacksize() ? m.stackget(base - 1) : null;
+		const info = fn === null ? null : m.fninfo(fn);
+		if (info === null) {
+			// builtins & prelude functions, one line for a run of them
+			if (!inC) out.push('[C]: in ?');
+			inC = true;
+			continue;
+		}
+		inC = false;
+		// pc is just past the frame's current op, except on top where the op hasn't finished
+		const at = i === 0 ? pc + 1 : pc;
+		const lines = m.tblget(info, klines);
+		let line = -1;
+		for (let k = 1; ; k += 2) {
+			const p = m.tblget(lines, m.newi64(BigInt(k)));
+			if (p === null || Number(m.intval(p)) > at - 1) break;
+			line = Number(m.intval(m.tblget(lines, m.newi64(BigInt(k + 1)))));
+		}
+		const str = v => new TextDecoder().decode(this.strbytes(v));
+		const src = str(m.tblget(info, kshort));
+		const what = str(m.tblget(info, kwhat));
+		const desc = what === 'main' ? 'main chunk' : `function <${src}:${m.intval(m.tblget(info, kdef))}>`;
+		out.push(`${src}:${line > 0 ? line + ':' : ''} in ${desc}`);
+	}
+	return 'stack traceback:\n\t' + out.join('\n\t');
+}
 FFI.prototype.evalWait = function() {
 	return new Promise((resolve, reject) =>
-		(function core(mod) {
+		(function core(ffi, mod) {
 			// run many steps per host round trip
 			try {
 				for (let i = 0; i < 10000; i++) {
 					if (mod.eval()) return resolve();
 				}
 			} catch (e) {
-				// a wasm trap, like Error's unreachable
+				// a wasm trap, like Error's unreachable. Add where Lua was
+				try {
+					const tb = ffi.traceback();
+					e.luaTraceback = tb;
+					if (typeof e.stack === 'string') e.stack += '\nLua ' + tb;
+				} catch (e2) {}
 				return reject(e);
 			}
-			setImmediate(core, mod);
-		})(this.mod)
+			setImmediate(core, ffi, mod);
+		})(this, this.mod)
 	);
 }
 FFI.prototype.rawexec = function(fn, ...param) {

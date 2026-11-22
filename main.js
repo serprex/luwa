@@ -46,7 +46,12 @@ rt().then(async runt => {
 		const m = runt.mod, argt = runt.newtbl();
 		process.argv.slice(2).forEach((a, i) => m.tblset(argt.val, m.newi64(BigInt(i)), runt.newstr(a).val));
 		m.tblset(env.val, runt.newstr('arg').val, argt.val);
-		const run = runt.newstr('local f = assert(loadfile(arg[0])) return f(table.unpack(arg, 1, #arg))');
+		// like lua, an error prints its message & a traceback to stderr & exits with 1
+		const run = runt.newstr(`local f, e = loadfile(arg[0])
+if not f then io.stderr:write('luwa: ', tostring(e), '\\n') os.exit(1) end
+local r = table.pack(xpcall(f, debug.traceback, table.unpack(arg, 1, #arg)))
+if not r[1] then io.stderr:write('luwa: ', tostring(r[2]), '\\n') os.exit(1) end
+return table.unpack(r, 2, r.n)`);
 		await runt.eval(env, run);
 	}
 }).catch(e => setImmediate(() => { throw e; }));

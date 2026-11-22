@@ -1824,22 +1824,339 @@ function ipairs(t)
 	return inext, t, 0
 end
 
-local function xpcallguard(res, ...)
-	if res then
-		return ...
+-- Error positions, runtime error messages & the debug library, from the call frames
+-- (_luwa.frame) & the info table load gives each function (_luwa.fn_info).
+-- Functions without info are builtins (info false) or prelude Lua (nil). Prelude functions stand in
+-- for C functions, so errors they raise get the position of the Lua code calling them
+local rawerror = _error
+local _frame, fn_info = _luwa.frame, _luwa.fn_info
+local string_find, string_match = string.find, string.match
+local CALLTY = 3 -- calltypes.call in frame.lua: the frame under it hasn't started yet
+
+-- co's frames from the top, as { fn, pc, ty, pend }. Frames of outer calls in a call chain
+-- that haven't started are left out, pend counts them under each frame
+local function stackof(co)
+	local list, n, above = {}, 0, nil
+	while true do
+		local fn, pc, ty = _frame(co, n)
+		if not pc then
+			break
+		end
+		if above == CALLTY then
+			local last = list[#list]
+			last.pend = last.pend + 1
+		elseif fn == rawerror then
+			-- error is the prelude function & this builtin, count them as 1 like C Lua's error
+		else
+			list[#list+1] = { fn = fn, pc = pc, ty = ty, pend = 0 }
+		end
+		above = ty
+		n = n + 1
+	end
+	return list
+end
+-- The running coro's frames. list[off] is the function calling levels, list[off+1] its caller...
+-- Above it are _frame, stackof & levels
+local function levels()
+	return stackof(nil), 4
+end
+-- Frames of co & where level 0 is, for debug functions taking an optional thread
+local function threadlevels(co)
+	if co == nil or co == co_running() then
+		local list = stackof(nil)
+		-- _frame, stackof, threadlevels, then the debug function calling this
+		return list, 4
+	end
+	return stackof(co), 1
+end
+
+-- Line of the op before pc, -1 if unknown. A frame's pc is just after its current op
+local function currentline(info, pc)
+	local li = info.lines
+	local n = li and #li >> 1 or 0
+	if n == 0 then
+		return -1
+	end
+	local lo, hi, best = 1, n, 1
+	while lo <= hi do
+		local mid = (lo + hi) >> 1
+		if li[2*mid-1] <= pc - 1 then
+			best = mid
+			lo = mid + 1
+		else
+			hi = mid - 1
+		end
+	end
+	return li[2*best]
+end
+
+-- "src:line: " for list[i], or '' for builtins. Prelude frames pass it on to their caller
+local function where(list, i)
+	while list[i] do
+		local info = fn_info(list[i].fn)
+		if info then
+			local line = currentline(info, list[i].pc)
+			return line > 0 and info.short_src .. ':' .. line .. ': ' or ''
+		elseif info == false or list[i].fn == nil then
+			return ''
+		end
+		i = i + 1
+	end
+	return ''
+end
+
+-- What list[i] was called as, from its caller's call site: name, namewhat
+local function callname(list, i)
+	local caller = list[i+1]
+	local info = caller and fn_info(caller.fn)
+	local names = info and info.names[caller.pc]
+	local d = names and names.call and names[1 + list[i].pend]
+	if d then
+		local what, name = string_match(d, "^(.-) '(.*)'$")
+		return name, what
+	end
+	return nil, ''
+end
+
+function error(msg, level)
+	level = level or 1
+	if _type(msg) == 'string' and _type(level) == 'number' and level > 0 then
+		local list, off = levels()
+		msg = where(list, off + level) .. msg
+	end
+	return rawerror(msg)
+end
+_error = error
+
+-- Called by the Error mop: kind of operation & its operands. Raises the error like C Lua words it.
+-- The op's operand names are in its function's info.names at the op's pc
+local function rterror(kind, a, b)
+	local list, off = levels()
+	local fr = list[off+1]
+	local info = fr and fn_info(fr.fn)
+	local names = info and info.names[fr.pc]
+	local function nm(k)
+		local d = names and names[k]
+		return d and ' (' .. d .. ')' or ''
+	end
+	local msg
+	if kind == 'index' then
+		msg = 'attempt to index a ' .. _type(a) .. ' value' .. nm(1)
+	elseif kind == 'arith' or kind == 'bitwise' then
+		-- blame the first operand unless it's a number
+		local k, v = 1, a
+		if math_type(a) then
+			k, v = 2, b
+		end
+		msg = 'attempt to perform ' .. (kind == 'arith' and 'arithmetic' or 'bitwise operation') ..
+			' on a ' .. _type(v) .. ' value' .. nm(k)
+	elseif kind == 'concat' then
+		local k, v = 1, a
+		if _type(a) == 'string' or _type(a) == 'number' then
+			k, v = 2, b
+		end
+		msg = 'attempt to concatenate a ' .. _type(v) .. ' value' .. nm(k)
+	elseif kind == 'compare' then
+		local ta, tb = _type(a), _type(b)
+		msg = ta == tb and 'attempt to compare two ' .. ta .. ' values' or 'attempt to compare ' .. ta .. ' with ' .. tb
+	elseif kind == 'len' then
+		msg = 'attempt to get length of a ' .. _type(a) .. ' value' .. nm(1)
 	else
-		return 'error in error handling'
+		msg = 'invalid operation'
+	end
+	return error(msg, 2)
+end
+-- Called in place of a value that can't be called, with the value & the args
+local function callerror(v)
+	local list, off = levels()
+	local name, what = callname(list, off)
+	return error('attempt to call a ' .. _type(v) .. ' value' .. (name and ' (' .. what .. " '" .. name .. "')" or ''), 2)
+end
+_luwa.seterrfns(rterror, callerror)
+
+-- Name of a global function, like C Lua's tracebacks find: 'print', 'string.rep'
+local function globalname(fn)
+	if fn == nil then
+		return nil
+	end
+	for mod, t in _next, package.loaded do
+		if _type(t) == 'table' then
+			for k, v in _next, t do
+				if v == fn and _type(k) == 'string' then
+					return mod == '_G' and k or mod .. '.' .. k
+				end
+			end
+		end
 	end
 end
-local function xpcallcore(msgh, res, ...)
-	if res then
-		return true, ...
-	else
-		return false, xpcallguard(_pcall(msgh, ...))
+
+-- How a traceback names list[i], like 5.5: call site name, main chunk, global name, then where it's defined
+local function funcdesc(list, i, info)
+	local name, what = callname(list, i)
+	if name then
+		return what .. " '" .. name .. "'"
+	elseif info and info.what == 'main' then
+		return 'main chunk'
 	end
+	local g = globalname(list[i].fn)
+	if g then
+		return "function '" .. g .. "'"
+	elseif info then
+		return 'function <' .. info.short_src .. ':' .. info.linedefined .. '>'
+	end
+	return '?'
 end
-function xpcall(f, msgh, ...)
-	return xpcallcore(msgh, _pcall(f, ...))
+
+function debug.traceback(co, msg, level)
+	if _type(co) ~= 'thread' then
+		co, msg, level = nil, co, msg
+	end
+	if msg ~= nil and _type(msg) ~= 'string' and _type(msg) ~= 'number' then
+		return msg
+	end
+	local list, off = threadlevels(co)
+	if off > 1 then
+		level = level or 1
+	else
+		level = level or 0
+	end
+	-- lines, a run of frames without info (builtins & prelude) makes 1 [C] line
+	local lines = {}
+	local i = off + level
+	while list[i] do
+		local fr = list[i]
+		local info = fn_info(fr.fn)
+		if info then
+			local cl = currentline(info, fr.pc)
+			lines[#lines+1] = info.short_src .. ':' .. (cl > 0 and cl .. ':' or '') .. ' in ' .. funcdesc(list, i, info)
+			i = i + 1
+		elseif fr.fn == nil then
+			i = i + 1
+		else
+			-- name the run by how its bottom frame was called, else its first global function from the bottom.
+			-- Runtime error helpers are hidden
+			local j, hide, desc = i, false, nil
+			while list[j] and list[j].fn ~= nil and not fn_info(list[j].fn) do
+				if list[j].fn == rterror or list[j].fn == callerror then
+					hide = true
+				end
+				j = j + 1
+			end
+			local name, what = callname(list, j - 1)
+			if name then
+				desc = what .. " '" .. name .. "'"
+			end
+			for k = j - 1, i, -1 do
+				local g = not desc and globalname(list[k].fn)
+				if g then
+					desc = "function '" .. g .. "'"
+					break
+				end
+			end
+			if not hide then
+				lines[#lines+1] = '[C]: in ' .. (desc or '?')
+			end
+			i = j
+		end
+	end
+	-- like C Lua, long tracebacks keep the first 10 & last 11 levels
+	local out = { msg ~= nil and msg .. '\nstack traceback:' or 'stack traceback:' }
+	for k = 1, #lines do
+		if #lines > 22 and k == 11 then
+			out[#out+1] = '\n\t...\t(skipping ' .. (#lines - 21) .. ' levels)'
+		end
+		if #lines <= 22 or k <= 10 or k > #lines - 11 then
+			out[#out+1] = '\n\t' .. lines[k]
+		end
+	end
+	return table.concat(out)
+end
+
+function debug.getinfo(co, f, what)
+	if _type(co) ~= 'thread' then
+		co, f, what = nil, co, f
+	end
+	local argn = co and 2 or 1
+	what = what or 'flnSrtu'
+	if _type(what) ~= 'string' or string_find(what, '[^SlnrutfL]') then
+		_error("bad argument #" .. (argn + 1) .. " to 'getinfo' (invalid option)")
+	end
+	local fn, list, i
+	if _type(f) == 'function' then
+		fn = f
+	elseif math_type(f) == 'integer' or (_type(f) == 'number' and tointeger(f)) then
+		local off
+		list, off = threadlevels(co)
+		i = off + tointeger(f)
+		if f < 0 or not list[i] then
+			return nil
+		end
+		fn = list[i].fn
+	else
+		_error("bad argument #" .. argn .. " to 'getinfo' (function or level expected)")
+	end
+	local info = fn_info(fn)
+	local t = {}
+	if string_find(what, 'S', 1, true) then
+		if info then
+			t.source, t.short_src, t.what = info.source, info.short_src, info.what
+			t.linedefined, t.lastlinedefined = info.linedefined, info.lastlinedefined
+		else
+			t.source, t.short_src, t.what = '=[C]', '[C]', 'C'
+			t.linedefined, t.lastlinedefined = -1, -1
+		end
+	end
+	if string_find(what, 'l', 1, true) then
+		t.currentline = list and info and currentline(info, list[i].pc) or -1
+	end
+	if string_find(what, 'u', 1, true) then
+		t.nups = info and info.nups or 0
+		t.nparams = info and info.nparams or 0
+		t.isvararg = not info or info.isvararg
+	end
+	if string_find(what, 'n', 1, true) then
+		if list then
+			t.name, t.namewhat = callname(list, i)
+		else
+			t.namewhat = ''
+		end
+	end
+	if string_find(what, 'r', 1, true) then
+		t.ftransfer, t.ntransfer = 0, 0
+	end
+	if string_find(what, 't', 1, true) then
+		t.istailcall = false
+	end
+	if string_find(what, 'f', 1, true) then
+		t.func = fn
+	end
+	if string_find(what, 'L', 1, true) and info then
+		local al, li = {}, info.lines
+		for k = 2, #li, 2 do
+			al[li[k]] = true
+		end
+		t.activelines = al
+	end
+	return t
+end
+
+-- Source name to show in messages, like C Lua's luaO_chunkid
+local function chunkid(src)
+	local c = string_byte(src)
+	if c == 61 then -- =name
+		return string_sub(src, 2, 60)
+	elseif c == 64 then -- @file
+		return #src <= 60 and string_sub(src, 2) or '...' .. string_sub(src, -56)
+	end
+	local nl = string_find(src, '\n', 1, true)
+	if not nl and #src < 45 then
+		return '[string "' .. src .. '"]'
+	end
+	local l = string_sub(src, 1, nl and nl - 1 or #src)
+	if #l > 45 then
+		l = string_sub(l, 1, 45)
+	end
+	return '[string "' .. l .. '..."]'
 end
 
 local fakereqtbl = {
@@ -1861,7 +2178,9 @@ local function fakereq(s)
 end
 fakereqenv = {
 	assert = _assert,
-	error = _error,
+	-- compile errors carry their own position
+	error = rawerror,
+	tostring = _tostring,
 	getmetatable = _getmetatable,
 	ipairs = ipairs,
 	pairs = _pairs,
@@ -1886,6 +2205,7 @@ fakereqenv = {
 	},
 	table = {
 		insert = table.insert,
+		remove = table.remove,
 		sort = table.sort,
 		unpack = table_unpack,
 	},
@@ -1896,8 +2216,25 @@ local bcgen = fakereq('bcgen')
 -- Make a function object from bcgen's output.
 -- Nested functions are bcgen tables in consts, turn those into function objects too.
 -- LoadFunc copies these and fills in frees
-local function asm2fn(asm)
+-- src & short are the chunk's source name & how messages show it
+local function asm2fn(asm, src, short, main)
 	local fn = _luwa.fn_new()
+	_luwa.fn_set_info(fn, {
+		source = src,
+		short_src = short,
+		what = main and 'main' or 'Lua',
+		linedefined = main and 0 or asm.linedefined or -1,
+		lastlinedefined = main and 0 or asm.lastlinedefined or -1,
+		-- pc, line pairs & pc -> operand names, from bcgen
+		lines = asm.lineinfo,
+		names = asm.opnames,
+		name = asm.fname,
+		-- the main chunk's _ENV param is an upvalue in C Lua
+		nparams = main and 0 or #asm.params,
+		isvararg = asm.isdotdotdot,
+		nups = main and 1 or #asm.freenames,
+		upnames = main and { '_ENV' } or asm.freenames,
+	})
 	_luwa.fn_set_localc(fn, #asm.locals)
 	_luwa.fn_set_paramc(fn, #asm.params)
 	_luwa.fn_set_isdotdotdot(fn, asm.isdotdotdot)
@@ -1906,7 +2243,7 @@ local function asm2fn(asm)
 	for i=1, #asm.consts do
 		local c = asm.consts[i]
 		if type(c) == 'table' then
-			c = asm2fn(c)
+			c = asm2fn(c, src, short)
 		end
 		consts[i] = c
 	end
@@ -1915,7 +2252,9 @@ local function asm2fn(asm)
 end
 
 local function _load(src, name, mode, env)
-	-- TODO function names
+	if name == nil then
+		name = _type(src) == 'string' and src or '=(load)'
+	end
 	if _type(src) == 'function' then
 		-- a function giving pieces until nil or ''
 		local parts = {}
@@ -1928,19 +2267,20 @@ local function _load(src, name, mode, env)
 		end
 		src = table.concat(parts)
 	end
-	local lx, vals = _luwa.lexgen(src)
+	local short = chunkid(name)
+	local lx, vals, lines = _luwa.lexgen(src)
 	if not lx then
 		return nil, vals
 	end
-	local ok, root = _pcall(astgen, lx, vals)
+	local ok, root = _pcall(astgen, lx, vals, lines, short)
 	if not ok then
 		return nil, root
 	end
-	local ok, asm = _pcall(bcgen, root)
+	local ok, asm = _pcall(bcgen, root, short)
 	if not ok then
 		return nil, asm
 	end
-	local fn = asm2fn(asm)
+	local fn = asm2fn(asm, name, short, true)
 	_luwa.fn_set_frees(fn, _luwa.vec_new(env or _ENV))
 	-- compiled chunks take _ENV as their first param, like the prelude does
 	-- TODO make _ENV the chunk's first free instead, saving this extra call

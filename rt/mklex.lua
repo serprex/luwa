@@ -7,7 +7,7 @@ local M = require 'make'
 local _lex = require '_lex'
 local _js = require 'jsapi'
 
-local lex = M.func(V, { V, V }, function(f, s)
+local lex = M.func(V, { V, V, V }, function(f, s)
 	f:load(s)
 	f:refcast(require('alloc').R.str)
 	f:call(_lex.lex)

@@ -64,6 +64,8 @@ local functy = M.struct({
 	{ M.refnull(vals), mut = true, name = 'frees' },
 	{ i32, mut = true, name = 'localc' },
 	{ i32, mut = true, name = 'paramc' },
+	-- Lua table from load: source, name, line table & such, for errors & debug. nil for builtins
+	{ V, mut = true, name = 'info' },
 }, { name = 'functy', super = idobj })
 -- Growable lists: the Lua value stack, and the call frames (8 i32s each, see frame.lua)
 local stack = M.struct({
@@ -202,6 +204,7 @@ local newfunc = func(M.ref(functy), function(f)
 	f:refnull(vals)
 	f:i32(0)
 	f:i32(0)
+	f:refnull(M.heap.eq)
 	f:structnew(functy)
 end)
 

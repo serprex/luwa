@@ -30,10 +30,25 @@ local function Assembler()
 		},
 		names = {},
 		bc = {},
+		-- (pc, line) pairs, added when the line changes. An op's line is the last pair at or before it
+		lineinfo = {},
+		-- pc after an op that can fail -> list of what made its operands, like "local 't'", or false.
+		-- Errors & debug.getinfo look these up by the pc a frame has after that op
+		opnames = {},
+		-- what made the value on top of the stack, if it's a variable or field
+		desc = nil,
+		curline = nil,
 	}, asmmt)
 end
 
 function asmmeta:push(op, ...)
+	local line = self.curline
+	if line and line ~= self.lastline then
+		self.lastline = line
+		local li = self.lineinfo
+		li[#li+1] = #self.bc
+		li[#li+1] = line
+	end
 	self.bc[#self.bc+1] = assert(op)
 	for i=1,select('#', ...) do
 		self:patch(#self.bc+1, (select(i, ...)))
@@ -79,7 +94,7 @@ function asmmeta:name(n, isparam)
 	end
 	-- seq is declaration order, so code gen never depends on pairs order
 	self.nameseq = (self.nameseq or 0) + 1
-	local newscope = { prev = prevscope, func = self, isparam = paramidx, seq = self.nameseq }
+	local newscope = { prev = prevscope, func = self, isparam = paramidx, seq = self.nameseq, name = n }
 	if isparam then
 		self.params[#self.params+1] = newscope
 	end
@@ -170,6 +185,7 @@ function asmmeta:opnamety(ops, name, namety)
 		self:opnamety(namety_loads, nil, namety.env)
 		self:push(bc.LoadConst, self:const(name.arg))
 		self:push(ops.Env)
+		self:opname({ self:scopedesc(namety.env, '_ENV') })
 	elseif namety.free then
 		if namety.func ~= self then
 			self:push(ops.FreeBox, idx)
@@ -184,8 +200,22 @@ function asmmeta:opnamety(ops, name, namety)
 		self:push(ops.Local, idx)
 	end
 end
+-- What a variable is, for error messages: "local 'x'", "upvalue 'x'" or "global 'x'"
+function asmmeta:scopedesc(namety, n)
+	if namety.env then
+		return "global '" .. n .. "'"
+	elseif namety.func ~= self then
+		return "upvalue '" .. n .. "'"
+	else
+		return "local '" .. n .. "'"
+	end
+end
+function asmmeta:opname(descs)
+	self.opnames[#self.bc] = descs
+end
 function asmmeta:loadname(name)
-	return self:opnamety(namety_loads, name, self.namety[name])
+	self:opnamety(namety_loads, name, self.namety[name])
+	self.desc = self:scopedesc(self.namety[name], name.arg)
 end
 function asmmeta:storename(name)
 	return self:opnamety(namety_stores, name, self.namety[name])
@@ -442,12 +472,25 @@ scopeStatSwitch = {
 		local i, first = nextIdent(node, 1)
 		-- function f() assigns f, function a.f() doesn't assign a
 		self:usename(first, not nextIdent(node, i) and not hasToken(node, lex._colon))
-		scopeNode(self, node, ast.Funcbody, hasToken(node, lex._colon))
+		-- name for debug info: a.b:c
+		local fname = first.arg
+		local ismeth = hasToken(node, lex._colon)
+		local j, n = i, nil
+		while true do
+			j, n = nextIdent(node, j)
+			if not n then
+				break
+			end
+			fname = fname .. ((ismeth and not nextIdent(node, j)) and ':' or '.') .. n.arg
+		end
+		self.funcname = fname
+		scopeNode(self, node, ast.Funcbody, ismeth)
 	end,
 	function(self, node) -- 13 local func
 		local name = selectIdent(node)
 		self:name(name.arg)
 		self:usename(name)
+		self.funcname = name.arg
 		scopeNode(self, node, ast.Funcbody)
 	end,
 	function(self, node) -- 14 locals=exps
@@ -469,6 +512,7 @@ scopeStatSwitch = {
 		local name = selectIdent(node)
 		self:globaldecl(name.arg, {})
 		self:usename(name)
+		self.funcname = name.arg
 		scopeNode(self, node, ast.Funcbody)
 	end,
 	function(self, node) -- 16 global *
@@ -492,16 +536,21 @@ scopeStatSwitch = {
 }
 local function emitCall(self, node, outputs)
 	local methname = selectIdent(node)
+	local fdesc = self.desc or false
 	if methname then
 		local temp = idxtbl(self.locals, methname)
 		self:push(bc.StoreLocal, temp)
 		self:push(bc.LoadLocal, temp)
 		self:push(bc.LoadConst, self:const(methname.arg))
 		self:push(bc.Idx)
+		self:opname({ fdesc })
 		self:push(bc.LoadLocal, temp)
+		fdesc = "method '" .. methname.arg .. "'"
 	end
 	-- a method call passes self as an extra first arg
-	return emitNode(self, node, ast.Args, outputs, methname and 1 or 0)
+	local r = emitNode(self, node, ast.Args, outputs, methname and 1 or 0, fdesc)
+	self.desc = nil
+	return r
 end
 local function emitExplist(self, node, outputs)
 	local n, lastv = 0
@@ -684,6 +733,7 @@ emitStatSwitch = {
 			vars[#vars+1] = v
 		end
 		self:push(bc.Call, #vars, 1, 2) -- f(s, ctl): 2 args
+		self:opname({ "for iterator 'for iterator'", call = true })
 		for i=#vars,2,-1 do
 			self:declname(vars[i])
 		end
@@ -896,6 +946,10 @@ visitScope = {
 		asm.scopes = self.scopes
 		asm.names = self.names
 		asm.isdotdotdot = isvarg
+		asm.fname = self.funcname
+		self.funcname = nil
+		asm.linedefined = node.line
+		asm.lastlinedefined = node.lastline
 		asm:scope(function()
 			if isMeth then
 				asm:name('self', true)
@@ -1021,7 +1075,9 @@ visitEmit = {
 				self:push(bc.Return)
 			elseif #res > 0 then
 				-- No tail calls yet: call keeping all results (retc 0xffff), then return them
+				self.curline = res.line or self.curline
 				self:push(res.varg and bc.CallVarg or bc.Call, 0xffff, #res, table.unpack(res))
+				self:opname(res.descs)
 				self:push(bc.Return)
 			else
 				self:push(bc.ReturnVarg)
@@ -1050,17 +1106,27 @@ visitEmit = {
 		if node.type == ExpValue and #node == 1 then
 			return visitEmit[ast.Value](self, node[1], out)
 		end
+		-- what made each operand on the stack, for error messages
+		local descs = {}
 		for _, op in ipairs(shunt(node)) do
 			local ty = op.type & 31
 			if ty == ast.Binop then
 				visitEmit[ast.Binop](self, op)
+				local d2 = table.remove(descs)
+				local d1 = table.remove(descs)
+				self:opname({ d1 or false, d2 or false })
+				descs[#descs+1] = false
 			elseif ty == ast.Unop then
 				visitEmit[ast.Unop](self, op)
+				self:opname({ table.remove(descs) or false })
+				descs[#descs+1] = false
 			else
 				assert(ty == ast.Value)
 				visitEmit[ast.Value](self, op, 1)
+				descs[#descs+1] = op.type >> 5 == 9 and self.desc or false
 			end
 		end
+		self.desc = nil
 		return 1
 	end,
 	[ast.Prefix] = function(self, node)
@@ -1068,9 +1134,10 @@ visitEmit = {
 			self:loadname(selectIdent(node))
 		else
 			emitNode(self, node, ast.ExpOr, 1)
+			self.desc = nil
 		end
 	end,
-	[ast.Args] = function(self, node, outputs, selfargs)
+	[ast.Args] = function(self, node, outputs, selfargs, fdesc)
 		local ty, res = node.type >> 5
 		if ty == 1 then
 			local n
@@ -1081,6 +1148,12 @@ visitEmit = {
 				-- Call reads arg counts outermost call first
 				table.insert(res, 1, n)
 			end
+			-- names of the functions in the call chain, outermost first like the counts
+			local descs = { fdesc or false, call = true }
+			for i, d in ipairs(res.descs or {}) do
+				descs[i+1] = d
+			end
+			res.descs = descs
 		elseif ty == 2 then
 			emitNode(self, node, ast.Table)
 			res = { 1 }
@@ -1089,6 +1162,8 @@ visitEmit = {
 			res = { 1 }
 		end
 		res[1] = res[1] + selfargs
+		res.descs = res.descs or { fdesc or false, call = true }
+		res.line = self.curline
 		if outputs == -1 then
 			return res
 		else
@@ -1099,6 +1174,7 @@ visitEmit = {
 				op = bc.Call
 			end
 			self:push(op, outputs, #res, table.unpack(res))
+			self:opname(res.descs)
 			return outputs
 		end
 	end,
@@ -1131,9 +1207,13 @@ visitEmit = {
 				self:push(bc.Append, #ary)
 			elseif not res.varg then
 				assert(#res > 0, 'None varg, no call, yet complex append')
+				self.curline = res.line or self.curline
 				self:push(bc.AppendCall, #ary-1, #res, table.unpack(res))
+				self:opname(res.descs)
 			elseif #res > 0 then
+				self.curline = res.line or self.curline
 				self:push(bc.AppendCallVarg, #ary-1, #res, table.unpack(res))
+				self:opname(res.descs)
 			else
 				self:push(bc.AppendVarg, #ary-1)
 			end
@@ -1155,6 +1235,7 @@ visitEmit = {
 		self:push(unOps[node.type >> 5])
 	end,
 	[ast.Value] = function(self, node, outputs)
+		self.desc = nil
 		local results = emitValueSwitch[node.type >> 5](self, node, outputs)
 		if outputs ~= -1 then
 			-- too few values: pad with nil. too many: pop the extra
@@ -1170,16 +1251,21 @@ visitEmit = {
 		end
 	end,
 	[ast.Index] = function(self, node, isload)
+		local tdesc = self.desc or false
+		local key
 		if node.type >> 5 == 1 then
 			emitNode(self, node, ast.ExpOr, 1)
 		else
-			self:push(bc.LoadConst, self:const(selectIdent(node).arg))
+			key = selectIdent(node).arg
+			self:push(bc.LoadConst, self:const(key))
 		end
 		if isload then
 			self:push(bc.Idx)
 		else
 			self:push(bc.TblSet)
 		end
+		self:opname({ tdesc })
+		self.desc = key and "field '" .. key .. "'" or nil
 	end,
 	[ast.Suffix] = function(self, node, tailfn)
 		local nx = selectNode(node, ast.Suffix)
@@ -1227,10 +1313,38 @@ function asmmeta:synth()
 	for k,v in pairs(self.gotos) do
 		self:patch(k, self.labels[v])
 	end
+	local freenames = {}
+	for i, v in ipairs(self.frees) do
+		freenames[i] = v.name or '?'
+	end
+	self.freenames = freenames
 	return self
 end
 
-return function(root)
+-- Every visit tracks the line of the node it's on, so pushed ops get the right line.
+-- The line goes back to the parent's once a child is done, so a parent's op after its children gets the parent's line.
+-- errline is the last line seen, for compile errors
+local errline
+local function lined(t)
+	for k, fn in pairs(t) do
+		t[k] = function(self, node, ...)
+			local l = node.line
+			if not l then
+				return fn(self, node, ...)
+			end
+			errline = l
+			local prev = self.curline
+			self.curline = l
+			local a, b = fn(self, node, ...)
+			self.curline = prev
+			return a, b
+		end
+	end
+end
+lined(visitScope)
+lined(visitEmit)
+
+local function gen(root)
 	local asm = Assembler()
 	asm.isdotdotdot = true
 	asm:scope(function()
@@ -1240,4 +1354,19 @@ return function(root)
 	asm:genBoxPrologue()
 	visitEmit[ast.Block](asm, root)
 	return asm:synth()
+end
+-- chunk is the source name for errors, like file.lua. Errors then start with chunk:line:
+return function(root, chunk)
+	if not chunk then
+		return gen(root)
+	end
+	errline = nil
+	local ok, asm = pcall(gen, root)
+	if not ok then
+		if type(asm) == 'string' then
+			asm = chunk .. ':' .. (errline or '?') .. ': ' .. asm
+		end
+		error(asm, 0)
+	end
+	return asm
 end

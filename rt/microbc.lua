@@ -323,9 +323,14 @@ local LoadStrLen = mkMop('LoadStrLen', {
 	arg = {'str'},
 	out = 'i32',
 })
-mkMop('Error', {
-	exit = true,
-})
+-- Error(kind, operands...) raises a runtime error, see vm.lua. Error() raises 'invalid operation'
+mkMop('Error', function(args)
+	local arg = { 'atom' }
+	for i=2,#args do
+		arg[i] = 'obj'
+	end
+	return { arg = #args > 0 and arg or nil, exit = true, argfx = true }
+end)
 -- Builtin written in wasm, reads its own 1 byte arg
 mkMop('Syscall', {
 	alloc = true,
@@ -347,6 +352,10 @@ local Type = mkMop('Type', {
 	out = 'i32',
 })
 local IsTbl = mkMop('IsTbl', {
+	arg = {'obj'},
+	out = 'i32',
+})
+local IsTblOrVec = mkMop('IsTblOrVec', {
 	arg = {'obj'},
 	out = 'i32',
 })
@@ -725,12 +734,12 @@ end)
 op(bc.ReturnCall, function(b) b:Error() end)
 op(bc.ReturnCallVarg, function(b) b:Error() end)
 
--- Call metamethod h with args if there is one, else raise an error
-local function MetaOr(b, h, callty, ...)
+-- Call metamethod h with args if there is one, else raise a kind error about the args
+local function MetaOr(b, h, callty, kind, ...)
 	local args = table.pack(...)
 	b:If(Truthy(h),
 		function(b) b:CallMeta(callty, h, table.unpack(args, 1, args.n)) end,
-		function(b) b:Error() end)
+		function(b) b:Error(kind, table.unpack(args, 1, args.n)) end)
 end
 op(bc.Not, function(b)
 	b:Push(Select(Truthy(b:Pop()), False(), True()))
@@ -747,7 +756,7 @@ op(bc.Len, function(b)
 			function(b)
 				b:Typeck({a}, {
 					{types.tbl, function(b, t) b:Push(b:IntObjFromInt(b:LoadTblLen(t))) end},
-				}, function(b) b:Error() end)
+				}, function(b) b:Error('len', a) end)
 			end)
 	end)
 end)
@@ -758,7 +767,7 @@ op(bc.Neg, function(b)
 		{types.int, function(b, a) b:Push(NumObj(b, Negate(LoadInt(a)))) end},
 		{types.float, function(b, a) b:Push(NumObj(b, Negate(LoadFlt(a)))) end},
 	}, function(b)
-		MetaOr(b, b:MetaGet(a, Str('__unm')), 'norm', a, a)
+		MetaOr(b, b:MetaGet(a, Str('__unm')), 'norm', 'arith', a, a)
 	end)
 end)
 
@@ -783,7 +792,7 @@ op(bc.TblSet, function(b)
 	b:Typeck({t}, {
 		{types.tbl, walk},
 	}, function(b)
-		b:If(Truthy(b:MetaGet(t, Str('__newindex'))), walk, function(b) b:Error() end)
+		b:If(Truthy(b:MetaGet(t, Str('__newindex'))), walk, function(b) b:Error('index', t, k) end)
 	end)
 end)
 
@@ -829,9 +838,9 @@ local function cmpop(code, cmp, metamethod, swap)
 			end},
 		}, function(b)
 			if swap then
-				MetaOr(b, b:BinMeta(y, x, Str(metamethod)), 'bool', y, x)
+				MetaOr(b, b:BinMeta(y, x, Str(metamethod)), 'bool', 'compare', y, x)
 			else
-				MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'bool', x, y)
+				MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'bool', 'compare', x, y)
 			end
 		end)
 	end)
@@ -859,7 +868,7 @@ local function binmathop(code, floatlogic, intlogic, metamethod)
 				b:Push(NumObj(b, floatlogic(LoadFlt(x), Int64Flt(LoadInt(y)))))
 			end},
 		}, function(b)
-			MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'norm', x, y)
+			MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'norm', 'arith', x, y)
 		end)
 	end)
 end
@@ -902,7 +911,7 @@ local function binbitop(code, mop, metamethod)
 				b:Push(NumObj(b, mop(Flt64Int(LoadFlt(x)), LoadInt(y))))
 			end},
 		}, function(b)
-			MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'norm', x, y)
+			MetaOr(b, b:BinMeta(x, y, Str(metamethod)), 'norm', 'bitwise', x, y)
 		end)
 	end)
 end
@@ -921,7 +930,7 @@ op(bc.BNot, function(b)
 			b:Push(NumObj(b, BXor(Flt64Int(LoadFlt(a)), Int64(-1))))
 		end},
 	}, function(b)
-		MetaOr(b, b:MetaGet(a, Str('__bnot')), 'norm', a, a)
+		MetaOr(b, b:MetaGet(a, Str('__bnot')), 'norm', 'bitwise', a, a)
 	end)
 end)
 
@@ -945,13 +954,17 @@ op(bc.Concat, function(b)
 		end
 	end
 	b:Typeck({x, y}, cases, function(b)
-		MetaOr(b, b:BinMeta(x, y, Str('__concat')), 'norm', x, y)
+		MetaOr(b, b:BinMeta(x, y, Str('__concat')), 'norm', 'concat', x, y)
 	end)
 end)
 
 op(bc.Idx, function(b)
 	local k = b:Pop()
 	local t = b:Pop()
+	-- only tables, vecs & values with an __index can be indexed
+	b:IfNot(IsTblOrVec(t), function(b)
+		b:IfNot(Truthy(b:MetaGet(t, Str('__index'))), function(b) b:Error('index', t, k) end)
+	end)
 	local v = b:IdxWalk(t, k)
 	local recv = b:IdxSelf()
 	b:If(Truthy(recv),

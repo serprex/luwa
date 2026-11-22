@@ -120,15 +120,22 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	'invalid operation', 'cannot resume dead coroutine', 'cannot resume non-suspended coroutine',
 	'attempt to yield from outside a coroutine', 'bad argument #1 to resume (coroutine expected)',
 	'<no error object>', "bad argument #1 to 'type' (value expected)",
+	-- runtime error kinds, given to the prelude's error function
+	'index', 'arith', 'bitwise', 'concat', 'compare', 'len', 'xpcall',
 	-- begin _luwa fields
 	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc', 'lpeg',
 	'stdin', 'stdout', 'ioread', 'iowrite', 'ioflush', 'ioclose',
 	'iosetvbuf', 'vec_new', 'random', 'objid', 'sub', 'reinterp', 'host', 'unpack',
 	'fn_new', 'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
-	'fn_set_bc', 'fn_set_frees', 'fn_set_consts',
+	'fn_set_bc', 'fn_set_frees', 'fn_set_consts', 'fn_set_info', 'fn_info', 'frame', 'seterrfns',
 	{'error', 2, false, SYS'error'},
 	{'next', 2, false, SYS'next' .. RET},
 	{'pcall', 1, true, SYS'pcall' .. RET},
+	{'xpcall', 2, true, SYS'xpcall' .. RET},
+	{'_fn_set_info', 2, false, SYS'_fn_set_info' .. RET},
+	{'_fn_info', 1, false, SYS'_fn_info' .. RET},
+	{'_frame', 2, false, SYS'_frame' .. RET},
+	{'_seterrfns', 2, false, SYS'_seterrfns' .. RET},
 	{'rawget', 2, false, SYS'rawget' .. RET},
 	{'rawset', 3, false, SYS'rawset' .. LOADPARAM0 .. RET},
 	{'select', 1, true, SYS'select' .. RET},
@@ -220,6 +227,7 @@ local initstatics = func(function(f)
 			f:refnull(vals)
 			f:i32(localc)
 			f:i32(paramc)
+			f:refnull(M.heap.eq)
 			f:structnew(functy)
 		end
 		f:storeg(g)

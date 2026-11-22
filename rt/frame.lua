@@ -36,6 +36,8 @@ local calltypes = {
 	call = 3, -- Continue call chain
 	push = 4, -- Append intermediates to table
 	bool = 5, -- Cast result to bool
+	xprot = 6, -- Like prot, from xpcall: errors first call the handler, param 1 of the frame below
+	xh = 7, -- xpcall's handler running, on top of the frames that raised. Its result is the error to unwind with
 }
 -- retc for "keep every result"
 local RETALL = 0xffff
@@ -146,6 +148,14 @@ local binmeta = func(V, V, R.str, V, function(f, a, b, key)
 		f:load(h)
 	end)
 end)
+
+-- Lua functions from the prelude (_luwa.seterrfns) that raise runtime errors with a good message.
+-- errfn(kind, operands...) is called by the Error mop, callerrfn(value, args...) in place of a value
+-- that can't be called. Until they're set errors are 'invalid operation' & calls of non functions trap
+local errfn = M.global(V, true)
+local callerrfn = M.global(V, true)
+-- set while unwinding with the result of an xpcall handler, so the handler isn't called again
+local nohandler = M.global(i32, true)
 
 -- Receiver for idxwalk's result when it's an __index function to call, otherwise nil
 local idxself = M.global(V, true)
@@ -420,7 +430,13 @@ local setupframe = func(function(f)
 			f:tee(h)
 			f:refisnull()
 			f:iff(function()
-				f:unreachable()
+				-- call callerrfn with the value instead, it raises the error
+				f:loadg(callerrfn)
+				f:tee(h)
+				f:refisnull()
+				f:iff(function()
+					f:unreachable()
+				end)
 			end)
 			-- shift fn & args up 1 slot, then put h where fn was
 			getf(f, 'base')
@@ -632,6 +648,8 @@ local makeclosure = func(V, i32, V, function(f, protov, n)
 	f:structget(functy, 'localc')
 	f:load(proto)
 	f:structget(functy, 'paramc')
+	f:load(proto)
+	f:structget(functy, 'info')
 	f:structnew(functy)
 end)
 
@@ -799,12 +817,88 @@ end)
 -- Raise an error with value msg. Unwinds to the nearest pcall in this coro & makes it return false, msg.
 -- With no pcall a coroutine dies & its resume returns false, msg. Returns the pc to run next
 local throw = func(V, i32, function(f, msg)
-	local ty, base = f:locals(i32, 2)
+	local ty, base, off = f:locals(i32, 3)
+	local arr = f:locals(R.i32s)
+	-- Find what catches it without popping anything. When that's an xpcall, call its handler
+	-- on top of everything, so it can look at the frames that raised
+	f:loadg(nohandler)
+	f:eqz()
+	f:iff(function()
+		f:loadg(gframes)
+		f:structget(alloc.frames, 'arr')
+		f:store(arr)
+		f:loadg(gframes)
+		f:structget(alloc.frames, 'len')
+		f:i32(stack.df.sizeof)
+		f:sub()
+		f:store(off)
+		f:block(function(done)
+			f:loop(function(loop)
+				f:load(off)
+				f:i32(0)
+				f:lts()
+				f:brif(done)
+				f:load(arr)
+				f:load(off)
+				f:arrayget(alloc.i32s)
+				f:tee(ty)
+				f:i32(calltypes.xprot)
+				f:eq()
+				f:iff(function()
+					-- handler(msg) in an xh frame
+					f:load(arr)
+					f:load(off)
+					f:i32(df.base - df.sizeof)
+					f:add()
+					f:arrayget(alloc.i32s)
+					f:i32(1)
+					f:add()
+					f:call(sget)
+					f:call(tmppush)
+					f:load(msg)
+					f:call(tmppush)
+					f:i32(calltypes.xh)
+					f:call(stacklen)
+					f:i32(1)
+					f:sub()
+					f:i32(1)
+					f:call(pushframe)
+					f:call(setupframe)
+					f:i32(0)
+					f:ret()
+				end)
+				-- an error in the handler, or nothing more to look at: unwind
+				f:load(ty)
+				f:i32(calltypes.xh)
+				f:eq()
+				f:load(ty)
+				f:i32(calltypes.prot)
+				f:eq()
+				f:bor()
+				f:load(ty)
+				f:i32(calltypes.init)
+				f:eq()
+				f:bor()
+				f:brif(done)
+				f:load(off)
+				f:i32(df.sizeof)
+				f:sub()
+				f:store(off)
+				f:br(loop)
+			end)
+		end)
+	end)
+	f:i32(0)
+	f:storeg(nohandler)
 	f:loop(function(loop)
 		getf(f, 'type')
 		f:tee(ty)
 		f:i32(calltypes.prot)
 		f:eq()
+		f:load(ty)
+		f:i32(calltypes.xprot)
+		f:eq()
+		f:bor()
 		f:iff(function()
 			-- pcall put true below the function, make it false & put msg where the function was
 			getf(f, 'base')
@@ -873,6 +967,31 @@ local retframe = func(i32, function(f)
 	f:store(e)
 	f:call(stacklen)
 	f:store(len)
+
+	-- xpcall's handler returned: unwind with its first result, without calling it again
+	f:load(ty)
+	f:i32(calltypes.xh)
+	f:eq()
+	f:iff(function()
+		f:load(e)
+		f:load(len)
+		f:lts()
+		f:iff(V, function()
+			f:load(e)
+			f:call(sget)
+		end, function()
+			f:refnull(M.heap.eq)
+		end)
+		f:load(base)
+		f:i32(1)
+		f:sub()
+		f:call(setstacklen)
+		f:call(fpop)
+		f:i32(1)
+		f:storeg(nohandler)
+		f:call(throw)
+		f:ret()
+	end)
 
 	f:block(function(copied)
 		f:load(ty)
@@ -1017,6 +1136,8 @@ return {
 	pushfrom = pushfrom,
 	coroback = coroback,
 	throw = throw,
+	errfn = errfn,
+	callerrfn = callerrfn,
 	pushvarg = pushvarg,
 	loadvarg = loadvarg,
 	appendn = appendn,

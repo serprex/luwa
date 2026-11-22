@@ -3,6 +3,7 @@ local M = require 'make'
 local func = M.func
 
 local alloc = require 'alloc'
+require 'stack' -- gframes & gstack
 local R, str, bytes, int, float, vec = alloc.R, alloc.str, alloc.bytes, alloc.int, alloc.float, alloc.vec
 
 local strlen = func(V, i32, function(f, s)
@@ -75,7 +76,60 @@ local tblset = func(V, V, V, void, function(f, t, k, v)
 	f:call(require('_table').tblset)
 end)
 
+-- The running coro's frames & stack, for a Lua traceback when wasm traps (rt.js)
+local framelen = func(i32, function(f)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'len')
+	f:i32(8)
+	f:divu()
+end)
+-- field of frame n from the top, fields are stack.lua's df
+local framefield = func(i32, i32, i32, function(f, n, field)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'arr')
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'len')
+	f:load(n)
+	f:i32(1)
+	f:add()
+	f:i32(8)
+	f:mul()
+	f:sub()
+	f:load(field)
+	f:add()
+	f:arrayget(alloc.i32s)
+end)
+local stackget = func(i32, V, function(f, i)
+	f:loadg(gstack)
+	f:structget(alloc.stack, 'arr')
+	f:load(i)
+	f:arrayget(alloc.vals)
+end)
+local stacksize = func(i32, function(f)
+	f:loadg(gstack)
+	f:structget(alloc.stack, 'len')
+end)
+-- a function's info table from load, nil for anything else
+local fninfo = func(V, V, function(f, fn)
+	f:load(fn)
+	f:call(alloc.typeof)
+	f:i32(alloc.types.functy)
+	f:eq()
+	f:iff(V, function()
+		f:load(fn)
+		f:refcast(R.functy)
+		f:structget(alloc.functy, 'info')
+	end, function()
+		f:refnull(M.heap.eq)
+	end)
+end)
+
 return {
+	framelen = framelen,
+	framefield = framefield,
+	stackget = stackget,
+	stacksize = stacksize,
+	fninfo = fninfo,
 	typeof = alloc.typeof,
 	newstr = alloc.newstr,
 	newtbl = alloc.newtbl,

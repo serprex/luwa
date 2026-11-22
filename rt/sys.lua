@@ -53,4 +53,9 @@ return {
 	'_reinterp',
 	'_host',
 	'table_unpack',
+	'xpcall',
+	'_fn_set_info',
+	'_fn_info',
+	'_frame',
+	'_seterrfns',
 }

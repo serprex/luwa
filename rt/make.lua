@@ -1581,6 +1581,22 @@ local function func(...)
 	}
 end
 
+-- Give each func in t without a name the name prefix .. key, for the name section.
+-- Keys are sorted so names don't depend on pairs order
+local function namefuncs(prefix, t)
+	local keys = {}
+	for k, v in pairs(t) do
+		if type(k) == 'string' and type(v) == 'table' and rawget(v, 'isfunc') then
+			keys[#keys+1] = k
+		end
+	end
+	table.sort(keys)
+	for i = 1, #keys do
+		local fn = t[keys[i]]
+		fn.name = fn.name or prefix .. keys[i]
+	end
+end
+
 -- Functions used by ref.func must be declared in an elem segment
 function modmeth:declfunc(idx)
 	if not self._declfunc[idx] then
@@ -1909,6 +1925,38 @@ function modmeth:compile()
 		end
 	end
 
+	-- name section, so engine stack traces show function names. Funcs get a name from their
+	-- .name field, imports from their import name
+	local names = {}
+	for i = 1, #self._import do
+		local imp = self._import[i]
+		if imp.ty == 0 then
+			names[#names+1] = { self.ids[imp], imp.f }
+		end
+	end
+	for i = 1, #self._func do
+		local fn = self._func[i].fn
+		if fn.name then
+			names[#names+1] = { self.fcache[fn], fn.name }
+		end
+	end
+	if #names > 0 then
+		local sub = {}
+		encode_varuint(sub, #names)
+		for i = 1, #names do
+			encode_varuint(sub, names[i][1])
+			encode_string(sub, names[i][2])
+		end
+		local bc = {}
+		encode_string(bc, 'name')
+		bc[#bc+1] = 1
+		encode_varuint(bc, #sub)
+		for i = 1, #sub do
+			bc[#bc+1] = sub[i]
+		end
+		writeSection(chunks, 0, bc)
+	end
+
 	return chunks
 end
 
@@ -1956,6 +2004,7 @@ return {
 	mut = mut,
 	mod = mod,
 	func = func,
+	namefuncs = namefuncs,
 	global = global,
 	data = data,
 	passivedata = passivedata,

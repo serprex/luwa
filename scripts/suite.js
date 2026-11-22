@@ -37,68 +37,34 @@ async function freshrt() {
 const log = console.log;
 const text = r => r instanceof Uint8Array ? Buffer.from(r).toString() : String(r);
 
-// Child: run one file in a fresh runtime. Prints @@PASS, or @@FAIL / @@TRAP, the assert count & the message.
-// The count is -1 while loading the file
+// Child: run one file in a fresh runtime. Prints @@PASS, or @@FAIL / @@TRAP & the message.
+// Errors carry their position & a traceback, load failures say "load" first
 async function child(name) {
 	const [rt, env] = await freshrt();
-	// count assert calls, so the parent can find the line with scripts/assertline.lua
 	const src = `_port = true _soft = true
-local real = assert
-__nassert = -1
 local f, e = loadfile(${JSON.stringify(name + ".lua")})
-if not f then return "FAIL -1 " .. tostring(e) end
-__nassert = 0
-assert = function(...) __nassert = __nassert + 1 return real(...) end
-local ok, e = pcall(f)
+if not f then return "FAIL load " .. tostring(e) end
+local ok, e = xpcall(f, debug.traceback)
 if ok then return "PASS" end
-return "FAIL " .. __nassert .. " " .. tostring(e)`;
+return "FAIL " .. tostring(e)`;
 	let r;
 	try {
 		r = await rt.eval(env, rt.newstr(src));
 	} catch (e) {
-		// a trap leaves the runtime's objects readable, so the count is still there
-		const n = rt.obj2js(rt.mod.tblget(env.val, rt.newstr("__nassert").val));
+		// rt.js adds the Lua traceback of where it trapped
 		console.log = log;
 		log(String(e.stack || e));
-		log("\n@@TRAP " + n + " " + e);
+		log("\n@@TRAP " + e.message + "\n" + (e.luaTraceback || ""));
 		return;
 	}
 	console.log = log;
 	log("\n@@" + text(r));
 }
 
-// Child: does luwa load the first n lines of a file. Prints @@OK, or @@ERR & the message
-async function parsechild(name, n) {
-	const [rt, env] = await freshrt();
-	const src = fs.readFileSync(path.join(dir, name + ".lua"), "utf8").split(/(?<=\n)/).slice(0, n).join("");
-	const r = await rt.eval(env, rt.newstr("local f, e = load(...) return f and 'OK' or 'ERR ' .. tostring(e)"), rt.newstr(src));
-	console.log = log;
-	log("\n@@" + text(r));
-}
-
-// The first line luwa can't load. Host lua says which line prefixes are whole chunks,
-// then a binary search finds the shortest one luwa fails on. Gives "from-to: line text"
-function parseline(name) {
-	const hr = spawnSync("lua", [path.join(path.dirname(here), "assertline.lua"), "parse", name + ".lua"], { cwd: dir, timeout: 60000, encoding: "utf8" });
-	const ends = (hr.stdout || "").trim().split("\n").map(Number).filter(n => n > 0);
-	const loads = n => /\n@@OK/.test(spawnSync(process.execPath, [here, "--parse", name, n], { cwd: dir, timeout, encoding: "utf8" }).stdout || "");
-	let lo = 0, hi = ends.length - 1;
-	if (hi < 0 || loads(ends[hi])) return "?";
-	// ends[hi] fails, ends[lo-1] loads
-	while (lo < hi) {
-		const mid = (lo + hi) >> 1;
-		if (loads(ends[mid])) lo = mid + 1;
-		else hi = mid;
-	}
-	const from = lo > 0 ? ends[lo - 1] + 1 : 1, to = ends[lo];
-	const lines = fs.readFileSync(path.join(dir, name + ".lua"), "utf8").split("\n");
-	return `${name}.lua:${from}${to > from ? "-" + to : ""}: ${lines[from - 1].trim().slice(0, 60)}`;
-}
-
-// Where the n-th assert call is, by running the file under host lua
-function assertline(name, n) {
-	const r = spawnSync("lua", [path.join(path.dirname(here), "assertline.lua"), n, name + ".lua"], { cwd: dir, timeout: 30000, encoding: "utf8" });
-	return (/\n@@(.*)\n$/.exec(r.stdout || "") || [, "?"])[1];
+// First "file:line:" in a traceback that's in the test file, for traps
+function place(name, msg) {
+	const m = msg.match(new RegExp(`^\\s*(${name}\\.lua:\\d+):`, "m"));
+	return m ? m[1] : "?";
 }
 
 function parent(args) {
@@ -115,24 +81,20 @@ function parent(args) {
 		} else {
 			const r = spawnSync(process.execPath, [here, "--one", name], { cwd: dir, timeout, encoding: "utf8", maxBuffer: 1 << 26 });
 			const out = (r.stdout || "") + (r.stderr || "");
-			const m = /\n@@(PASS|FAIL|TRAP)([^]*)$/.exec(r.stdout || "");
+			const m = /\n@@(PASS|FAIL|TRAP) ?([^]*)$/.exec(r.stdout || "");
 			if (r.error?.code === "ETIMEDOUT" || r.signal === "SIGTERM") {
 				status = "timeout";
 			} else if (m && m[1] === "PASS") {
 				status = "pass";
 			} else if (m) {
-				// FAIL or TRAP, then the assert count & the message
 				status = m[1].toLowerCase();
-				const [, n, msg] = /^\s*(-?\d+) ([^]*)$/.exec(m[2]) || [, 0, m[2]];
-				const first = msg.trim().split("\n")[0];
-				if (n < 0) {
+				let msg = m[2].trim();
+				if (msg.startsWith("load ")) {
 					status = "load " + status;
-					detail = `${parseline(name)} -- ${first}`;
-				} else {
-					// a failed assert is call n, other errors & traps come after call n
-					const at = n > 0 ? assertline(name, n) : "start";
-					detail = `${status === "fail" && msg.startsWith("assertion failed") ? "at" : "after"} ${at}: ${first}`;
+					msg = msg.slice(5);
 				}
+				const first = msg.split("\n")[0];
+				detail = status === "trap" ? `at ${place(name, msg)}: ${first}` : first;
 			} else {
 				status = "trap";
 				// the first line naming the problem, like RuntimeError: unreachable
@@ -148,8 +110,8 @@ function parent(args) {
 	console.log(Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", "));
 }
 
-if (process.argv[2] === "--one" || process.argv[2] === "--parse") {
-	(process.argv[2] === "--one" ? child(process.argv[3]) : parsechild(process.argv[3], +process.argv[4])).catch(e => {
+if (process.argv[2] === "--one") {
+	child(process.argv[3]).catch(e => {
 		console.error(e);
 		process.exit(1);
 	});

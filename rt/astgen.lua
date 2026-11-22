@@ -8,11 +8,18 @@ local function t_trunc(t, from)
 	end
 end
 
+-- token offset -> line from the lexer, nil when there are no lines (the build's own compile).
+-- far is the furthest token offset any rule looked at, where a syntax error is
+local lines, far
+
 local slex, zlex = {}, {}
 for k,v in pairs(lex) do
 	zlex[k] = function(str, i, res, ri)
 		if sb(str, i) == v then
 			return i+1, ri
+		end
+		if i > far then
+			far = i
 		end
 	end
 	local tok = { type = -1, val = v }
@@ -21,13 +28,19 @@ for k,v in pairs(lex) do
 			res[ri] = tok
 			return i+1, ri+1
 		end
+		if i > far then
+			far = i
+		end
 	end
 end
 local function tokenarg(ch)
 	return function(str, i, res, ri, vals)
 		if sb(str, i) == ch then
-			res[ri] = { type = -1, val = ch, arg = vals[su('<i4', str, i+1)+1] }
+			res[ri] = { type = -1, val = ch, arg = vals[su('<i4', str, i+1)+1], line = lines and lines[i] }
 			return i+5, ri+1
+		end
+		if i > far then
+			far = i
 		end
 	end
 end
@@ -36,6 +49,9 @@ local name, number, slit = tokenarg(lex._ident), tokenarg(lex._number), tokenarg
 local function kwglobal(str, i, res, ri, vals)
 	if sb(str, i) == lex._ident and vals[su('<i4', str, i+1)+1] == 'global' then
 		return i+5, ri
+	end
+	if i > far then
+		far = i
 	end
 end
 local function seq(rules)
@@ -76,10 +92,16 @@ end
 local function sf(id, rule)
 	return memoize(function(str, i, vals)
 		local subres, subri = {}
+		local start = i
 		i, subri = rule(str, i, subres, 1, vals)
 		if i then
 			t_trunc(subres, subri)
 			subres.type = id
+			if lines then
+				subres.line = lines[start]
+				-- last token's line, when it's a 1 byte token like end
+				subres.lastline = lines[i-1]
+			end
 			return i, subres
 		end
 	end)
@@ -93,6 +115,9 @@ local function of(id, ...)
 			if nxi then
 				t_trunc(subres, subri)
 				subres.type = id+xi*32
+				if lines then
+					subres.line = lines[i]
+				end
 				return nxi, subres
 			end
 		end
@@ -192,13 +217,59 @@ G = {
 
 local Block = G.Block
 
-return function(lx, vals)
+-- Text of tokens for syntax errors
+local tokentext = {
+	_plus = '+', _minus = '-', _mul = '*', _div = '/', _mod = '%', _pow = '^', _hash = '#',
+	_band = '&', _bnot = '~', _bor = '|', _lsh = '<<', _rsh = '>>', _idiv = '//',
+	_eq = '==', _neq = '~=', _lt = '<', _gt = '>', _lte = '<=', _gte = '>=', _set = '=',
+	_pl = '(', _pr = ')', _cl = '{', _cr = '}', _sl = '[', _sr = ']', _label = '::',
+	_semi = ';', _colon = ':', _comma = ',', _dot = '.', _dotdot = '..', _dotdotdot = '...',
+}
+local tokname = {}
+for k, v in pairs(lex) do
+	tokname[v] = tokentext[k] or k:sub(2)
+end
+local function near(lx, vals, i)
+	local t = sb(lx, i)
+	if not t then
+		return '<eof>'
+	end
+	if t >= lex._ident then
+		local v = vals[su('<i4', lx, i+1)+1]
+		if t & 192 == lex._string then
+			return "'\"" .. v .. "\"'"
+		elseif t & 192 == lex._number then
+			return "'" .. tostring(v) .. "'"
+		end
+		return "'" .. v .. "'"
+	end
+	return "'" .. tokname[t] .. "'"
+end
+
+-- lns: token offset -> line from the lexer. chunk: source name for errors.
+-- Without them (the build compiling the prelude) nodes get no lines
+return function(lx, vals, lns, chunk)
 	local res = {}
-	local prevmemo = memo
-	memo = {}
+	local prevmemo, prevlines, prevfar = memo, lines, far
+	memo, lines, far = {}, lns, 0
 	local i = Block(lx, 1, res, 1, vals)
-	memo = prevmemo
-	assert(i)
-	assert(i > #lx)
+	local f = far
+	memo, lines, far = prevmemo, prevlines, prevfar
+	if not i or i <= #lx then
+		if not chunk then
+			error('syntax error')
+		end
+		-- the furthest token looked at is where parsing went wrong. Past the end, use the last line
+		local line = lns and lns[f]
+		if not line and lns then
+			for j = f, 1, -1 do
+				if lns[j] then
+					line = lns[j]
+					break
+				end
+			end
+		end
+		error(chunk .. ':' .. (line or '?') .. ': syntax error near ' .. near(lx, vals, f), 0)
+	end
 	return res[1]
 end

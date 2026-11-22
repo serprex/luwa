@@ -337,6 +337,20 @@ defMop('IsTbl', function(mop, ctx)
 		f:eq()
 	end)
 end)
+defMop('IsTblOrVec', function(mop, ctx)
+	local r = newreg(ctx, 'i32')
+	resolve(ctx, mop[1])
+	cg(ctx, function(f)
+		f:call(typeof)
+		f:tee(r.r)
+		f:i32(types.tbl)
+		f:eq()
+		f:load(r.r)
+		f:i32(types.vec)
+		f:eq()
+		f:bor()
+	end)
+end)
 defMop('IsNumOrStr', function(mop, ctx)
 	local r = newreg(ctx, 'i32')
 	resolve(ctx, mop[1])
@@ -852,11 +866,48 @@ local function switchframe(f, ctx, scopes)
 	end)
 	f:br(scopes.nop)
 end
--- TODO say what went wrong, eg which operand had a bad type
+-- Error(kind, operands...): call the prelude's errfn(kind, operands...), which raises the error.
+-- Raises 'invalid operation' before errfn is set, or without a kind
 defMop('Error', function(mop, ctx)
 	cg(ctx, function(f, scopes)
-		f:loadg(GS['invalid operation'])
-		f:call(frame.throw)
+		f:loadg(frame.errfn)
+		f:refisnull()
+		if mop[1] then
+			f:iff(function()
+				f:loadg(GS['invalid operation'])
+				f:call(frame.throw)
+				switchframe(f, ctx, scopes)
+			end)
+		else
+			f:drop()
+			f:loadg(GS['invalid operation'])
+			f:call(frame.throw)
+			switchframe(f, ctx, scopes)
+		end
+	end)
+	if not mop[1] then
+		return
+	end
+	cg(ctx, function(f)
+		f:loadg(frame.errfn)
+		f:call(tmppush)
+		f:loadg(assert(GS[mop[1]], 'Error: kind missing from rt statics'))
+		f:call(tmppush)
+	end)
+	for i=2,#mop do
+		resolve(ctx, mop[i])
+		cg(ctx, function(f)
+			f:call(tmppush)
+		end)
+	end
+	cg(ctx, function(f, scopes)
+		f:i32(#mop)
+		f:i32(calltypes.norm)
+		f:i32(0)
+		f:load(ctx.pc.r)
+		f:i32(ctx.argoffset)
+		f:add()
+		f:call(frame.callmeta)
 		switchframe(f, ctx, scopes)
 	end)
 end)
@@ -996,6 +1047,11 @@ defMop('Syscall', function(mop, ctx)
 		-- & returns the pc to run next, the way call ops do
 		local impl = {
 			pcall = { sw = std.pcall },
+			xpcall = { sw = std.xpcall },
+			_fn_set_info = std.fn_set_info,
+			_fn_info = std.fn_info,
+			_frame = std.frame,
+			_seterrfns = std.seterrfns,
 			select = std.select,
 			error = { sw = std.error },
 			type = { sw = std.type },
