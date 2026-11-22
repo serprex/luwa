@@ -152,7 +152,7 @@ local image = M.data(memory, addStatics(4, {
 	'__eq', '__lt', '__le', '__gt', '__ge', '__len',
 	'__index', '__newindex', '__mode', '__call', '__unm', '__concat',
 	'__add', '__sub', '__mul', '__div', '__idiv', '__mod', '__pow',
-	'__bnot', '__band', '__bor', '__bxor', '__bshl', '__bshr',
+	'__bnot', '__band', '__bor', '__bxor', '__shl', '__shr',
 	'coroutine', 'debug', 'io', 'math', 'os', 'package', 'utf8',
 	'select', 'pcall', 'error', 'getmetatable', 'setmetatable', 'type',
 	'rawget', 'rawset', 'rawlen', 'rawequal', 'next',

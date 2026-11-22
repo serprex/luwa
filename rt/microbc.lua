@@ -300,11 +300,6 @@ local Box = mkMop('Box', {
 	arg = {'obj'},
 	out = 'obj',
 })
-local CloneFunc = mkMop('CloneFunc', {
-	alloc = true,
-	arg = {'obj'},
-	out = 'obj',
-})
 local ObjMetalessEq = mkMop('ObjMetalessEq', {
 	arg = {'obj', 'obj'},
 	out = 'i32',
@@ -331,9 +326,9 @@ local LoadStrLen = mkMop('LoadStrLen', {
 local Error = mkMop('Error', {
 	alloc = true,
 })
+-- Builtin written in wasm, reads its own 1 byte arg
 local Syscall = mkMop('Syscall', {
 	alloc = true,
-	arg = {'i32'},
 })
 local Int64Flt = mkMop('Int64Flt', {
 	arg = {'i64'},
@@ -375,48 +370,6 @@ local LoadFuncParamc = mkMop('LoadFuncParamc', {
 	arg = {'obj'},
 	out = 'i32',
 })
-local NewVec = mkMop('NewVec', {
-	alloc = true,
-	arg = {'i32'},
-	out = 'obj',
-})
-local function CallSignature(args)
-	local arg = {}
-	for i=1,#args do
-		arg[i] = 'obj'
-	end
-	return { arg = arg }
-end
-local function CallMetaSignature(args)
-	local arg = { 'atom' }
-	for i=2,#args do
-		arg[i] = 'obj'
-	end
-	return { arg = arg }
-end
-local CallMetaMethod = mkMop('CallMetaMethod', CallMetaSignature)
-local CallBinMetaMethod = mkMop('CallBinMetaMethod', CallMetaSignature)
-local CallBool = mkMop('CallBool', CallSignature)
-local FillRange = mkMop('FillRange', {
-	arg = {'i32', 'obj', 'i32'},
-})
-local MemCpy4 = mkMop('MemCpy4', {
-	arg = {'i32', 'i32', 'i32'},
-})
-local VargLen = mkMop('VargLen', {
-	arg = {},
-	out = 'i32',
-})
-local VargPtr = mkMop('VargPtr', {
-	arg = {},
-	out = 'i32',
-})
--- AllocateTemp's result should not live through an allocation barrier
-local AllocateTemp = mkMop('AllocateTemp', {
-	arg = {'i32'},
-	out = 'i32',
-})
--- TODO AllocateDataFrames
 local Typeck = mkMop('Typeck', function(args)
 	local a1 = args[1]
 	local alen = #args
@@ -441,23 +394,67 @@ local Typeck = mkMop('Typeck', function(args)
 		out = out,
 	}
 end)
-local WriteDataFrame = mkMop('WriteDataFrame', {
-	arg = {
-		'i32', -- temp offset
-		'i32', -- type
-		'i32', -- pc
-		'i32', -- base
-		'i32', -- dotdotdot
-		'i32', -- retb
-		'i32', -- retc
-		'i32', -- locals
-		'i32', -- frame
-	}
-})
-local FillFromStack = mkMop('FillFromStack', {
-	arg = {'obj', 'i32'},
-})
 -- Mops used by op sketches below. Signatures only, vm.lua doesn't compile these yet
+-- Metatable field, nil without a metatable. Strings use the string metatable
+local MetaGet = mkMop('MetaGet', {
+	arg = {'obj', 'obj'},
+	out = 'obj',
+})
+-- Metamethod for a binary op: first operand's, else second's
+local BinMeta = mkMop('BinMeta', {
+	arg = {'obj', 'obj', 'obj'},
+	out = 'obj',
+})
+-- a[b] following __index tables. If it ends at an __index function,
+-- that's the result & IdxSelf is what to call it with, otherwise IdxSelf is 0
+local IdxWalk = mkMop('IdxWalk', {
+	arg = {'obj', 'obj'},
+	out = 'obj',
+})
+local IdxSelf = mkMop('IdxSelf', {
+	out = 'obj',
+})
+-- Call a function with some args, its 1 result is pushed when it returns.
+-- First arg is the call type: 'norm', or 'bool' to make the result true/false.
+-- Leaves the op, so it has to come last
+local CallMeta = mkMop('CallMeta', function(args)
+	local arg = { 'atom' }
+	for i=2,#args do
+		arg[i] = 'obj'
+	end
+	return { arg = arg, exit = true }
+end)
+-- Call op family, reads its own bytecode args. Args: call type, whether to pass varargs too
+local CallChain = mkMop('CallChain', {
+	exit = true,
+	arg = {'atom', 'atom'},
+})
+-- Return everything after the frame's locals
+local Ret = mkMop('Ret', {
+	exit = true,
+})
+-- Push all varargs
+local VargPush = mkMop('VargPush', {})
+-- Push the first n varargs, nil filled
+local VargPushN = mkMop('VargPushN', {
+	arg = {'i32'},
+})
+-- Stack is table then n values: set them as t[1..n], leave the table
+local AppendN = mkMop('AppendN', {
+	alloc = true,
+	arg = {'i32'},
+})
+-- Like AppendN, with varargs after the n values
+local AppendVarg = mkMop('AppendVarg', {
+	alloc = true,
+	arg = {'i32'},
+})
+-- Copy of a function proto, the top n values are popped as its frees
+local MakeClosure = mkMop('MakeClosure', {
+	alloc = true,
+	arg = {'obj', 'i32'},
+	out = 'obj',
+})
 local Mod = mkMop('Mod', GenericBinOp)
 -- Lua's //: floors, int//int stays int
 local IDiv = mkMop('IDiv', GenericBinOp)
@@ -471,31 +468,6 @@ local StrCmp = mkMop('StrCmp', {
 local NewTbl = mkMop('NewTbl', {
 	alloc = true,
 	out = 'obj',
-})
-local AppendRange = mkMop('AppendRange', {
-	alloc = true,
-	arg = {'obj', 'i32', 'i32'},
-})
--- Offset of the top dataframe in coro.data
-local DataFrameTop = mkMop('DataFrameTop', {
-	out = 'i32',
-})
--- Base of the top dataframe
-local DataFrameTopBase = mkMop('DataFrameTopBase', {
-	out = 'i32',
-})
-local AllocateDataFrames = mkMop('AllocateDataFrames', {
-	alloc = true,
-	arg = {'i32'},
-})
--- Like Arg, but the arg index is computed at runtime
-local LoadArg = mkMop('LoadArg', {
-	arg = {'i32'},
-	out = 'i32',
-})
-local PushObjFrameFromFunc = mkMop('PushObjFrameFromFunc', {
-	alloc = true,
-	arg = {'obj'},
 })
 local function IfNot(c, t, e)
 	return If(Eq(c, Int(0)), t, e)
@@ -524,13 +496,16 @@ mkOp(bc.LoadFreeBox, Push(Unbox(LoadSlot(Free(Arg(0))))))
 mkOp(bc.StoreFreeBox, SetBox(LoadSlot(Free(Arg(0))), Pop()))
 mkOp(bc.LoadParamBox, Push(Unbox(LoadSlot(Param(Arg(0))))))
 mkOp(bc.StoreParamBox, SetBox(LoadSlot(Param(Arg(0))), Pop()))
-mkOp(bc.BoxParam, Store(Param(0), Box(Param(Arg(0)))))
-mkOp(bc.BoxLocal, Store(Local(0), Box(Nil())))
+mkOp(bc.BoxParam, (function()
+	local slot = Param(Arg(0))
+	return StoreSlot(slot, Box(LoadSlot(slot)))
+end)())
+mkOp(bc.BoxLocal, StoreSlot(Local(Arg(0)), Box(Nil())))
 mkOp(bc.LoadLocalBox, Push(Unbox(LoadSlot(Local(Arg(0))))))
 mkOp(bc.StoreLocalBox, SetBox(LoadSlot(Local(Arg(0))), Pop()))
 mkOp(bc.LoadConst, Push(LoadSlot(Const(Arg(0)))))
 mkOp(bc.Pop, Pop())
-mkOp(bc.Syscall, Syscall(Arg(0)))
+mkOp(bc.Syscall, Syscall())
 mkOp(bc.Jmp, SetPc(Arg(0)))
 mkOp(bc.Jif,
 	If(
@@ -558,73 +533,24 @@ mkOp(bc.JifNotOrPop,
 		SetPc(Arg(0))
 	)
 )
-mkOp(bc.LoadFunc, (function()
-	local func = CloneFunc(Const(Arg(1)))
-	return Seq(
-		func,
-		If(
-			Arg(0),
-			Store(
-				Add(func, Int(functy.frees)),
-				FillFromStack(NewVec(Arg(0)), Arg(0))
-			)
-		),
-		Push(func)
-	)
-end)())
-mkOp(bc.LoadVarg, (function()
-	local tmp = AllocateTemp(Arg(0))
-	local vlen = VargLen()
-	local vptr = VargPtr()
-	return Seq(vptr,
-		If(
-			Lt(vlen, Arg(0)),
-			(function()
-				local vlen4 = Mul(vlen, Int(4))
-				return Seq(
-					MemCpy4(tmp, vptr, vlen4),
-					FillRange(Add(tmp, vlen4), Nil(), Mul(Sub(Arg(0), vlen), Int(4)))
-				)
-			end)(),
-			MemCpy4(tmp, vptr, Mul(Arg(0), Int(4)))
-		)
-	)
-end)())
-mkOp(bc.AppendVarg, AppendRange(Pop(), VargPtr(), Arg(0)))
-mkOp(bc.Call, (function()
-	local nret = Arg(0)
-	local baseframe = DataFrameTop()
-	local rollingbase = Reg32()
-	local ri = Reg32()
-	local n0 = StoreReg(rollingbase, DataFrameTopBase())
-	local n1 = AllocateDataFrames(Arg(1))
-	local n2 = ForRange(ri, Int(0), Arg(1), (function()
-		local rival = LoadReg(ri)
-		local newrollingbase = Add(LoadReg(rollingbase), Mul(LoadArg(rival), Int(4)))
-		return Seq(
-			StoreReg(rollingbase, newrollingbase),
-			WriteDataFrame(
-				Add(baseframe, rival),
-				If(rival, Int(3), Int(1)), -- type = i ? call : norm
-				Int(0), -- pc
-				newrollingbase, -- base
-				Mul(LoadFuncParamc(func), Int(4)), -- dotdotdot
-				Int(-4), -- retb
-				If(rival, Int(-1), nret), -- retc
-				0, --  TODO calc locals
-				0 -- TODO calc frame
-			)
-		)
-	end)())
-	local n3 = PushObjFrameFromFunc(func)
-	local n4 = SetPc(Int(0))
-	return Seq(nret, n0, n1, n2, n3, n4)
-end)())
-mkOp(bc.ReturnCall, Nop())
-mkOp(bc.AppendCall, Nop())
-mkOp(bc.ReturnCallVarg, Nop())
-mkOp(bc.AppendCallVarg, Nop())
+mkOp(bc.LoadFunc, Push(MakeClosure(LoadSlot(Const(Arg(1))), Arg(0))))
+mkOp(bc.LoadVarg, VargPushN(Arg(0)))
+mkOp(bc.AppendVarg, AppendVarg(Arg(0)))
+mkOp(bc.Append, AppendN(Arg(0)))
+mkOp(bc.Call, CallChain('norm', false))
+mkOp(bc.CallVarg, CallChain('norm', true))
+mkOp(bc.AppendCall, CallChain('push', false))
+mkOp(bc.AppendCallVarg, CallChain('push', true))
+mkOp(bc.Return, Ret())
+mkOp(bc.ReturnVarg, Seq(VargPush(), Ret()))
+-- No tail calls yet: bcgen emits Call keeping all results, then Return
+mkOp(bc.ReturnCall, Error())
+mkOp(bc.ReturnCallVarg, Error())
 
+-- Call metamethod h with args if there is one, else raise an error
+local function MetaOr(h, callty, ...)
+	return If(Truthy(h), CallMeta(callty, h, ...), Error())
+end
 mkOp(bc.Not, Push(If(Truthy(Pop()), False(), True())))
 
 mkOp(bc.Len, (function()
@@ -633,17 +559,17 @@ mkOp(bc.Len, (function()
 	return If(
 		Eq(aty, Int(types.str)),
 		Push(IntObjFromInt(LoadStrLen(a))),
-		If(
-			Eq(aty, Int(types.tbl)),
-			(function()
-				local ameta = Meta(a)
-				return If(ameta,
-					CallMetaMethod('__len', ameta, a), -- TODO helper function this
-					Push(IntObjFromInt(LoadTblLen(a)))
+		(function()
+			local h = MetaGet(a, Str('__len'))
+			return If(Truthy(h),
+				CallMeta('norm', h, a),
+				If(
+					Eq(aty, Int(types.tbl)),
+					Push(IntObjFromInt(LoadTblLen(a))),
+					Error()
 				)
-			end)(),
-			Error()
-		)
+			)
+		end)()
 	)
 end)())
 
@@ -654,8 +580,7 @@ mkOp(bc.Neg, (function()
 		Push(IntObjFromInt64(Negate(LoadInt(a)))),
 		types.float,
 		Push(FltObjFromFlt(Negate(LoadFlt(a)))),
-		-- TODO __neg, CallMetaMethod has no codegen yet
-		Error()
+		MetaOr(MetaGet(a, Str('__unm')), 'norm', a, a)
 	)
 end)())
 
@@ -675,31 +600,17 @@ mkOp(bc.TblSet, (function()
 end)())
 
 mkOp(bc.CmpEq, (function()
-	local a = Pop()
-	local b = Seq(a, Pop())
+	local b = Pop() -- top of stack is right operand
+	local a = Seq(b, Pop())
 	return If(
 		ObjMetalessEq(a, b),
 		Push(True()),
 		If(
-			And(
-				Eq(Type(a), Int(types.tbl)),
-				Eq(Type(b), Int(types.tbl))
-			),
+			And(IsTbl(a), IsTbl(b)),
 			(function()
-				local amt = Meta(a)
-				local bmt = Meta(b)
-				return If(
-					And(amt, bmt),
-					(function()
-						local amteq = TblGet(amt, Str('__eq'))
-						local bmteq = TblGet(bmt, Str('__eq'))
-						return If(
-							Eq(amteq, bmteq),
-							CallBool(amteq, a, b),
-							-- CALL META
-							Push(False())
-						)
-					end)(),
+				local h = BinMeta(a, b, Str('__eq'))
+				return If(Truthy(h),
+					CallMeta('bool', h, a, b),
 					Push(False())
 				)
 			end)(),
@@ -708,7 +619,7 @@ mkOp(bc.CmpEq, (function()
 	)
 end)())
 
-local function cmpop(op, cmpop, strlogic)
+local function cmpop(op, cmpop, metamethod, swap)
 	mkOp(op, (function()
 		local b = Pop() -- top of stack is right operand
 		local a = Seq(b, Pop())
@@ -743,15 +654,16 @@ local function cmpop(op, cmpop, strlogic)
 				cmpop(LoadFlt(a), Int64Flt(LoadInt(b))),
 				True(), False()
 			)),
-			-- TODO metamethod fallbacks
-			Error()
+			swap
+				and MetaOr(BinMeta(b, a, Str(metamethod)), 'bool', b, a)
+				or MetaOr(BinMeta(a, b, Str(metamethod)), 'bool', a, b)
 		)
 	end)())
 end
-cmpop(bc.CmpLe, Le)
-cmpop(bc.CmpLt, Lt)
-cmpop(bc.CmpGe, Ge)
-cmpop(bc.CmpGt, Gt)
+cmpop(bc.CmpLe, Le, '__le')
+cmpop(bc.CmpLt, Lt, '__lt')
+cmpop(bc.CmpGe, Ge, '__le', true)
+cmpop(bc.CmpGt, Gt, '__lt', true)
 
 local function binmathop(op, floatlogic, intlogic, metamethod)
 	mkOp(op, (function()
@@ -770,8 +682,7 @@ local function binmathop(op, floatlogic, intlogic, metamethod)
 			types.float,
 			types.int,
 			Push(NumObj(floatlogic(LoadFlt(a), Int64Flt(LoadInt(b))))),
-			-- TODO metamethod fallback
-			Error()
+			MetaOr(BinMeta(a, b, Str(metamethod)), 'norm', a, b)
 		)
 	end)())
 end
@@ -813,8 +724,7 @@ local function binbitop(op, mop, metamethod)
 			types.float,
 			types.int,
 			Push(NumObj(mop(Flt64Int(LoadFlt(a)), LoadInt(b)))),
-			-- TODO metamethod fallback
-			Error()
+			MetaOr(BinMeta(a, b, Str(metamethod)), 'norm', a, b)
 		)
 	end)())
 end
@@ -830,8 +740,7 @@ mkOp(bc.BNot, (function()
 		Push(NumObj(BXor(LoadInt(a), Int64(-1)))),
 		types.float,
 		Push(NumObj(BXor(Flt64Int(LoadFlt(a)), Int64(-1)))),
-		-- TODO __bnot, CallMetaMethod has no codegen yet
-		Error()
+		MetaOr(MetaGet(a, Str('__bnot')), 'norm', a, a)
 	)
 end)())
 
@@ -842,31 +751,20 @@ mkOp(bc.Concat, (function()
 		types.str,
 		types.str,
 		Push(StrConcat(a, b)),
-		If(
-			And(IsNumOrStr(a), IsNumOrStr(b)),
-			Push(StrConcat(ToString(a), ToString(b))),
-			CallBinMetaMethod('__concat', a, b)
-		)
+		-- TODO numbers: rt has no number to string yet
+		MetaOr(BinMeta(a, b, Str('__concat')), 'norm', a, b)
 	)
 end)())
 
 mkOp(bc.Idx, (function()
 	local b = Pop()
 	local a = Seq(b, Pop())
-	local ameta = Meta(a)
-	return If(ameta,
-		CallMetaMethod('__index', ameta, a, b),
-		If(IsTbl(a),
-			TblGet(a, b),
-			Error()
-		)
-	)
-end)())
-
-mkOp(bc.Append, (function()
-	local b = Pop()
-	local a = Seq(b, Pop())
-	return TblSet(a, IntObjFromInt(Add(LoadTblLen(a), Int(1))), b)
+	local v = IdxWalk(a, b)
+	local recv = IdxSelf()
+	return Seq(v, If(Truthy(recv),
+		CallMeta('norm', v, recv, b),
+		Push(v)
+	))
 end)())
 
 return {

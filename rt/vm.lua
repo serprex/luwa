@@ -22,36 +22,9 @@ local util = require 'util'
 
 local rt = require 'rt'
 local microbc = require 'microbc'
-local vmlegacy = require 'vmlegacy'
 
-local dataframe = {
-	type = str.base + 0,
-	pc = str.base + 1,
-	base = str.base + 5, -- Base. params here
-	dotdotdot = str.base + 9, -- base+dotdotdot = excess params here. Ends at base+locals
-	retb = str.base + 11, -- base+retb = put return vals here
-	retc = str.base + 13, -- base+retc = stack should be post return. 0xffff for piped return
-	locals = str.base + 15, -- base+locals = locals here
-	frame = str.base + 17, -- base+frame = objframe here
-	sizeof = 19,
-}
-local objframe = {
-	bc = vec.base + 0,
-	consts = vec.base + 4,
-	frees = vec.base + 8,
-	tmpbc = 12,
-	tmpconsts = 8,
-	tmpfrees = 4,
-	sizeof = 12,
-}
-local calltypes = {
-	norm = 0, -- Reload locals
-	init = 1, -- Return stack to coro src, src nil for main
-	prot = 2, -- Reload locals
-	call = 3, -- Continue call chain
-	push = 4, -- Append intermediates to table
-	bool = 5, -- Cast result to bool
-}
+local frame = require 'frame'
+local dataframe, objframe, calltypes = frame.dataframe, frame.objframe, frame.calltypes
 
 local init = func(i32, void, function(f, fn)
 	-- Transition oluastack to having a stack frame from fn
@@ -170,19 +143,6 @@ local init = func(i32, void, function(f, fn)
 	f:i32load(functy.frees)
 	f:i32(objframe.tmpfrees)
 	f:call(setnthtmp)
-end)
-
-loadframebase = func(i32, function(f)
-	local a = f:locals(i32)
-	f:loadg(oluastack)
-	f:i32load(coro.data)
-	f:tee(a)
-	f:i32load(buf.ptr)
-	f:load(a)
-	f:i32load(buf.len)
-	f:add()
-	f:i32(dataframe.sizeof)
-	f:sub()
 end)
 
 param0 = func(i32, function(f)
@@ -362,9 +322,11 @@ local function genOp(ctx, op)
 		temps = {},
 		code = {},
 	}, { __index = ctx })
+	-- Bytes of bytecode args, mops that leave the op early need it to find the next op
+	local argoffset = argsize(opast, {})
+	subctx.argoffset = argoffset
 	initreglife(subctx, opast)
 	resolvevoid(subctx, opast)
-	local argoffset = argsize(opast, {})
 	-- TODO Phase 2: reserve spill slots on tmp stack, stackspace
 	return function(scopes)
 		local f = ctx.f
@@ -679,17 +641,6 @@ defMop('Param', function(mop, ctx)
 		f:add()
 	end)
 end)
-defMop('VargLen', function(mop, ctx)
-	cg(ctx, function(f)
-		f:call(loadframebase)
-		f:i32load16u(objframe.locals)
-		f:call(loadframebase)
-		f:i32load16u(dataframe.dotdotdot)
-		f:sub()
-		f:i32(2)
-		f:shru()
-	end)
-end)
 defMop('Truthy', function(mop, ctx)
 	-- Could be a macroop
 	resolve(ctx, mop[1])
@@ -955,9 +906,102 @@ defMop('Error', function(mop, ctx)
 		f:unreachable()
 	end)
 end)
-defMop('MemCpy4', function(mop, ctx)
+defMop('Str', function(mop, ctx)
+	local s = assert(GS[mop[1]], 'Str: string missing from rt image')
+	cg(ctx, function(f)
+		f:i32(s)
+	end)
+end)
+defMop('And', function(mop, ctx)
 	resolve(ctx, mop[1])
-
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:band()
+	end)
+end)
+defMop('Or', function(mop, ctx)
+	resolve(ctx, mop[1])
+	resolve(ctx, mop[2])
+	cg(ctx, function(f)
+		f:bor()
+	end)
+end)
+-- Resolve every arg, then call a wasm helper
+local function callmop(name, helper)
+	defMop(name, function(mop, ctx)
+		for i=1,#mop do
+			resolve(ctx, mop[i])
+		end
+		cg(ctx, function(f)
+			f:call(helper)
+		end)
+	end)
+end
+callmop('ObjMetalessEq', _obj.eq)
+callmop('MetaGet', frame.metaget)
+callmop('BinMeta', frame.binmeta)
+callmop('IdxWalk', frame.idxwalk)
+callmop('StrConcat', frame.strconcat)
+callmop('MakeClosure', frame.makeclosure)
+callmop('VargPushN', frame.loadvarg)
+callmop('AppendN', frame.appendn)
+callmop('AppendVarg', frame.appendvarg)
+defMop('IdxSelf', function(mop, ctx)
+	cg(ctx, function(f)
+		f:loadg(frame.idxself)
+	end)
+end)
+defMop('VargPush', function(mop, ctx)
+	cg(ctx, function(f)
+		f:call(frame.pushvarg)
+		f:drop()
+	end)
+end)
+-- A frame helper left the pc to run next on the stack, -1 means the main function returned
+local function switchframe(f, ctx, scopes)
+	f:tee(ctx.pc.r)
+	f:i32(0)
+	f:lts()
+	f:iff(function()
+		f:i32(1)
+		f:ret()
+	end)
+	f:br(scopes.nop)
+end
+defMop('CallMeta', function(mop, ctx)
+	for i=2,#mop do
+		resolve(ctx, mop[i])
+		cg(ctx, function(f)
+			f:call(tmppush)
+		end)
+	end
+	local callty = assert(calltypes[mop[1]], 'CallMeta: unknown call type')
+	cg(ctx, function(f, scopes)
+		f:i32(#mop-2)
+		f:i32(callty)
+		f:load(ctx.pc.r)
+		f:i32(ctx.argoffset)
+		f:add()
+		f:call(frame.callmeta)
+		switchframe(f, ctx, scopes)
+	end)
+end)
+defMop('CallChain', function(mop, ctx)
+	local callty = assert(calltypes[mop[1]], 'CallChain: unknown call type')
+	local helper = mop[2] and frame.callchainvarg or frame.callchain
+	cg(ctx, function(f, scopes)
+		f:load(ctx.bc.r)
+		f:load(ctx.pc.r)
+		f:i32(callty)
+		f:call(helper)
+		switchframe(f, ctx, scopes)
+	end)
+end)
+defMop('Ret', function(mop, ctx)
+	cg(ctx, function(f, scopes)
+		f:call(frame.retframe)
+		switchframe(f, ctx, scopes)
+	end)
 end)
 defMop('If', function(mop, ctx)
 	resolve(ctx, mop[1])
@@ -1054,6 +1098,197 @@ defMop('Typeck', function(mop, ctx)
 	end)
 end)
 
+-- Builtins written in wasm. Reads its own 1 byte arg: which builtin
+defMop('Syscall', function(mop, ctx)
+	cg(ctx, function(f, scopes)
+		-- required here: these modules require vm
+		local std = require 'std'
+		local stdcoro = require 'stdcoro'
+		local stddebug = require 'stddebug'
+		local stdmath = require 'stdmath'
+			f:switch(function()
+				f:load(ctx.bc.r)
+				f:load(ctx.pc.r)
+				f:i32(1)
+				f:add()
+				f:tee(ctx.pc.r)
+				f:add()
+				f:i32load8u(str.base - 1)
+			end, 0, function()
+				f:call(std.pcall)
+				f:br(scopes.nop)
+			end, 1, function()
+				f:call(std.select)
+				f:br(scopes.nop)
+			end, 2, function()
+				f:call(stdcoro.coro_status)
+				f:br(scopes.nop)
+			end, 3, function()
+				f:call(stdcoro.coro_running)
+				f:br(scopes.nop)
+			end, 4, function()
+				f:call(stddebug.debug_getmetatable)
+				f:br(scopes.nop)
+			end, 5, function()
+				f:call(stddebug.debug_setmetatable)
+				f:br(scopes.nop)
+			end, 6, function()
+				f:call(stdmath.math_type)
+				f:br(scopes.nop)
+			end, 7, function()
+				f:call(std.error)
+				f:br(scopes.nop)
+			end, 8, function()
+				f:call(stdcoro.coro_create)
+				f:br(scopes.nop)
+			end, 9, function()
+				f:call(stdcoro.coro_resume)
+				f:br(scopes.nop)
+			end, 10, function()
+				f:call(stdcoro.coro_yield)
+				f:br(scopes.nop)
+			end, 11, function()
+				f:call(std.type)
+				f:br(scopes.nop)
+			end, 12, function()
+				-- _stdin
+				f:i32(NIL)
+				f:call(tmppush)
+				f:br(scopes.nop)
+			end, 13, function()
+				-- _stdout
+				f:i32(NIL)
+				f:call(tmppush)
+				f:br(scopes.nop)
+			end, 14, function()
+				-- _ioread
+				f:unreachable()
+			end, 15, function()
+				-- _iowrite
+				f:unreachable()
+			end, 16, function()
+				-- _ioflush
+				f:unreachable()
+			end, 17, function()
+				-- _ioclose
+				f:unreachable()
+			end, 18, function()
+				-- _iosetvbuf
+				f:unreachable()
+			end, 19, function()
+				-- _fn_set_localc
+				f:call(std.fn_set_localc)
+				f:br(scopes.nop)
+			end, 20, function()
+				-- _fn_set_paramc
+				f:call(std.fn_set_paramc)
+				f:br(scopes.nop)
+			end, 21, function()
+				-- _fn_set_isdotdotdot
+				f:call(param0)
+				f:i32load(vec.base)
+				f:call(param0)
+				f:i32load(vec.base + 4)
+				-- truthy: not nil or false
+				f:i32(TRUE)
+				f:geu()
+				f:i32store8(functy.isdotdotdot)
+				f:br(scopes.nop)
+			end, 22, function()
+				-- _fn_set_bc
+				f:call(param0)
+				f:i32load(vec.base)
+				f:call(param0)
+				f:i32load(vec.base + 4)
+				f:i32store(functy.bc)
+				f:br(scopes.nop)
+			end, 23, function()
+				-- _fn_set_frees
+				f:call(param0)
+				f:i32load(vec.base)
+				f:call(param0)
+				f:i32load(vec.base + 4)
+				f:i32store(functy.frees)
+				f:br(scopes.nop)
+			end, 24, function()
+				-- _fn_set_consts
+				f:call(param0)
+				f:i32load(vec.base)
+				f:call(param0)
+				f:i32load(vec.base + 4)
+				f:i32store(functy.consts)
+				f:br(scopes.nop)
+			end, 25, function()
+				-- _vec_new
+				f:call(std.vec_new)
+				f:br(scopes.nop)
+			end, 26, function()
+				f:call(param0)
+				f:i32load(vec.base)
+				f:call(tmppush)
+				f:call(require('_lex').lex)
+				f:br(scopes.nop)
+			end, 27, function()
+				f:call(std.rawget)
+				f:br(scopes.nop)
+			end, 28, function()
+				f:call(std.rawset)
+				f:br(scopes.nop)
+			end, 29, function()
+				f:call(std.next)
+				f:br(scopes.nop)
+			end, 30, function()
+				f:call(rt.random)
+				f:call(newf64)
+				f:call(tmppush)
+				f:br(scopes.nop)
+			end, 31, function()
+				f:call(stdmath.math_abs)
+				f:br(scopes.nop)
+			end, 32, function()
+				f:call(stdmath.math_ceil)
+				f:br(scopes.nop)
+			end, 33, function()
+				f:call(stdmath.math_floor)
+				f:br(scopes.nop)
+			end, 34, function()
+				f:call(stdmath.math_sin)
+				f:br(scopes.nop)
+			end, 35, function()
+				f:call(stdmath.math_cos)
+				f:br(scopes.nop)
+			end, 36, function()
+				f:call(stdmath.math_tan)
+				f:br(scopes.nop)
+			end, 37, function()
+				f:call(stdmath.math_asin)
+				f:br(scopes.nop)
+			end, 38, function()
+				f:call(stdmath.math_acos)
+				f:br(scopes.nop)
+			end, 39, function()
+				f:call(stdmath.math_exp)
+				f:br(scopes.nop)
+			end, 40, function()
+				f:call(stdmath.math_log)
+				f:br(scopes.nop)
+			end, 41, function()
+				f:call(stdmath.math_atan)
+				f:br(scopes.nop)
+			end, 42, function()
+				f:call(std.string_byte)
+				f:br(scopes.nop)
+			end, 43, function()
+				f:call(std.string_char)
+				f:br(scopes.nop)
+			end, 44, function()
+				f:call(std.fn_new)
+				f:br(scopes.nop)
+			end)
+			f:unreachable()
+	end)
+end)
+
 local function genLocals(f, wty, regdef)
 	if #regdef > 0 then
 		local rs = table.pack(f:locals(wty, #regdef))
@@ -1062,58 +1297,8 @@ local function genLocals(f, wty, regdef)
 		end
 	end
 end
--- Ops compiled from microbc. Everything else uses vmlegacy's hand written handlers.
--- Grow this list one op at a time, checking the REPL still works after each
-local microready = {
-	[ops.LoadNil] = true,
-	[ops.LoadFalse] = true,
-	[ops.LoadTrue] = true,
-	[ops.Pop] = true,
-	[ops.Jmp] = true,
-	[ops.Sub] = true,
-	[ops.Mul] = true,
-	[ops.Not] = true,
-	[ops.Div] = true,
-	[ops.IDiv] = true,
-	[ops.Mod] = true,
-	[ops.Pow] = true,
-	[ops.BAnd] = true,
-	[ops.BOr] = true,
-	[ops.BXor] = true,
-	[ops.Shl] = true,
-	[ops.Shr] = true,
-	[ops.CmpLe] = true,
-	[ops.CmpLt] = true,
-	[ops.CmpGe] = true,
-	[ops.CmpGt] = true,
-	[ops.Jif] = true,
-	[ops.JifNot] = true,
-	[ops.JifOrPop] = true,
-	[ops.JifNotOrPop] = true,
-	[ops.BNot] = true,
-	[ops.LoadConst] = true,
-	[ops.LoadLocal] = true,
-	[ops.StoreLocal] = true,
-	[ops.LoadParam] = true,
-	[ops.StoreParam] = true,
-	[ops.LoadFree] = true,
-	[ops.LoadFreeBox] = true,
-	[ops.StoreFreeBox] = true,
-	[ops.LoadParamBox] = true,
-	[ops.StoreParamBox] = true,
-	[ops.LoadLocalBox] = true,
-	[ops.StoreLocalBox] = true,
-	[ops.Neg] = true,
-	[ops.Add] = true,
-	[ops.TblSet] = true,
-	[ops.TblAdd] = true,
-	[ops.TblNew] = true,
-}
 local eval = func(i32, function(f)
-	local a, b, c, d, e,
-		meta_callty, meta_retb, meta_retc, meta_key, meta_off,
-		framebase, objbase, base, bc, pc = f:locals(i32, 5+5+5)
-	local a64 = f:locals(i64, 1)
+	local a, framebase, objbase, base, bc, pc = f:locals(i32, 6)
 
 	local function loadframe()
 		f:call(loadframebase)
@@ -1125,51 +1310,33 @@ local eval = func(i32, function(f)
 		f:i32load(dataframe.pc)
 		f:store(pc)
 	end
-	local function readArg()
-		f:load(bc)
-		f:load(pc)
-		f:i32(4)
-		f:add()
-		f:tee(pc)
-		f:add()
-		f:i32load(str.base - 4)
-	end
-	local function readArg4()
-		readArg()
-		f:i32(2)
-		f:shl()
-	end
 
 	local L = {
-		a = a, b = b, c = c, d = d, e = e,
-		meta_callty = meta_callty, meta_retb = meta_retb, meta_retc = meta_retc,
-		meta_key = meta_key, meta_off = meta_off,
 		framebase = framebase, objbase = objbase, base = base, bc = bc, pc = pc,
-		a64 = a64,
-		readArg = readArg, readArg4 = readArg4,
-		dataframe = dataframe, objframe = objframe, calltypes = calltypes,
 	}
 	local ctx = mkcgctx(f, L)
 
-	-- microbc ops only branch to nop, so they go first.
-	-- Legacy keeps its order: a handler can only branch to labels after it
+	-- Ops only branch to nop, so their order doesn't matter
 	local switchparams = {}
-	local microops = {}
-	for op in pairs(microready) do
-		microops[#microops+1] = op
+	local oplist = {}
+	for op in pairs(microbc.ops) do
+		oplist[#oplist+1] = op
 	end
-	table.sort(microops)
-	for _, op in ipairs(microops) do
+	table.sort(oplist)
+	for _, op in ipairs(oplist) do
 		switchparams[#switchparams+1] = op
 		switchparams[#switchparams+1] = genOp(ctx, op)
 	end
-	local arms = vmlegacy(f, L)
-	for i=1,#arms,2 do
-		assert(not microready[arms[i]], 'vmlegacy still has a handler for a microbc op')
-		switchparams[#switchparams+1] = arms[i]
-		switchparams[#switchparams+1] = arms[i+1]
-	end
 	switchparams[#switchparams+1] = 'nop'
+	local handled = {}
+	for i=1,#switchparams,2 do
+		handled[switchparams[i]] = true
+	end
+	for name, op in pairs(ops) do
+		if not handled[op] then
+			error('no handler for op ' .. name .. ': ' .. tostring(microbc.broken[op]))
+		end
+	end
 
 	-- Registers microbc asked for during genOp
 	genLocals(f, i32, ctx.regdef[i32])
