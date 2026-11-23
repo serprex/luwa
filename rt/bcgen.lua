@@ -446,9 +446,11 @@ local function emitNodes(self, node, ty, ...)
 end
 
 local ExpUnop, ExpValue = ast.Exp+32, ast.Exp+64
-local precedenceTable = {7, 7, 8, 8, 8, 9, 8, 5, 4, 3, 6, 6, 2, 1, 1, 1, 1, 1, 1}
+local precedenceTable = {8, 8, 9, 9, 9, 11, 9, 5, 4, 3, 6, 6, 7, 1, 1, 1, 1, 1, 1}
+-- .. & ^ are right associative
+local rightassoc = { [7] = true, [11] = true }
 -- Unary ops bind tighter than everything but ^
-local unopPrecedence = 8.5
+local unopPrecedence = 10
 local function precedence(node)
 	local ty = node.type&31
 	if ty == ast.Binop then
@@ -474,9 +476,8 @@ local function shunt(node)
 		local lson, op, rson = table.unpack(node)
 		out[#out+1] = lson
 		while #ops > 0 do
-			local oprec = precedence(op)
-			-- ^ is right associative
-			if precedence(ops[#ops]) < oprec or oprec == 9 then
+			local oprec, top = precedence(op), precedence(ops[#ops])
+			if top < oprec or top == oprec and rightassoc[oprec] then
 				break
 			end
 			out[#out+1] = ops[#ops]

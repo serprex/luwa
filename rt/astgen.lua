@@ -184,7 +184,7 @@ G = {
 		seq{zlex._if, ExpOr, zlex._then, Block, m(seq{zlex._elseif, ExpOr, zlex._then, Block}), p(seq{zlex._else, Block}), zlex._end},
 		seq{zlex._for, name, zlex._set, ExpOr, zlex._comma, ExpOr, p(seq{zlex._comma, ExpOr}), zlex._do, Block, zlex._end},
 		seq{zlex._for, Namelist, zlex._in, Explist, zlex._do, Block, zlex._end},
-		seq{zlex._function, name, m(seq{zlex._dot, name}), m(seq{slex._colon, name}), Funcbody},
+		seq{zlex._function, name, m(seq{zlex._dot, name}), p(seq{slex._colon, name}), Funcbody},
 		seq{zlex._local, zlex._function, name, Funcbody},
 		seq{zlex._local, Attnamelist, p(seq{zlex._set, Explist})},
 		seq{kwglobal, zlex._function, name, Funcbody},
