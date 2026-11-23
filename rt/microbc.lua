@@ -273,6 +273,16 @@ local Arg = mkMop('Arg', {
 	arg = { 'atom' },
 	out =  'i32' ,
 })
+-- 4 byte value at this many bytes past the opcode, for reading the next op's arg.
+-- Unlike Arg it isn't counted as part of this op
+local ArgAt = mkMop('ArgAt', {
+	arg = { 'atom' },
+	out =  'i32' ,
+})
+-- pc of the byte after the opcode
+local Pc = mkMop('Pc', {
+	out = 'i32',
+})
 mkMop('Push', {
 	stmt = true,
 	arg = {'obj'},
@@ -461,6 +471,21 @@ mkMop('MakeClosure', {
 	alloc = true,
 	arg = {'obj', 'i32'},
 	out = 'obj',
+})
+-- Numeric for setup, see forprep in vm.lua: stores the loop's state in locals n, n+1 & n+2.
+-- Gives 0 to run the loop, 1 to skip it, 2 when ForCoerce has to look at the values
+mkMop('ForPrep', {
+	stmt = true,
+	alloc = true,
+	arg = {'i32', 'obj', 'obj', 'obj'},
+	out = 'i32',
+})
+-- The prelude's errfn('for', init, limit, step) turns strings into numbers or raises the error,
+-- the 3 numbers it gives back are pushed & this op runs again
+mkMop('ForCoerce', {
+	exit = true,
+	argfx = true,
+	arg = {'obj', 'obj', 'obj'},
 })
 local Mod = mkMop('Mod', GenericBinOp)
 -- Lua's //: floors, int//int stays int
@@ -801,45 +826,64 @@ op(bc.TblSet, function(b)
 	end)
 end)
 
-op(bc.CmpEq, function(b)
-	local y = b:Pop() -- top of stack is right operand
-	local x = b:Pop()
-	b:If(ObjMetalessEq(x, y),
-		function(b) b:Push(True()) end,
-		function(b)
-			b:If(And(IsTbl(x), IsTbl(y)),
-				function(b)
-					local h = b:BinMeta(x, y, Str('__eq'))
-					b:If(Truthy(h),
-						function(b) b:CallMeta('bool', h, x, y) end,
-						function(b) b:Push(False()) end)
-				end,
-				function(b) b:Push(False()) end)
-		end)
-end)
-
+-- What a compare does with its result c, an i32 flag. Compares push true or false.
+-- The fused compare & jump ops (JifLt etc) sit right before a Jif or JifNot, which only runs
+-- when a metamethod's result comes back. Otherwise they jump to its target or past it
 local function PushBool(b, c)
 	b:Push(Select(c, True(), False()))
 end
-local function cmpop(code, cmp, metamethod, swap)
+local function JumpIf(b, c)
+	b:If(c,
+		function(b) b:SetPc(ArgAt(1)) end,
+		function(b) b:SetPc(Add(Pc(), Int(5))) end)
+end
+local function JumpIfNot(b, c)
+	b:If(c,
+		function(b) b:SetPc(Add(Pc(), Int(5))) end,
+		function(b) b:SetPc(ArgAt(1)) end)
+end
+
+local function eqop(code, res)
+	op(code, function(b)
+		local y = b:Pop() -- top of stack is right operand
+		local x = b:Pop()
+		b:If(ObjMetalessEq(x, y),
+			function(b) res(b, Int(1)) end,
+			function(b)
+				b:If(And(IsTbl(x), IsTbl(y)),
+					function(b)
+						local h = b:BinMeta(x, y, Str('__eq'))
+						b:If(Truthy(h),
+							function(b) b:CallMeta('bool', h, x, y) end,
+							function(b) res(b, Int(0)) end)
+					end,
+					function(b) res(b, Int(0)) end)
+			end)
+	end)
+end
+eqop(bc.CmpEq, PushBool)
+eqop(bc.JifEq, JumpIf)
+eqop(bc.JifNotEq, JumpIfNot)
+
+local function cmpop(code, cmp, metamethod, swap, res)
 	op(code, function(b)
 		local y = b:Pop() -- top of stack is right operand
 		local x = b:Pop()
 		b:Typeck({x, y}, {
 			{types.int, types.int, function(b, x, y)
-				PushBool(b, cmp(LoadInt(x), LoadInt(y)))
+				res(b, cmp(LoadInt(x), LoadInt(y)))
 			end},
 			{types.float, types.float, function(b, x, y)
-				PushBool(b, cmp(LoadFlt(x), LoadFlt(y)))
+				res(b, cmp(LoadFlt(x), LoadFlt(y)))
 			end},
 			{types.str, types.str, function(b, x, y)
-				PushBool(b, cmp(StrCmp(x, y), Int(0)))
+				res(b, cmp(StrCmp(x, y), Int(0)))
 			end},
 			{types.int, types.float, function(b, x, y)
-				PushBool(b, cmp(Int64Flt(LoadInt(x)), LoadFlt(y)))
+				res(b, cmp(Int64Flt(LoadInt(x)), LoadFlt(y)))
 			end},
 			{types.float, types.int, function(b, x, y)
-				PushBool(b, cmp(LoadFlt(x), Int64Flt(LoadInt(y))))
+				res(b, cmp(LoadFlt(x), Int64Flt(LoadInt(y))))
 			end},
 		}, function(b)
 			if swap then
@@ -850,10 +894,13 @@ local function cmpop(code, cmp, metamethod, swap)
 		end)
 	end)
 end
-cmpop(bc.CmpLe, Le, '__le')
-cmpop(bc.CmpLt, Lt, '__lt')
-cmpop(bc.CmpGe, Ge, '__le', true)
-cmpop(bc.CmpGt, Gt, '__lt', true)
+for _, v in ipairs{ {'', PushBool}, {'Jif', JumpIf}, {'JifNot', JumpIfNot} } do
+	local pre, res = v[1], v[2]
+	cmpop(bc[pre == '' and 'CmpLe' or pre .. 'Le'], Le, '__le', false, res)
+	cmpop(bc[pre == '' and 'CmpLt' or pre .. 'Lt'], Lt, '__lt', false, res)
+	cmpop(bc[pre == '' and 'CmpGe' or pre .. 'Ge'], Ge, '__le', true, res)
+	cmpop(bc[pre == '' and 'CmpGt' or pre .. 'Gt'], Gt, '__lt', true, res)
+end
 
 local function binmathop(code, floatlogic, intlogic, metamethod)
 	op(code, function(b)
@@ -961,6 +1008,43 @@ op(bc.Concat, function(b)
 	b:Typeck({x, y}, cases, function(b)
 		MetaOr(b, b:BinMeta(x, y, Str('__concat')), 'norm', 'concat', x, y)
 	end)
+end)
+
+-- Stack has init, limit & step. Arg 0 is the first of 3 locals for the loop's state, arg 1 the pc after the loop
+op(bc.ForPrep, function(b)
+	local step = b:Pop()
+	local limit = b:Pop()
+	local init = b:Pop()
+	local st = b:ForPrep(Arg(0), init, limit, step)
+	b:If(st, function(b)
+		b:If(Eq(st, Int(1)),
+			function(b) b:SetPc(Arg(1)) end,
+			function(b) b:ForCoerce(init, limit, step) end)
+	end)
+end)
+-- Next step of the loop: locals n, n+1 & n+2 are the counter, the last value & step for ints,
+-- or counter, limit & step for floats. Goes to the pc in arg 1 while the loop runs
+op(bc.ForLoop, function(b)
+	local i = b:LoadLocal(Arg(0))
+	local lim = b:LoadLocal(Add(Arg(0), Int(1)))
+	local step = b:LoadLocal(Add(Arg(0), Int(2)))
+	b:Typeck({i}, {
+		{types.int, function(b, i)
+			b:IfNot(Eq(LoadInt(i), LoadInt(As(lim, 'int'))), function(b)
+				b:StoreLocal(Arg(0), b:IntObjFromInt64(Add(LoadInt(i), LoadInt(As(step, 'int')))))
+				b:SetPc(Arg(1))
+			end)
+		end},
+		{types.float, function(b, i)
+			local s = LoadFlt(As(step, 'float'))
+			local l = LoadFlt(As(lim, 'float'))
+			local n = b:FltObjFromFlt(Add(LoadFlt(i), s))
+			b:If(Select(Lt(Flt64(0), s), Le(LoadFlt(n), l), Le(l, LoadFlt(n))), function(b)
+				b:StoreLocal(Arg(0), n)
+				b:SetPc(Arg(1))
+			end)
+		end},
+	})
 end)
 
 op(bc.Idx, function(b)

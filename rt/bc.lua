@@ -64,4 +64,17 @@ return {
 	LoadFunc = 62,
 	VargCount = 63,
 	ErrNNil = 64,
+	ForPrep = 65,
+	ForLoop = 66,
+	-- A compare & the Jif or JifNot right after it, see bcgen's push
+	JifLt = 67,
+	JifLe = 68,
+	JifGt = 69,
+	JifGe = 70,
+	JifEq = 71,
+	JifNotLt = 72,
+	JifNotLe = 73,
+	JifNotGt = 74,
+	JifNotGe = 75,
+	JifNotEq = 76,
 }

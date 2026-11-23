@@ -35,6 +35,8 @@ local function Assembler()
 		},
 		names = {},
 		bc = {},
+		-- values patched in, any of them may be a pc jumped to. See push
+		targets = {},
 		-- (pc, line) pairs, added when the line changes. An op's line is the last pair at or before it
 		lineinfo = {},
 		-- pc after an op that can fail -> list of what made its operands, like "local 't'", or false.
@@ -55,7 +57,30 @@ local function Assembler()
 	}, asmmt)
 end
 
+-- Compare op -> the fused compare & jump ops used when a Jif or JifNot follows it
+local fusejif = {
+	[bc.CmpLt] = bc.JifLt, [bc.CmpLe] = bc.JifLe, [bc.CmpGt] = bc.JifGt, [bc.CmpGe] = bc.JifGe, [bc.CmpEq] = bc.JifEq,
+}
+local fusejifnot = {
+	[bc.CmpLt] = bc.JifNotLt, [bc.CmpLe] = bc.JifNotLe, [bc.CmpGt] = bc.JifNotGt, [bc.CmpGe] = bc.JifNotGe,
+	[bc.CmpEq] = bc.JifNotEq,
+}
 function asmmeta:push(op, ...)
+	-- Not then JifNot is Jif. A compare then a jump turns the compare into a fused op, the jump stays
+	-- for when a metamethod's result comes back. Not when code jumps to the jump
+	local last = self.lastop
+	if (op == bc.JifNot or op == bc.Jif) and last == #self.bc and not self.targets[#self.bc] then
+		if op == bc.JifNot and self.bc[last] == bc.Not and not self.targets[last-1] then
+			self.bc[last] = nil
+			self.lastop = self.prevop
+			return self:push(bc.Jif, ...)
+		end
+		local fused = (op == bc.Jif and fusejif or fusejifnot)[self.bc[last]]
+		if fused then
+			self.bc[last] = fused
+		end
+	end
+	self.prevop, self.lastop = self.lastop, #self.bc+1
 	local line = self.curline
 	if line and line ~= self.lastline then
 		self.lastline = line
@@ -64,11 +89,16 @@ function asmmeta:push(op, ...)
 		li[#li+1] = line
 	end
 	self.bc[#self.bc+1] = assert(op)
+	local argidx = #self.bc+1
 	for i=1,select('#', ...) do
 		self:patch(#self.bc+1, (select(i, ...)))
 	end
+	-- where the first arg is, for patching it later
+	return argidx
 end
 function asmmeta:patch(idx, x)
+	-- may be a jump target
+	self.targets[x] = true
 	self.bc[idx],self.bc[idx+1],self.bc[idx+2],self.bc[idx+3] = string.byte(string.pack('<i4', assert(x)), 1, 4)
 end
 function asmmeta:breakscope(f)
@@ -729,8 +759,7 @@ emitStatSwitch = {
 		self:breakscope(function()
 			local soc = #self.bc
 			emitNode(self, node, ast.ExpOr, 1)
-			local jmp = #self.bc+2
-			self:push(bc.JifNot, 0)
+			local jmp = self:push(bc.JifNot, 0)
 			emitNode(self, node, ast.Block)
 			self:push(bc.Jmp, soc)
 			self:patch(jmp, #self.bc)
@@ -755,8 +784,7 @@ emitStatSwitch = {
 			local ty = child.type&31
 			if ty == ast.ExpOr then
 				visitEmit[ast.ExpOr](self, child, 1)
-				condbr = #self.bc+2
-				self:push(bc.JifNot, 0)
+				condbr = self:push(bc.JifNot, 0)
 			elseif ty == ast.Block then
 				visitEmit[ast.Block](self, child)
 				-- jump to the end, unless this is the last branch
@@ -775,7 +803,6 @@ emitStatSwitch = {
 		end
 	end,
 	function(self, node) -- 10 for
-		-- TODO float increment causes initial value to be a float
 		local exps=0
 		for i, n in selectNodes(node, ast.ExpOr) do
 			visitEmit[ast.ExpOr](self, n, 1)
@@ -784,42 +811,19 @@ emitStatSwitch = {
 		if exps == 2 then
 			self:push(bc.LoadConst, self:const(1))
 		end
+		-- ForPrep keeps the loop's state in 3 locals in a row: counter, last value or limit, step
 		local tempi = idxtbl(self.locals, {})
-		local tempc = idxtbl(self.locals, {})
-		local temps = idxtbl(self.locals, {})
-		local temptemp = idxtbl(self.locals, {})
-		self:push(bc.StoreLocal, temps)
-		self:push(bc.StoreLocal, tempc)
-		self:push(bc.StoreLocal, tempi)
-		self:push(bc.LoadLocal, temps)
-		self:push(bc.LoadConst, self:const(0))
-		self:push(bc.CmpGe)
-		self:push(bc.StoreLocal, temptemp)
-		local incrdecr = #self.bc
-		self:push(bc.LoadLocal, tempi)
-		self:push(bc.LoadLocal, tempc)
-		self:push(bc.LoadLocal, temptemp)
-		-- exit when i < c for a negative step, i > c otherwise
-		local cmp0 = #self.bc+2
-		self:push(bc.Jif, 0)
-		self:push(bc.CmpLt)
-		local cmp1 = #self.bc+2
-		self:push(bc.Jmp, 0)
-		self:patch(cmp0, #self.bc)
-		self:push(bc.CmpGt)
-		self:patch(cmp1, #self.bc)
-		local forxit = #self.bc+2
-		self:push(bc.Jif, 0)
+		idxtbl(self.locals, {})
+		idxtbl(self.locals, {})
+		local forxit = #self.bc+6
+		self:push(bc.ForPrep, tempi, 0)
+		local body = #self.bc
 		self:push(bc.LoadLocal, tempi)
 		local n0 = #self.actives
 		self:declname(selectIdent(node))
 		self:breakscope(function()
 			emitNode(self, node, ast.Block)
-			self:push(bc.LoadLocal, tempi)
-			self:push(bc.LoadLocal, temps)
-			self:push(bc.Add)
-			self:push(bc.StoreLocal, tempi)
-			self:push(bc.Jmp, incrdecr)
+			self:push(bc.ForLoop, tempi, body)
 		end)
 		self:deactivate(n0)
 		self:patch(forxit, #self.bc)
@@ -857,8 +861,7 @@ emitStatSwitch = {
 		self:push(bc.LoadLocal, tempv)
 		self:push(bc.LoadNil)
 		self:push(bc.CmpEq)
-		local forxit = #self.bc+2
-		self:push(bc.Jif, 0)
+		local forxit = self:push(bc.Jif, 0)
 		self:push(bc.LoadLocal, tempv)
 		self:declname(vars[1])
 		self:inorder(#vars)

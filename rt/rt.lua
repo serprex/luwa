@@ -122,7 +122,7 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	'<no error object>', "bad argument #1 to 'type' (value expected)",
 	"bad argument #1 to 'select' (number expected)", "bad argument #1 to 'select' (index out of range)",
 	-- runtime error kinds, given to the prelude's error function
-	'index', 'arith', 'bitwise', 'concat', 'compare', 'len', 'xpcall', 'defined', 'overflow',
+	'index', 'arith', 'bitwise', 'concat', 'compare', 'len', 'xpcall', 'defined', 'overflow', 'for',
 	'error in error handling',
 	-- begin _luwa fields
 	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc',

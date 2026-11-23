@@ -2183,7 +2183,23 @@ end
 
 -- Called by the Error mop: kind of operation & its operands. Raises the error like C Lua words it.
 -- The op's operand names are in its function's info.names at the op's pc
-local function rterror(kind, a, b)
+local function rterror(kind, a, b, c)
+	if kind == 'for' then
+		-- ForPrep met a value that isn't a number, or a zero step: a, b, c are init, limit & step.
+		-- Like C Lua, strings are turned into numbers, & a string init or step makes it a float loop
+		local i, l, s = tonumber(a), tonumber(b), tonumber(c)
+		local function bad(what, v)
+			return error("bad 'for' " .. what .. ' (number expected, got ' .. _type(v) .. ')', 3)
+		end
+		if not l then bad('limit', b) end
+		if not s then bad('step', c) end
+		if not i then bad('initial value', a) end
+		if s == 0 then return error("'for' step is zero", 2) end
+		if _type(a) == 'string' or _type(c) == 'string' then
+			return i + 0.0, l + 0.0, s + 0.0
+		end
+		return i, l, s
+	end
 	local list, off = levels()
 	local fr = list[off+1]
 	local info = fr and fn_info(fr.fn)
