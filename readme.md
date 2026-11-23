@@ -6,7 +6,7 @@ I'll try avoid my usual stream of consciousness here, instead that's at [my devl
 
 [`main.js`](main.js) is nodejs entrypoint
 
-Luwa targets Lua 5.5. `scripts/test.js` has small cases, `scripts/suite.js` runs the official 5.5.1 test suite in `lua-5.5.1-tests/` file by file
+Luwa targets Lua 5.5. `scripts/test.js` has small cases, `scripts/suite.js` runs the official 5.5.1 test suite in `lua-5.5.1-tests/` file by file, `scripts/bench.js` times `bench/` against the reference Lua built to wasm (`scripts/mkreflua.sh`)
 
 WASM runtime is in `rt/`. [`rt/make.lua`](rt/make.lua) is luwa-agnostic macro-assembler logic. [`mkrt.lua`](rt/mkrt.lua) produces an `rt.wasm` which [`rt.js`](rt.js) interfaces
 

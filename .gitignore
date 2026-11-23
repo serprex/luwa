@@ -3,3 +3,6 @@ rt.wasm
 scripts/lex.wasm
 ./bootrt.lua
 lua-*-tests/
+bench/lua.wasm
+lua-5.5.1/
+wasi-sdk/
