@@ -84,21 +84,13 @@ export default function mkrt() {
 	return rtwa.then(rtwathen);
 }
 
-// Handles are left from when the GC moved objects. Now they only wrap a value
-function Handle(val) {
-	this.val = val;
-}
 function FFI() {
 	this.mod = null;
 	// open files for _luwa.host, by number. 0 1 2 are stdin, stdout, stderr
 	this.files = [{ pos: 0, data: null, fd: 0 }, { pos: 0, data: null, fd: 1 }, { pos: 0, data: null, fd: 2 }];
 }
-FFI.prototype.free = function(h) {}
-FFI.prototype.mkref = function(p) {
-	return new Handle(p);
-}
 FFI.prototype.newtbl = function() {
-	return this.mkref(this.mod.newtbl());
+	return this.mod.newtbl();
 }
 FFI.prototype.newstr = function(s) {
 	if (typeof s === "string") s = util.asUtf8(s);
@@ -106,13 +98,11 @@ FFI.prototype.newstr = function(s) {
 	for (let i = 0; i < s.length; i++) {
 		this.mod.strset(o, i, s[i]);
 	}
-	return this.mkref(o);
+	return o;
 }
 FFI.prototype.newf64 = function(f) {
-	return this.mkref(this.mod.newf64(f));
+	return this.mod.newf64(f);
 }
-// nil is null
-FFI.prototype.nil = new Handle(null);
 FFI.prototype.strbytes = function(v) {
 	const n = this.mod.strlen(v), r = new Uint8Array(n);
 	for (let i = 0; i < n; i++) r[i] = this.mod.strget(v, i);
@@ -168,7 +158,7 @@ FFI.prototype.host = function(op, a, b) {
 		if (v === false) return m.newbool(0);
 		if (typeof v === 'bigint') return m.newi64(v);
 		if (typeof v === 'number') return m.newf64(v);
-		if (typeof v === 'string' || v instanceof Uint8Array) return this.newstr(v).val;
+		if (typeof v === 'string' || v instanceof Uint8Array) return this.newstr(v);
 		throw new Error('host: bad result ' + v);
 	};
 	const fd = () => this.files[Number(m.intval(a))];
@@ -372,7 +362,7 @@ function hexfloat(x, p) {
 // where the Lua state is left as it was when the op trapped
 FFI.prototype.traceback = function() {
 	const m = this.mod, out = [], n = m.framelen();
-	const key = s => this.newstr(s).val;
+	const key = s => this.newstr(s);
 	const kshort = key('short_src'), klines = key('lines'), kwhat = key('what'), kdef = key('linedefined');
 	// like C Lua only the first 10 & last 11 frames, deep recursion has millions
 	const skipfrom = n > 22 ? 10 : n, skipto = n > 22 ? n - 11 : n;
@@ -450,13 +440,12 @@ FFI.prototype.rawexec = function(fn, ...param) {
 	return this.evalWait().then(() => this.mod.stacklen() ? this.mod.nthtmp(1) : null);
 }
 FFI.prototype.compile = function(env, str) {
-	const loadstr = this.newstr('load');
-	const loadfn = this.mod.tblget(env.val, loadstr.val);
+	const loadfn = this.mod.tblget(env, this.newstr('load'));
 	if (loadfn === null) throw new Error("_ENV missing 'load' function");
-	return this.rawexec(loadfn, str.val);
+	return this.rawexec(loadfn, str);
 }
 FFI.prototype.eval = async function(env, str, ...param) {
 	const fn = await this.compile(env, str);
 	if (fn === null) throw new Error("Failed to compile");
-	return this.obj2js(await this.rawexec(fn, ...param.map(x => x.val)));
+	return this.obj2js(await this.rawexec(fn, ...param));
 }

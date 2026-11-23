@@ -20,7 +20,7 @@ async function boot() {
 	const rt = await mkrt();
 	window.rt = rt;
 	rt.mod.genesis();
-	const env = rt.mkref(rt.mod.initPrelude());
+	const env = rt.mod.initPrelude();
 	await rt.evalWait();
 	return { rt, env };
 }

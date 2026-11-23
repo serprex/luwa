@@ -30,7 +30,7 @@ async function freshrt() {
 	const rt = await mkrt();
 	console.log = () => {}; // rt.js echoes ops through console.log
 	rt.mod.genesis();
-	const env = rt.mkref(rt.mod.initPrelude());
+	const env = rt.mod.initPrelude();
 	await rt.evalWait();
 	return [rt, env];
 }

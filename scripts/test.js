@@ -290,7 +290,7 @@ async function run(src) {
 	const rt = await mkrt();
 	return quiet(async () => {
 		rt.mod.genesis();
-		const env = rt.mkref(rt.mod.initPrelude());
+		const env = rt.mod.initPrelude();
 		await rt.evalWait();
 		const line = rt.newstr(src);
 		const v = await rt.eval(env, line);
@@ -307,18 +307,15 @@ const show = v => typeof v === "bigint" ? v + "n" : JSON.stringify(v) ?? String(
 	const rt = await mkrt();
 	await quiet(async () => {
 		rt.mod.genesis();
-		rt.mkref(rt.mod.initPrelude());
+		rt.mod.initPrelude();
 		await rt.evalWait();
 	});
 	const newt = rt.newtbl();
 	const news = rt.newstr("asdf");
 	const newf = rt.newf64(4.2);
-	assert.equal(rt.mod.tblget(newt.val, news.val), rt.nil.val);
-	rt.mod.tblset(newt.val, news.val, newf.val);
-	assert.equal(rt.mod.tblget(newt.val, news.val), newf.val);
-	rt.free(news);
-	rt.free(newf);
-	rt.free(newt);
+	assert.equal(rt.mod.tblget(newt, news), null);
+	rt.mod.tblset(newt, news, newf);
+	assert.equal(rt.mod.tblget(newt, news), newf);
 
 	const fails = [];
 	for (const [src, want] of cases) {
