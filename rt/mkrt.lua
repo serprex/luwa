@@ -26,7 +26,7 @@ export(_stack, 'tmppush', 'tmppop', 'tmpclear', 'nthtmp', 'stacklen')
 export(_vm, 'init', 'eval')
 export(_env, 'genesis', 'initPrelude')
 export(_js, 'typeof', 'newstr', 'newtbl', 'newi64', 'newf64', 'strlen', 'strget', 'strset',
-	'intval', 'fltval', 'veclen', 'vecget', 'tblnext', 'tblmeta', 'tblget', 'tblset',
+	'intval', 'newbool', 'boolval', 'fltval', 'veclen', 'vecget', 'tblnext', 'tblmeta', 'tblget', 'tblset',
 	'framelen', 'framefield', 'stackget', 'stacksize', 'fninfo')
 -- names for the name section. std & co are otherwise only required while eval is built
 for _, name in ipairs{ 'alloc', 'obj', 'util', 'stack', '_table', '_string', '_float', '_lex', 'rt', 'frame',

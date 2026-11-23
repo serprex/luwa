@@ -158,7 +158,7 @@ local coro_running = func(function(f)
 	f:loadg(oluastack)
 	f:structget(coro, 'caller')
 	f:refisnull()
-	f:refi31()
+	alloc.lbool(f)
 	f:call(tmppush)
 end)
 

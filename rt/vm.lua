@@ -76,8 +76,7 @@ end
 -- The int or float in object v
 local function intval(f, v)
 	f:load(v)
-	f:refcast(R.int)
-	f:structget(int, 'val')
+	alloc.intvalst(f)
 end
 local function fltval(f, v)
 	f:load(v)
@@ -89,18 +88,10 @@ local function stackfield(f, name)
 	f:loadg(gstack)
 	f:structget(stack, name)
 end
--- typeof(v) without the call. Values that aren't objects (i31s) are types.single
+-- typeof(v) without the call
 local function typeofv(f, v)
-	f:block(i32, function(out)
-		f:block(M.ref(alloc.obj), function(isobj)
-			f:load(v)
-			f:broncast(isobj, V, M.ref(alloc.obj))
-			f:drop()
-			f:i32(types.single)
-			f:br(out)
-		end)
-		f:structget(alloc.obj, 'type', false)
-	end)
+	f:load(v)
+	alloc.typeofst(f)
 end
 
 local mopcomp = {}
@@ -116,7 +107,8 @@ local microTypeToWasmTypeTable = {
 	f32 = f32,
 	f64 = f64,
 	obj = V,
-	int = R.int,
+	-- an i31 or an int struct
+	int = V,
 	float = R.float,
 	str = R.str,
 	tbl = R.tbl,
@@ -426,7 +418,7 @@ defEmit('IsNumOrStr', {'i32'}, function(f, mop, ctx, r)
 	f:eq()
 	f:bor()
 end)
-defEmit('LoadInt', function(f) f:structget(int, 'val') end)
+defEmit('LoadInt', function(f) alloc.intvalst(f) end)
 defEmit('LoadFlt', function(f) f:structget(float, 'val') end)
 defEmit('LoadStrLen', function(f)
 	f:structget(str, 'bytes')
@@ -443,11 +435,34 @@ callmop('TblGet', tblget)
 callmop('NewTbl', alloc.newtbl)
 callmop('TblSet', tblset)
 callmop('Box', alloc.newbox)
-defEmit('IntObjFromInt', function(f)
-	f:i64extends()
-	f:call(alloc.newi64)
+-- i31 when it fits, else box. Written out so the common case doesn't call
+defEmit('IntObjFromInt', {'i32'}, function(f, mop, ctx, x)
+	f:tee(x)
+	f:i32(0x40000000)
+	f:add()
+	f:i32(0)
+	f:ges()
+	f:iff(V, function()
+		f:load(x)
+		f:refi31()
+	end, function()
+		f:load(x)
+		f:i64extends()
+		f:call(alloc.boxi64)
+	end)
 end)
-callmop('IntObjFromInt64', alloc.newi64)
+defEmit('IntObjFromInt64', {'i64'}, function(f, mop, ctx, x)
+	f:store(x)
+	alloc.fitsi31(f, x)
+	f:iff(V, function()
+		f:load(x)
+		f:i32wrap()
+		f:refi31()
+	end, function()
+		f:load(x)
+		f:call(alloc.boxi64)
+	end)
+end)
 callmop('FltObjFromFlt', alloc.newf64)
 defEmit('Flt64Int', function(f) f:i64truncs() end)
 defEmit('Int64Flt', function(f) f:f64converts() end)

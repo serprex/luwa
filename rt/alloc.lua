@@ -1,6 +1,7 @@
 -- Object layout on WasmGC. The engine owns objects, so refs held in locals stay valid across allocation.
--- A Lua value is V, a nullable eqref: nil is null, false/true are i31 0/1,
--- everything else is a struct under $obj. Its first field is a type id, so code can switch on it
+-- A Lua value is V, a nullable eqref: nil is null, ints from -2^30 to 2^30-1 are i31s,
+-- everything else is a struct under $obj. Its first field is a type id, so code can switch on it.
+-- Bigger ints are int structs, an int never has both forms. false & true are 2 objs made at start
 local M = require 'make'
 local func = M.func
 local i8 = M.i8
@@ -8,7 +9,7 @@ local i8 = M.i8
 local types = {
 	int = 0,
 	float = 1,
-	single = 2, -- nil, false, true. Not a struct, typeof gives this
+	single = 2, -- nil, false, true. nil is null, false & true are plain objs
 	tbl = 3,
 	str = 4,
 	vec = 5,
@@ -109,17 +110,31 @@ local R = {
 	box = M.refnull(box),
 }
 
+-- false & true, made once
+local function newsingle(f)
+	f:i32(types.single)
+	f:structnew(obj)
+end
+gfalse = M.global(M.ref(obj), false, newsingle)
+gtrue = M.global(M.ref(obj), false, newsingle)
+
 -- Constant values, emitted inline
 local function lnil(f)
 	f:refnull(M.heap.eq)
 end
 local function lfalse(f)
-	f:i32(0)
-	f:refi31()
+	f:loadg(gfalse)
 end
 local function ltrue(f)
-	f:i32(1)
-	f:refi31()
+	f:loadg(gtrue)
+end
+-- i32 flag on the stack to false or true
+local function lbool(f)
+	f:iff(M.ref(obj), function()
+		f:loadg(gtrue)
+	end, function()
+		f:loadg(gfalse)
+	end)
 end
 
 idcount = M.global(i32, true)
@@ -133,22 +148,73 @@ local nextid = func(i32, function(f)
 	f:loadg(idcount)
 end)
 
+-- Type id of the value on the stack: an obj's type field, int for i31s, single for nil
+local function typeofst(f)
+	f:block(M.functype({ V }, i32), function(out)
+		f:block(M.functype({ V }, M.ref(obj)), function(isobj)
+			f:block(M.functype({ V }, M.ref(M.heap.i31)), function(isi31)
+				f:broncast(isi31, V, M.ref(M.heap.i31))
+				f:broncast(isobj, V, M.ref(obj))
+				f:drop()
+				f:i32(types.single)
+				f:br(out)
+			end)
+			f:drop()
+			f:i32(types.int)
+			f:br(out)
+		end)
+		f:structget(obj, 'type', false)
+	end)
+end
 -- Type id of any value
 local typeof = func(V, i32, function(f, o)
-	f:block(M.ref(obj), function(isobj)
-		f:load(o)
-		f:broncast(isobj, V, M.ref(obj))
-		f:drop()
-		f:i32(types.single)
-		f:ret()
-	end)
-	f:structget(obj, 'type', false)
+	f:load(o)
+	typeofst(f)
 end)
 
-local newi64 = func(i64, M.ref(int), function(f, x)
+-- i64 of the int on the stack, an i31 or an int struct
+local function intvalst(f)
+	f:block(M.functype({ V }, i64), function(out)
+		f:block(M.functype({ V }, M.ref(M.heap.i31)), function(isi31)
+			f:broncast(isi31, V, M.ref(M.heap.i31))
+			f:refcast(M.ref(int))
+			f:structget(int, 'val')
+			f:br(out)
+		end)
+		f:i31gets()
+		f:i64extends()
+	end)
+end
+local function intval(f, o)
+	f:load(o)
+	intvalst(f)
+end
+
+-- Is i64 x in i31 range? x + 2^30 < 2^31 unsigned
+local function fitsi31(f, x)
+	f:load(x)
+	f:i64(0x40000000)
+	f:add()
+	f:i64(0x80000000)
+	f:ltu()
+end
+-- Int struct for x, only for x outside i31 range
+local boxi64 = func(i64, M.ref(int), function(f, x)
 	f:i32(types.int)
 	f:load(x)
 	f:structnew(int)
+end)
+-- Int value of x: an i31 when it fits
+local newi64 = func(i64, V, function(f, x)
+	fitsi31(f, x)
+	f:iff(V, function()
+		f:load(x)
+		f:i32wrap()
+		f:refi31()
+	end, function()
+		f:load(x)
+		f:call(boxi64)
+	end)
 end)
 
 local newf64 = func(f64, M.ref(float), function(f, x)
@@ -251,8 +317,14 @@ return {
 	lnil = lnil,
 	lfalse = lfalse,
 	ltrue = ltrue,
+	lbool = lbool,
 	nextid = nextid,
 	typeof = typeof,
+	typeofst = typeofst,
+	intval = intval,
+	intvalst = intvalst,
+	fitsi31 = fitsi31,
+	boxi64 = boxi64,
 	newi64 = newi64,
 	newf64 = newf64,
 	newstr = newstr,

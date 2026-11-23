@@ -55,7 +55,7 @@ local function addNumber(n)
 	assert(ty, 'Non numeric addNumber')
 	local bin = ty == 'integer' and string.pack('<i8', n) or string.pack('<d', n)
 	if not GN[ty][bin] then
-		local g = global(ty == 'integer' and R.int or R.float, true)
+		local g = global(ty == 'integer' and V or R.float, true)
 		GN[ty][bin] = g
 		statics[#statics+1] = { ty, g, n }
 	end
@@ -198,9 +198,14 @@ local initstatics = func(function(f)
 			f:i32(0)
 			f:structnew(str)
 		elseif kind == 'integer' then
-			f:i32(types.int)
-			f:i64(s[3])
-			f:structnew(int)
+			if s[3] >= -0x40000000 and s[3] < 0x40000000 then
+				f:i32(s[3])
+				f:refi31()
+			else
+				f:i32(types.int)
+				f:i64(s[3])
+				f:structnew(int)
+			end
 		elseif kind == 'float' then
 			f:i32(types.float)
 			f:f64(s[3])

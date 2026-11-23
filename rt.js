@@ -84,7 +84,7 @@ FFI.prototype.obj2js = function(v, memo = new Map()) {
 		case 1:
 			return m.fltval(v);
 		case 2:
-			return v === null ? null : !!v;
+			return v === null ? null : !!m.boolval(v);
 		case 3: {
 			const map = new Map(), r = { hash: map, meta: null };
 			memo.set(v, r);
@@ -118,8 +118,8 @@ FFI.prototype.host = function(op, a, b) {
 	const str = v => new TextDecoder().decode(this.strbytes(v));
 	const ret = v => {
 		if (v === null || v === undefined) return null;
-		if (v === true) return 1;
-		if (v === false) return 0;
+		if (v === true) return m.newbool(1);
+		if (v === false) return m.newbool(0);
 		if (typeof v === 'bigint') return m.newi64(v);
 		if (typeof v === 'number') return m.newf64(v);
 		if (typeof v === 'string' || v instanceof Uint8Array) return this.newstr(v).val;

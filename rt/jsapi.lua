@@ -30,8 +30,17 @@ local strset = func(V, i32, i32, void, function(f, s, i, b)
 end)
 local intval = func(V, i64, function(f, x)
 	f:load(x)
-	f:refcast(M.ref(int))
-	f:structget(int, 'val')
+	alloc.intvalst(f)
+end)
+-- JS bool to false or true, & back
+local newbool = func(i32, V, function(f, x)
+	f:load(x)
+	alloc.lbool(f)
+end)
+local boolval = func(V, i32, function(f, x)
+	f:load(x)
+	alloc.ltrue(f)
+	f:refeq()
 end)
 local fltval = func(V, f64, function(f, x)
 	f:load(x)
@@ -139,6 +148,8 @@ return {
 	strget = strget,
 	strset = strset,
 	intval = intval,
+	newbool = newbool,
+	boolval = boolval,
 	fltval = fltval,
 	veclen = veclen,
 	vecget = vecget,
