@@ -433,10 +433,11 @@ mkMop('CallMeta', function(args)
 	end
 	return { arg = arg, exit = true, argfx = true }
 end)
--- Call op family, reads its own bytecode args. Args: call type, whether to pass varargs too
+-- Call op family, reads its own bytecode args. Args: call type, whether to pass varargs too,
+-- whether the outermost call is a tail call
 mkMop('CallChain', {
 	exit = true,
-	arg = {'atom', 'atom'},
+	arg = {'atom', 'atom', 'atom'},
 })
 -- Return everything after the frame's locals
 mkMop('Ret', {
@@ -760,9 +761,9 @@ op(bc.ReturnVarg, function(b)
 	b:VargPush()
 	b:Ret()
 end)
--- No tail calls yet: bcgen emits Call keeping all results, then Return
-op(bc.ReturnCall, function(b) b:Error() end)
-op(bc.ReturnCallVarg, function(b) b:Error() end)
+-- bcgen puts a Return after these, for when the function isn't a Lua one & gets a normal call
+op(bc.ReturnCall, function(b) b:CallChain('norm', false, true) end)
+op(bc.ReturnCallVarg, function(b) b:CallChain('norm', true, true) end)
 
 -- Call metamethod h with args if there is one, else raise a kind error about the args
 local function MetaOr(b, h, callty, kind, ...)

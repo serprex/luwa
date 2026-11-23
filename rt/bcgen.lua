@@ -5,6 +5,9 @@ local bc = require 'bc'
 local function nop()
 end
 
+-- return f(args) becomes a tail call. Set for each chunk, see the end
+local tailcalls = false
+
 local asmmeta = {}
 local asmmt = { __index = asmmeta }
 local function Assembler()
@@ -1240,11 +1243,18 @@ visitEmit = {
 				self:tbcclose(self.tbcn)
 				self:push(bc.Return)
 			elseif #res > 0 then
-				-- No tail calls yet: call keeping all results (retc 0xffff), then return them
 				self.curline = res.line or self.curline
-				self:push(res.varg and bc.CallVarg or bc.Call, 0xffff, #res, table.unpack(res))
-				self:opname(res.descs)
-				self:tbcclose(self.tbcn)
+				if n == 0 and self.tbcn == 0 and tailcalls then
+					-- return f(args): a tail call. The Return after it returns the results
+					-- when f isn't a Lua function & gets a normal call
+					self:push(res.varg and bc.ReturnCallVarg or bc.ReturnCall, 0xffff, #res, table.unpack(res))
+					self:opname(res.descs)
+				else
+					-- call keeping all results (retc 0xffff), then return them
+					self:push(res.varg and bc.CallVarg or bc.Call, 0xffff, #res, table.unpack(res))
+					self:opname(res.descs)
+					self:tbcclose(self.tbcn)
+				end
 				self:push(bc.Return)
 			else
 				self:tbcclose(self.tbcn)
@@ -1553,6 +1563,9 @@ local function gen(root)
 end
 -- chunk is the source name for errors, like file.lua. Errors then start with chunk:line:
 return function(root, chunk)
+	-- Only code from load gets tail calls. The prelude's functions stand in for C functions,
+	-- so error levels & tracebacks count their frames
+	tailcalls = chunk ~= nil
 	if not chunk then
 		return gen(root)
 	end

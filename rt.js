@@ -342,7 +342,9 @@ FFI.prototype.traceback = function() {
 			continue;
 		}
 		if (pending) continue;
-		const fn = base > 0 && base <= m.stacksize() ? m.stackget(base - 1) : null;
+		// the main init frame (type 1, retb 0) shows no function
+		const main = ty === 1 && m.framefield(i, 4) === 0;
+		const fn = !main && base > 0 && base <= m.stacksize() ? m.stackget(base - 1) : null;
 		const info = fn === null ? null : m.fninfo(fn);
 		if (info === null) {
 			// builtins & prelude functions, one line for a run of them

@@ -24,20 +24,35 @@ local rt = require 'rt'
 local microbc = require 'microbc'
 
 local frame = require 'frame'
-local objframe, calltypes, getf, setf = frame.objframe, frame.calltypes, frame.getf, frame.setf
+local calltypes, getf, setf = frame.calltypes, frame.getf, frame.setf
 
 -- Start running fn on the running coro, its args are what's on the stack.
--- The frame is type init, so returning from fn ends eval
+-- The frame is type init, so returning from fn ends eval.
+-- fn goes under the args at slot 0 like any frame's function, retb 0 marks it as main
 local init = func(V, void, function(f, fnv)
+	local n = f:locals(i32)
 	f:i32(df.sizeof * 8)
 	f:call(alloc.newframes)
 	f:storeg(gframes)
 	f:loadg(oluastack)
 	f:loadg(gframes)
 	f:structset(coro, 'data')
-	f:call(_stack.fpush)
-	setf(f, 'type', function() f:i32(calltypes.init) end)
-	setf(f, 'retc', function() f:i32(frame.RETALL) end)
+	f:call(stacklen)
+	f:store(n)
+	f:i32(1)
+	f:call(extendtmp)
+	f:i32(1)
+	f:i32(0)
+	f:load(n)
+	f:call(_stack.scopy)
+	f:i32(0)
+	f:load(fnv)
+	f:call(sset)
+	f:i32(calltypes.init)
+	f:i32(1)
+	f:i32(frame.RETALL)
+	f:call(frame.pushframe)
+	setf(f, 'retb', function() f:i32(0) end)
 	f:load(fnv)
 	f:refcast(R.functy)
 	f:call(frame.framefor)
@@ -280,7 +295,6 @@ local function mkcgctx(f, L)
 		bc = { r = L.bc },
 		pc = { r = L.pc },
 		base = { r = L.base },
-		objbase = { r = L.objbase },
 		locbase = { r = L.locbase },
 		consts = { r = L.consts },
 		frees = { r = L.frees },
@@ -501,8 +515,8 @@ end)
 defEmit('Pc', function(f, mop, ctx)
 	f:load(ctx.pc.r)
 end)
--- Slot n of the function's consts or frees, vecs in the objframe
--- eval reads both from the frame when it changes frames
+-- Slot n of the function's consts or frees.
+-- eval reads both from the frame's function when it changes frames
 local function defVecSlot(name, which)
 	defMop(name, function(mop, ctx)
 		cg(ctx, function(f)
@@ -971,7 +985,12 @@ defMop('ForCoerce', function(mop, ctx)
 end)
 defMop('CallChain', function(mop, ctx)
 	local callty = assert(calltypes[mop[1]], 'CallChain: unknown call type')
-	local helper = mop[2] and frame.callchainvarg or frame.callchain
+	local helper
+	if mop[3] then
+		helper = mop[2] and frame.tailchainvarg or frame.tailchain
+	else
+		helper = mop[2] and frame.callchainvarg or frame.callchain
+	end
 	cg(ctx, function(f, scopes)
 		f:load(ctx.bc.r)
 		f:load(ctx.pc.r)
@@ -1170,12 +1189,14 @@ defMop('Syscall', function(mop, ctx)
 end)
 
 local eval = func(i32, function(f)
-	local base, objbase, locbase, pc = f:locals(i32, 4)
+	local base, locbase, pc, at = f:locals(i32, 4)
 	local bc = f:locals(R.bytes)
 	local consts, frees = f:locals(R.vals, 2)
+	local farr = f:locals(R.i32s)
+	local fn = f:locals(R.functy)
 
 	local L = {
-		base = base, objbase = objbase, locbase = locbase, bc = bc, pc = pc, consts = consts, frees = frees,
+		base = base, locbase = locbase, bc = bc, pc = pc, consts = consts, frees = frees,
 	}
 	local ctx = mkcgctx(f, L)
 
@@ -1218,24 +1239,29 @@ local eval = func(i32, function(f)
 		-- ops that switch frames come back here. Other ops leave the frame alone,
 		-- so its fields stay in locals & pc is only saved in the frame when leaving
 		ctx.reload = reload
-		getf(f, 'base')
+		frame.ftop(f, farr, at)
+		frame.frd(f, farr, at, 'base')
 		f:tee(base)
-		getf(f, 'locals')
+		frame.frd(f, farr, at, 'locals')
 		f:add()
 		f:store(locbase)
-		f:load(base)
-		getf(f, 'frame')
-		f:add()
-		f:store(objbase)
-		for _, v in ipairs({{bc, 0, R.bytes}, {consts, objframe.consts, R.vals}, {frees, objframe.frees, R.vals}}) do
-			f:load(objbase)
-			addk(f, v[2])
-			f:call(sget)
-			f:refcast(v[3])
-			f:store(v[1])
-		end
-		getf(f, 'pc')
+		frame.frd(f, farr, at, 'pc')
 		f:store(pc)
+		-- the function is at base-1
+		f:load(base)
+		f:i32(1)
+		f:sub()
+		f:call(sget)
+		f:refcast(R.functy)
+		f:tee(fn)
+		f:structget(functy, 'bc')
+		f:store(bc)
+		f:load(fn)
+		f:structget(functy, 'consts')
+		f:store(consts)
+		f:load(fn)
+		f:structget(functy, 'frees')
+		f:store(frees)
 
 		f:loop(function(loop)
 			f:switch(function(scopes)
@@ -1260,7 +1286,6 @@ local eval = func(i32, function(f)
 end)
 
 return {
-	objframe = objframe,
 	calltypes = calltypes,
 	init = init,
 	eval = eval,

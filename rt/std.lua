@@ -145,7 +145,7 @@ end
 
 -- _luwa.frame(co, n): function, pc, call type, base, dotdotdot & locals of frame n of coro co
 -- (nil for the running one), counting from the top at 0. Nothing past the last frame.
--- The function is nil when the frame has none (the main init frame).
+-- The function is nil for the main init frame, which shows none.
 -- pc is the frame's next op, for frames under the top that's just after their call.
 -- base is the slot of param 0, varargs & locals start at base+dotdotdot & base+locals
 local std_frame = func(function(f)
@@ -200,6 +200,23 @@ local std_frame = func(function(f)
 	f:load(st)
 	f:structget(alloc.stack, 'len')
 	f:les()
+	f:band()
+	-- the main init frame's retb is 0, it shows no function
+	f:load(arr)
+	f:load(off)
+	f:i32(stack.df.type)
+	f:add()
+	f:arrayget(alloc.i32s)
+	f:i32(frame.calltypes.init)
+	f:eq()
+	f:load(arr)
+	f:load(off)
+	f:i32(stack.df.retb)
+	f:add()
+	f:arrayget(alloc.i32s)
+	f:eqz()
+	f:band()
+	f:eqz()
 	f:band()
 	f:iff(V, function()
 		f:load(st)

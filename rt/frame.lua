@@ -1,7 +1,7 @@
 -- Call frames & metamethod lookup, as wasm helpers that microbc ops call.
 -- Frame switching helpers return the pc to run next, or -1 when the main function returned.
 -- Stack layout of a frame, in slots from base: the function at base-1, params, varargs,
--- locals, then 3 objframe slots (bc, consts, frees), then the operand stack
+-- locals, then the operand stack. eval gets bc, consts & frees from the function
 local M = require 'make'
 local func = M.func
 
@@ -23,12 +23,6 @@ local tmppush, extendtmp, stacklen, setstacklen, sget, sset, scopy, df, fget, fs
 
 local rt = require 'rt' -- also makes GS, oluastack, ostrmt
 
-local objframe = {
-	bc = 0,
-	consts = 1,
-	frees = 2,
-	sizeof = 3,
-}
 local calltypes = {
 	norm = 0, -- Reload locals
 	init = 1, -- Return stack to coro src, src nil for main
@@ -38,6 +32,7 @@ local calltypes = {
 	bool = 5, -- Cast result to bool
 	xprot = 6, -- Like prot, from xpcall: errors first call the handler, param 1 of the frame below
 	xh = 7, -- xpcall's handler running, on top of the frames that raised. Its result is the error to unwind with
+	tail = 8, -- Like call, but the next function in the chain is a tail call of the frame below
 }
 -- retc for "keep every result"
 local RETALL = 0xffff
@@ -68,6 +63,37 @@ local function setf(f, field, val)
 	f:i32(df[field])
 	val()
 	f:call(fset)
+end
+-- Faster ways to read & write fields when doing several: ftop loads the frames array into
+-- local arr & the top frame's index into local at, then frd & fwr use them
+local function ftop(f, arr, at)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'arr')
+	f:store(arr)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'len')
+	f:i32(df.sizeof)
+	f:sub()
+	f:store(at)
+end
+local function frd(f, arr, at, field)
+	f:load(arr)
+	f:load(at)
+	if df[field] ~= 0 then
+		f:i32(df[field])
+		f:add()
+	end
+	f:arrayget(alloc.i32s)
+end
+local function fwr(f, arr, at, field, val)
+	f:load(arr)
+	f:load(at)
+	if df[field] ~= 0 then
+		f:i32(df[field])
+		f:add()
+	end
+	val()
+	f:arrayset(alloc.i32s)
 end
 
 -- Param i of the running function
@@ -332,25 +358,34 @@ end)
 
 -- Push a frame. dotdotdot, locals & frame are filled in by setupframe
 local pushframe = func(i32, i32, i32, void, function(f, callty, base, retc)
+	local at = f:locals(i32)
+	local arr = f:locals(R.i32s)
 	f:call(fpush)
-	setf(f, 'type', function() f:load(callty) end)
-	setf(f, 'base', function() f:load(base) end)
+	f:store(at)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'arr')
+	f:store(arr)
+	fwr(f, arr, at, 'type', function() f:load(callty) end)
+	fwr(f, arr, at, 'pc', function() f:i32(0) end)
+	fwr(f, arr, at, 'base', function() f:load(base) end)
 	-- results go where the function was
-	setf(f, 'retb', function() f:i32(-1) end)
-	setf(f, 'retc', function() f:load(retc) end)
+	fwr(f, arr, at, 'retb', function() f:i32(-1) end)
+	fwr(f, arr, at, 'retc', function() f:load(retc) end)
+	for _, k in ipairs{'dotdotdot', 'locals', 'frame'} do
+		fwr(f, arr, at, k, function() f:i32(0) end)
+	end
 end)
 
 -- Finish the top frame for fn, whose args go from base to the end of the stack.
--- Adds missing params, locals & the objframe after the args
+-- Adds missing params & locals after the args
 local framefor = func(R.functy, void, function(f, fn)
-	local base, argc, paramc, localc, locals = f:locals(i32, 5)
-	getf(f, 'base')
-	f:tee(base)
+	local at, argc, paramc, localc, locals = f:locals(i32, 5)
+	local arr = f:locals(R.i32s)
+	ftop(f, arr, at)
 	f:call(stacklen)
-	f:load(base)
+	frd(f, arr, at, 'base')
 	f:sub()
 	f:store(argc)
-	f:drop()
 
 	f:load(fn)
 	f:structget(functy, 'paramc')
@@ -374,40 +409,15 @@ local framefor = func(R.functy, void, function(f, fn)
 	f:sub()
 	f:load(localc)
 	f:add()
-	f:i32(objframe.sizeof)
-	f:add()
 	f:call(extendtmp)
 
-	setf(f, 'dotdotdot', function() f:load(paramc) end)
-	setf(f, 'locals', function() f:load(locals) end)
-	setf(f, 'frame', function()
+	fwr(f, arr, at, 'dotdotdot', function() f:load(paramc) end)
+	fwr(f, arr, at, 'locals', function() f:load(locals) end)
+	fwr(f, arr, at, 'frame', function()
 		f:load(locals)
 		f:load(localc)
 		f:add()
-		f:tee(locals)
 	end)
-
-	f:load(base)
-	f:load(locals)
-	f:add()
-	f:tee(base)
-	f:load(fn)
-	f:structget(functy, 'bc')
-	f:call(sset)
-
-	f:load(base)
-	f:i32(1)
-	f:add()
-	f:load(fn)
-	f:structget(functy, 'consts')
-	f:call(sset)
-
-	f:load(base)
-	f:i32(2)
-	f:add()
-	f:load(fn)
-	f:structget(functy, 'frees')
-	f:call(sset)
 end)
 
 -- Finish the top frame, its function is at base-1
@@ -663,10 +673,71 @@ local MAXFRAMES, EXTRAFRAMES = 200000, 2000
 local overflowing = M.global(i32, true)
 local throw -- below, callchain raises with it
 
+-- Is v a Lua function from load (its info is a table). Only those get tail calls:
+-- builtins & prelude functions stand in for C functions, which keep the caller's frame in C Lua too
+local isluafn = func(V, i32, function(f, v)
+	f:load(v)
+	f:call(typeof)
+	f:i32(types.functy)
+	f:eq()
+	f:iff(i32, function()
+		f:load(v)
+		f:refcast(R.functy)
+		f:structget(functy, 'info')
+		f:call(typeof)
+		f:i32(types.tbl)
+		f:eq()
+	end, function()
+		f:i32(0)
+	end)
+end)
+
+-- Tail call from the top frame: the function at slot src & its args (up to the end of the stack)
+-- move down to replace the frame's function & args. The frame keeps its type, retb & retc.
+-- When it isn't a Lua function, call it in a new frame keeping every result instead,
+-- the frame's next op is a Return that returns them. Returns the pc to run next
+local tailcall = func(i32, i32, function(f, src)
+	local base, n = f:locals(i32, 2)
+	f:load(src)
+	f:call(sget)
+	f:call(isluafn)
+	f:eqz()
+	f:iff(function()
+		f:i32(calltypes.norm)
+		f:load(src)
+		f:i32(1)
+		f:add()
+		f:i32(RETALL)
+		f:call(pushframe)
+		f:call(setupframe)
+		f:i32(0)
+		f:ret()
+	end)
+	getf(f, 'base')
+	f:i32(1)
+	f:sub()
+	f:tee(base)
+	f:load(src)
+	f:call(stacklen)
+	f:load(src)
+	f:sub()
+	f:tee(n)
+	f:call(scopy)
+	f:load(base)
+	f:load(n)
+	f:add()
+	f:call(setstacklen)
+	-- the function is at base-1 now, a functy, so setupframe goes straight to framefor
+	f:call(setupframe)
+	f:i32(0)
+end)
+
 -- Call op family. Bytecode args from pc: retc, n, then n arg counts, outermost call first.
 -- Stack holds f1 args1.. f2 args2.. ... fn argsn.., the innermost call runs first.
--- Outer calls get frames now (type call) & are set up as each inner one returns
-local function mkcallchain(varg)
+-- Outer calls get frames now (type call) & are set up as each inner one returns.
+-- tail: the outermost call is a tail call. It gets no frame, the next call's frame is type tail,
+-- so when that returns retframe calls tailcall. With one call tailcall runs now
+local function mkcallchain(varg, tail)
 	return func(R.bytes, i32, i32, i32, function(f, bc, pc, callty)
 		local n, i, off, vb, cnt = f:locals(i32, 5)
 		local function arg(k)
@@ -744,6 +815,34 @@ local function mkcallchain(varg)
 			f:storeg(overflowing)
 		end)
 
+		-- one call, the usual case: the function is under its args
+		f:load(n)
+		f:i32(1)
+		f:eq()
+		f:iff(function()
+			f:call(stacklen)
+			f:load(vb)
+			f:sub()
+			arg(function() f:i32(2) end)
+			f:sub()
+			f:i32(1)
+			f:sub()
+			if tail then
+				f:call(tailcall)
+				f:ret()
+			end
+			f:i32(1)
+			f:add()
+			f:store(off)
+			f:load(callty)
+			f:load(off)
+			arg(function() f:i32(0) end)
+			f:call(pushframe)
+			f:call(setupframe)
+			f:i32(0)
+			f:ret()
+		end)
+
 		-- off = where the outermost function sits
 		f:call(stacklen)
 		f:load(vb)
@@ -773,18 +872,35 @@ local function mkcallchain(varg)
 		f:i32(0)
 		f:store(i)
 		f:loop(function(loop)
-			f:i32(calltypes.call)
-			f:load(callty)
-			f:load(i)
-			f:select()
-			f:load(off)
-			f:i32(1)
-			f:add()
-			f:i32(RETALL)
-			arg(function() f:i32(0) end)
-			f:load(i)
-			f:select()
-			f:call(pushframe)
+			local function push()
+				-- outermost: callty & retc, the rest: type call keeping every result
+				f:i32(calltypes.call)
+				f:load(callty)
+				f:load(i)
+				f:select()
+				if tail then
+					-- the call after the tail call
+					f:i32(calltypes.tail)
+					f:load(i)
+					f:i32(1)
+					f:ne()
+					f:select()
+				end
+				f:load(off)
+				f:i32(1)
+				f:add()
+				f:i32(RETALL)
+				arg(function() f:i32(0) end)
+				f:load(i)
+				f:select()
+				f:call(pushframe)
+			end
+			if tail then
+				f:load(i)
+				f:iff(push)
+			else
+				push()
+			end
 
 			f:load(off)
 			arg(function()
@@ -809,8 +925,10 @@ local function mkcallchain(varg)
 		f:i32(0)
 	end)
 end
-local callchain = mkcallchain(false)
-local callchainvarg = mkcallchain(true)
+local callchain = mkcallchain(false, false)
+local callchainvarg = mkcallchain(true, false)
+local tailchain = mkcallchain(false, true)
+local tailchainvarg = mkcallchain(true, true)
 
 -- Make co the running coro: its stack & frames become gstack & gframes
 local switchto = func(R.coro, void, function(f, co)
@@ -1038,26 +1156,66 @@ throw = func(V, i32, function(f, msg)
 	f:unreachable()
 end)
 
--- Return op: results are everything after the objframe
+-- Return op: results are everything after the locals
 local retframe = func(i32, function(f)
-	local base, retb, ty, c, e, key, len = f:locals(i32, 7)
-	getf(f, 'base')
+	local at, base, retb, ty, c, e, key, len = f:locals(i32, 8)
+	local arr = f:locals(R.i32s)
+	ftop(f, arr, at)
+	frd(f, arr, at, 'base')
 	f:tee(base)
-	getf(f, 'retb')
+	frd(f, arr, at, 'retb')
 	f:add()
 	f:store(retb)
-	getf(f, 'retc')
+	frd(f, arr, at, 'retc')
 	f:store(key)
-	getf(f, 'type')
+	frd(f, arr, at, 'type')
 	f:store(ty)
 	f:load(base)
-	getf(f, 'frame')
-	f:add()
-	f:i32(objframe.sizeof)
+	frd(f, arr, at, 'frame')
 	f:add()
 	f:store(e)
 	f:call(stacklen)
 	f:store(len)
+
+	-- usual case, a norm frame keeping a fixed count: copy them, nil filled, pop & carry on in the caller
+	f:load(ty)
+	f:i32(calltypes.norm)
+	f:eq()
+	f:load(key)
+	f:i32(RETALL)
+	f:ne()
+	f:band()
+	f:iff(function()
+		f:load(e)
+		f:load(key)
+		f:add()
+		f:load(len)
+		f:sub()
+		f:tee(c)
+		f:i32(0)
+		f:gts()
+		f:iff(function()
+			f:load(c)
+			f:call(extendtmp)
+		end)
+		f:load(retb)
+		f:load(e)
+		f:load(key)
+		f:call(scopy)
+		f:load(retb)
+		f:load(key)
+		f:add()
+		f:call(setstacklen)
+		f:loadg(gframes)
+		f:load(at)
+		f:structset(alloc.frames, 'len')
+		f:load(arr)
+		f:load(at)
+		f:i32(df.pc - df.sizeof)
+		f:add()
+		f:arrayget(alloc.i32s)
+		f:ret()
+	end)
 
 	-- xpcall's handler returned: unwind with its first result, without calling it again
 	f:load(ty)
@@ -1185,6 +1343,18 @@ local retframe = func(i32, function(f)
 		f:call(setupframe)
 	end)
 
+	-- tail frame: the results are args of the tail call, which goes where the frame below's locals end
+	f:load(ty)
+	f:i32(calltypes.tail)
+	f:eq()
+	f:iff(function()
+		getf(f, 'base')
+		getf(f, 'frame')
+		f:add()
+		f:call(tailcall)
+		f:ret()
+	end)
+
 	-- push frame: stack is table, key fixed values, then results from retb on.
 	-- Append values & results as t[1..], then leave only the table
 	f:load(ty)
@@ -1201,12 +1371,14 @@ local retframe = func(i32, function(f)
 end)
 
 return {
-	objframe = objframe,
 	calltypes = calltypes,
 	RETALL = RETALL,
 	bcarg = bcarg,
 	getf = getf,
 	setf = setf,
+	ftop = ftop,
+	frd = frd,
+	fwr = fwr,
 	param = param,
 	vargc = vargc,
 	varg = varg,
@@ -1222,6 +1394,8 @@ return {
 	callmeta = callmeta,
 	callchain = callchain,
 	callchainvarg = callchainvarg,
+	tailchain = tailchain,
+	tailchainvarg = tailchainvarg,
 	retframe = retframe,
 	switchto = switchto,
 	pushfrom = pushfrom,

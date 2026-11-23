@@ -184,10 +184,10 @@ local df = {
 	pc = 1,
 	base = 2, -- slot of param 0. The function is at base-1
 	dotdotdot = 3, -- base+dotdotdot = first vararg. They end at base+locals
-	retb = 4, -- base+retb = where return values go
+	retb = 4, -- base+retb = where return values go. 0 in the main init frame, which has no function to show
 	retc = 5, -- how many values to return, 0xffff for all of them
 	locals = 6, -- base+locals = first local
-	frame = 7, -- base+frame = objframe: bc, consts, frees
+	frame = 7, -- base+frame = end of locals, where the operand stack starts
 	sizeof = 8,
 }
 
@@ -215,8 +215,9 @@ local fset = func(i32, i32, void, function(f, field, v)
 	f:load(v)
 	f:arrayset(i32s)
 end)
--- Push a zeroed frame
-local fpush = func(function(f)
+-- Push a frame & return the index of its first field.
+-- Its fields hold whatever was there before, the caller sets all of them
+local fpush = func(i32, function(f)
 	local arr, narr = f:locals(R.i32s, 2)
 	local len = f:locals(i32)
 	f:loadg(gframes)
@@ -246,20 +247,13 @@ local fpush = func(function(f)
 		f:load(narr)
 		f:refasnonnull()
 		f:structset(frames, 'arr')
-		f:loadg(gframes)
-		f:structget(frames, 'arr')
-		f:store(arr)
 	end)
-	f:load(arr)
-	f:load(len)
-	f:i32(0)
-	f:i32(df.sizeof)
-	f:arrayfill(i32s)
 	f:loadg(gframes)
 	f:load(len)
 	f:i32(df.sizeof)
 	f:add()
 	f:structset(frames, 'len')
+	f:load(len)
 end)
 local fpop = func(function(f)
 	f:loadg(gframes)
