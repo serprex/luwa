@@ -54,4 +54,12 @@ return {
 	'_upval',
 	'_fdepth',
 	'_slot',
+	'_strmap',
+	'_strrep',
+	'_concat',
+	'_classend',
+	'_single',
+	'_span',
+	'_scan',
+	'_findplain',
 }

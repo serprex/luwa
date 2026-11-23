@@ -340,7 +340,9 @@ local function _tostring(v)
 				_error("'__tostring' must return a string")
 			end
 		else
-			return ty .. ': ' .. hexid(v)
+			-- a string __name replaces the type name, like C
+			local name = mt and _rawget(mt, '__name')
+			return (_type(name) == 'string' and name or ty) .. ': ' .. hexid(v)
 		end
 	end
 end
@@ -504,16 +506,106 @@ end
 function math.rad(x)
 	return x * (0x1.921fb54442d18p1/180.)
 end
-local randomseed = 1 + math_floor(_luwa.random() * 0x7ffffffffffffff7)
-function math.random()
-	-- xorshift* from wikipedia
-	randomseed = randomseed ~ (randomseed>>12)
-	randomseed = randomseed ~ (randomseed<<25)
-	randomseed = randomseed ~ (randomseed>>27)
-	return randomseed * 0x2545f4914f6cdd1d
+-- Argument checks like C Lua's luaL_check*. argc is how many args fname got,
+-- an arg past it is "no value" rather than nil
+local function argtype(v, n, argc)
+	return (n > argc and 'no value' or _type(v))
 end
-function math.randomseed(x)
-	randomseed = math_floor(x)
+local _tonumber = tonumber
+-- v as an integer, number strings & floats with an integer value convert
+local function checkint(v, n, fname, argc)
+	if math_type(v) == 'integer' then
+		return v
+	end
+	local x = _type(v) == 'string' and _tonumber(v) or v
+	if math_type(x) == 'integer' then
+		return x
+	elseif math_type(x) == 'float' then
+		return tointeger(x) or _error("bad argument #" .. n .. " to '" .. fname .. "' (number has no integer representation)")
+	end
+	_error("bad argument #" .. n .. " to '" .. fname .. "' (number expected, got " .. argtype(v, n, argc) .. ")")
+end
+-- xoshiro256**, same as lua-5.5.1/lmathlib.c, so a given seed gives the same numbers
+local rs0, rs1, rs2, rs3 = 0, 0, 0, 0
+local function nextrand()
+	local s0, s1 = rs0, rs1
+	local s2, s3 = rs2 ~ s0, rs3 ~ s1
+	local x = s1 * 5
+	local res = ((x << 7) | (x >> 57)) * 9
+	rs0 = s0 ~ s3
+	rs1 = s1 ~ s2
+	rs2 = s2 ~ (s1 << 17)
+	rs3 = (s3 << 45) | (s3 >> 19)
+	return res
+end
+local function setseed(n1, n2)
+	rs0, rs1, rs2, rs3 = n1, 0xff, n2, 0
+	-- throw away the first 16 to spread the seed around
+	for i = 1, 16 do
+		nextrand()
+	end
+	return n1, n2
+end
+-- C Lua's luaL_makeseed mixes time & an address into 32 bits, we ask the host
+local function makeseed()
+	return math_floor(_luwa.random() * 0x1p32)
+end
+setseed(makeseed(), 0)
+-- Unsigned compare, same as math.ult
+local function ult(m, n)
+	if m >= 0 then
+		return n < 0 or m < n
+	else
+		return n < 0 and m < n
+	end
+end
+-- Random integer in [0, n], n unsigned. Masks down to the smallest 2^b-1 >= n, retries when over n
+local function project(ran, n)
+	local lim, sh = n, 1
+	while lim & (lim + 1) ~= 0 do
+		lim = lim | (lim >> sh)
+		sh = sh * 2
+	end
+	ran = ran & lim
+	while ult(n, ran) do
+		ran = nextrand() & lim
+	end
+	return ran
+end
+function math.random(...)
+	local rv = nextrand()
+	local argc = _select('#', ...)
+	local low, up
+	if argc == 0 then
+		-- top 53 bits as a float in [0, 1)
+		return (rv >> 11) * 0x1p-53
+	elseif argc == 1 then
+		low = 1
+		up = checkint((...), 1, 'random', 1)
+		if up == 0 then
+			return rv
+		end
+	elseif argc == 2 then
+		low, up = ...
+		low = checkint(low, 1, 'random', 2)
+		up = checkint(up, 2, 'random', 2)
+	else
+		_error("wrong number of arguments")
+	end
+	_assert(low <= up, "bad argument #1 to 'random' (interval is empty)")
+	return project(rv, up - low) + low
+end
+function math.randomseed(...)
+	if _select('#', ...) == 0 then
+		-- mix in the current state in case the seed isn't that random
+		return setseed(makeseed(), nextrand())
+	end
+	local argc = _select('#', ...)
+	local n1, n2 = ...
+	n1 = checkint(n1, 1, 'randomseed', argc)
+	-- luaL_optinteger, nil means 0
+	n2 = n2 == nil and 0 or checkint(n2, 2, 'randomseed', argc)
+	return setseed(n1, n2)
 end
 function math.sqrt(x)
 	return x ^ .5
@@ -635,58 +727,58 @@ function string.char(...)
 	end
 	return string_char(...)
 end
-function string.rep(s, n, sep)
+-- s as a string, numbers turn into strings
+local function checkstr(s, n, fname, argc)
+	local ty = _type(s)
+	if ty == 'string' then
+		return s
+	elseif ty == 'number' then
+		return s .. ''
+	end
+	_error("bad argument #" .. n .. " to '" .. fname .. "' (string expected, got " .. argtype(s, n, argc) .. ")")
+end
+-- Largest byte array the wasm engine makes (V8's limit). Past it C Lua would run out of memory
+local MAXSTR = 0x3fffffe0
+
+-- byte loops are wasm builtins (rt/stdstr.lua)
+local strmap, strrep = _luwa.strmap, _luwa.strrep
+function string.rep(...)
+	local s, n, sep = ...
+	local argc = _select('#', ...)
+	s = checkstr(s, 1, 'rep', argc)
+	n = checkint(n, 2, 'rep', argc)
+	sep = sep == nil and '' or checkstr(sep, 3, 'rep', argc)
 	if n <= 0 then
 		return ''
-	elseif sep and sep ~= '' then
-		return string.rep(s .. sep, n - 1) .. s
 	end
-	-- doubling: s, ss, ssss, ...
-	local r = ''
-	while true do
-		if n & 1 == 1 then
-			r = r .. s
-		end
-		n = n >> 1
-		if n == 0 then
-			return r
-		end
-		s = s .. s
+	local unit = #s + #sep
+	if unit > 0x7fffffffffffffff // n then
+		_error('resulting string too large')
+	elseif unit * n - #sep > MAXSTR then
+		_error('not enough memory')
 	end
+	return strrep(s, n, sep)
 end
-
--- Apply fn to each byte of s, 4096 at a time so string.char doesn't get too many args
-local function mapbytes(s, fn)
-	local parts = {}
-	for i = 1, #s, 4096 do
-		local t = { string_byte(s, i, i + 4095) }
-		for j = 1, #t do
-			t[j] = fn(t[j])
-		end
-		parts[#parts + 1] = string_char(table_unpack(t))
+function string.upper(...)
+	local s = ...
+	if _type(s) ~= 'string' then
+		s = checkstr(s, 1, 'upper', _select('#', ...))
 	end
-	return table.concat(parts)
+	return strmap(s, 0)
 end
-function string.upper(s)
-	return mapbytes(s, function(c)
-		return (c >= 97 and c <= 122) and c - 32 or c
-	end)
-end
-function string.lower(s)
-	return mapbytes(s, function(c)
-		return (c >= 65 and c <= 90) and c + 32 or c
-	end)
-end
-function string.reverse(s)
-	local t = {}
-	for i = #s, 1, -1 do
-		t[#t + 1] = string_byte(s, i)
+function string.lower(...)
+	local s = ...
+	if _type(s) ~= 'string' then
+		s = checkstr(s, 1, 'lower', _select('#', ...))
 	end
-	local parts = {}
-	for i = 1, #t, 4096 do
-		parts[#parts + 1] = string_char(table_unpack(t, i, i + 4095 < #t and i + 4095 or #t))
+	return strmap(s, 1)
+end
+function string.reverse(...)
+	local s = ...
+	if _type(s) ~= 'string' then
+		s = checkstr(s, 1, 'reverse', _select('#', ...))
 	end
-	return table.concat(parts)
+	return strmap(s, 2)
 end
 
 -- Lua patterns, a port of lstrlib.c's matcher. One match runs at a time:
@@ -698,121 +790,26 @@ local function setstate(s, p)
 	msrc, mslen, mpat, mplen, mlevel = s, #s, p, #p, 0
 end
 
--- character classes, by class letter: a set of bytes
-local classes = {}
-do
-	local function set(letter, test)
-		local t = {}
-		for c = 0, 255 do
-			t[c] = test(c) or nil
-		end
-		classes[letter] = t
-	end
-	local function isalpha(c) return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) end
-	local function isdigit(c) return c >= 48 and c <= 57 end
-	local function ispunct(c) return (c >= 33 and c <= 47) or (c >= 58 and c <= 64) or (c >= 91 and c <= 96) or (c >= 123 and c <= 126) end
-	set(97, isalpha) -- a
-	set(99, function(c) return c < 32 or c == 127 end) -- c
-	set(100, isdigit) -- d
-	set(103, function(c) return c > 32 and c < 127 end) -- g
-	set(108, function(c) return c >= 97 and c <= 122 end) -- l
-	set(112, ispunct) -- p
-	set(115, function(c) return c == 32 or (c >= 9 and c <= 13) end) -- s
-	set(117, function(c) return c >= 65 and c <= 90 end) -- u
-	set(119, function(c) return isalpha(c) or isdigit(c) end) -- w
-	set(120, function(c) return isdigit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102) end) -- x
-	set(122, function(c) return c == 0 end) -- z, old name for byte 0
-end
-local function matchclass(c, cl)
-	local upper = cl >= 65 and cl <= 90
-	local set = classes[upper and cl + 32 or cl]
-	if not set then
-		return cl == c
-	elseif upper then
-		return not set[c]
-	else
-		return set[c] == true
-	end
-end
-
+-- Class matching is in wasm (rt/stdstr.lua): a class is p[pi..ep), a byte, '.', %x or [...]
+local wclassend, wsingle, wspan, wscan = _luwa.classend, _luwa.single, _luwa.span, _luwa.scan
 -- index just past the single char class at p
 local function classend(p)
-	local c = string_byte(mpat, p)
-	p = p + 1
-	if c == 37 then -- %
-		if p > mplen then
+	local e = wclassend(mpat, p)
+	if e == 0 then
+		if string_byte(mpat, p) == 37 then
 			_error("malformed pattern (ends with '%')")
 		end
-		return p + 1
-	elseif c == 91 then -- [
-		if string_byte(mpat, p) == 94 then
-			p = p + 1
-		end
-		repeat
-			if p > mplen then
-				_error("malformed pattern (missing ']')")
-			end
-			local cc = string_byte(mpat, p)
-			p = p + 1
-			if cc == 37 and p <= mplen then
-				p = p + 1
-			end
-		until string_byte(mpat, p) == 93
-		return p + 1
-	else
-		return p
+		_error("malformed pattern (missing ']')")
 	end
-end
--- does c match the set [...] from p (at '[') to ec (at ']')
-local function matchbracket(c, p, ec)
-	local sig = true
-	p = p + 1
-	if string_byte(mpat, p) == 94 then
-		sig = false
-		p = p + 1
-	end
-	while p < ec do
-		local pc = string_byte(mpat, p)
-		if pc == 37 then
-			p = p + 1
-			if matchclass(c, string_byte(mpat, p)) then
-				return sig
-			end
-		elseif string_byte(mpat, p + 1) == 45 and p + 2 < ec then -- a-z
-			if pc <= c and c <= string_byte(mpat, p + 2) then
-				return sig
-			end
-			p = p + 2
-		elseif pc == c then
-			return sig
-		end
-		p = p + 1
-	end
-	return not sig
+	return e
 end
 local function singlematch(s, p, ep)
-	if s > mslen then
-		return false
-	end
-	local c = string_byte(msrc, s)
-	local pc = string_byte(mpat, p)
-	if pc == 46 then -- .
-		return true
-	elseif pc == 37 then
-		return matchclass(c, string_byte(mpat, p + 1))
-	elseif pc == 91 then
-		return matchbracket(c, p, ep - 1)
-	else
-		return pc == c
-	end
+	return wsingle(msrc, s, mpat, p, ep)
 end
 
 local domatch
 local function maxexpand(s, p, ep)
-	local i = 0
-	while singlematch(s + i, p, ep) do
-		i = i + 1
-	end
+	local i = wspan(msrc, s, mpat, p, ep)
 	while i >= 0 do
 		local res = domatch(s + i, ep + 1)
 		if res then
@@ -925,9 +922,19 @@ function domatch(s, p)
 				_error("missing '[' after '%f' in pattern")
 			end
 			local ep = classend(p)
-			local prev = s == 1 and 0 or string_byte(msrc, s - 1)
-			local cur = s <= mslen and string_byte(msrc, s) or 0
-			if not matchbracket(prev, p, ep - 1) and matchbracket(cur, p, ep - 1) then
+			-- before the start & past the end count as byte 0
+			local prevok, curok
+			if s == 1 then
+				prevok = wsingle('\0', 1, mpat, p, ep)
+			else
+				prevok = wsingle(msrc, s - 1, mpat, p, ep)
+			end
+			if s <= mslen then
+				curok = wsingle(msrc, s, mpat, p, ep)
+			else
+				curok = wsingle('\0', 1, mpat, p, ep)
+			end
+			if not prevok and curok then
 				p = ep
 			else
 				return nil
@@ -1004,6 +1011,29 @@ local function hasspecials(p)
 	end
 	return false
 end
+-- When the pattern from pstart begins with a single class that must match a byte (no *, ? or - after it),
+-- gives the end of that class, so a match can only start where wscan finds that class. Else nil
+local function firstclass(p, pstart)
+	local pc = string_byte(p, pstart)
+	if not pc or pc == 40 or pc == 41 or (pc == 36 and pstart == #p) then -- ( ) $
+		return nil
+	elseif pc == 37 then
+		local nc = string_byte(p, pstart + 1)
+		if nc == 98 or nc == 102 or (nc and nc >= 48 and nc <= 57) then -- %b %f %0-9
+			return nil
+		end
+	end
+	local ep = wclassend(p, pstart)
+	if ep == 0 then
+		return nil -- malformed, domatch raises the error
+	end
+	local epc = string_byte(p, ep)
+	if epc == 42 or epc == 63 or epc == 45 then -- * ? -
+		return nil
+	end
+	return ep
+end
+local findplain = _luwa.findplain
 local function strfind(s, p, init, plain, find)
 	_assert(_type(s) == 'string' or _type(s) == 'number', "bad argument #1 (string expected)")
 	_assert(_type(p) == 'string' or _type(p) == 'number', "bad argument #2 (string expected)")
@@ -1017,13 +1047,11 @@ local function strfind(s, p, init, plain, find)
 		return nil
 	end
 	if find and (plain or not hasspecials(p)) then
-		local plen = #p
-		for i = init, slen - plen + 1 do
-			if string_sub(s, i, i + plen - 1) == p then
-				return i, i + plen - 1
-			end
+		local i = findplain(s, p, init)
+		if i == 0 then
+			return nil
 		end
-		return nil
+		return i, i + #p - 1
 	end
 	setstate(s, p)
 	local pstart = 1
@@ -1031,8 +1059,15 @@ local function strfind(s, p, init, plain, find)
 	if anchor then
 		pstart = 2
 	end
+	local fep = not anchor and firstclass(p, pstart)
 	local s1 = init
 	repeat
+		if fep then
+			s1 = wscan(s, s1, p, pstart, fep)
+			if s1 == 0 then
+				return nil
+			end
+		end
 		mlevel = 0
 		local e = domatch(s1, pstart)
 		if e then
@@ -1060,9 +1095,17 @@ function string.gmatch(s, p, init)
 		pos = 1
 	end
 	local lastmatch
+	local fep = firstclass(p, 1)
 	return function()
 		setstate(s, p)
-		for s1 = pos, #s + 1 do
+		local s1, slen = pos, #s
+		while s1 <= slen + 1 do
+			if fep then
+				s1 = wscan(s, s1, p, 1, fep)
+				if s1 == 0 then
+					break
+				end
+			end
 			mlevel = 0
 			local e = domatch(s1, 1)
 			if e and e ~= lastmatch then
@@ -1070,6 +1113,7 @@ function string.gmatch(s, p, init)
 				lastmatch = e
 				return getcaptures(s1, e, true)
 			end
+			s1 = s1 + 1
 		end
 	end
 end
@@ -1095,8 +1139,16 @@ function string.gsub(s, p, repl, maxn)
 	local out = {}
 	local s1, copyfrom, n, lastmatch = 1, 1, 0, nil
 	local changed = false
+	local fep = not anchor and firstclass(p, pstart)
 	setstate(s, p)
 	while n < maxn do
+		if fep then
+			local ns = wscan(s, s1, p, pstart, fep)
+			if ns == 0 then
+				break
+			end
+			s1 = ns
+		end
 		mlevel = 0
 		local e = domatch(s1, pstart)
 		if e and e ~= lastmatch then
@@ -1211,11 +1263,54 @@ local function quotestr(s)
 	return table.concat(out)
 end
 
+-- Pads v with spaces to the width in spec, on the right when spec has '-'
+local function padspec(spec, v)
+	local flags, w = string.match(spec, '^%%([-+ #0]*)(%d*)')
+	w = tonumber(w) or 0
+	if #v >= w then
+		return v
+	elseif string.find(flags, '-', 1, true) then
+		return v .. string.rep(' ', w - #v)
+	end
+	return string.rep(' ', w - #v) .. v
+end
+
+-- Skips up to 2 digits from k
+local function skip2digits(spec, k)
+	for _ = 1, 2 do
+		local c = string_byte(spec, k)
+		if c and c >= 48 and c <= 57 then
+			k = k + 1
+		end
+	end
+	return k
+end
+
+-- Like lstrlib's checkformat: spec may have only these flags, a width of up to 2 digits
+-- & a precision of up to 2 digits when prec is true
+local function checkformat(spec, flags, prec)
+	local k = 2
+	while string.find(flags, string_sub(spec, k, k), 1, true) and k < #spec do
+		k = k + 1
+	end
+	if string_byte(spec, k) ~= 48 then
+		k = skip2digits(spec, k)
+		if prec and string_byte(spec, k) == 46 then
+			k = skip2digits(spec, k + 1)
+		end
+	end
+	if k ~= #spec then
+		_error("invalid conversion specification: '" .. spec .. "'")
+	end
+end
+
 local host = _luwa.host
-function string.format(fmt, ...)
-	fmt = fmt .. ''
+function string.format(...)
+	local argc = _select('#', ...)
+	local fmt = ...
+	fmt = checkstr(fmt, 1, 'format', argc)
 	local out = {}
-	local argi = 0
+	local argi = 1
 	local i, n = 1, #fmt
 	while i <= n do
 		local j = i
@@ -1228,72 +1323,65 @@ function string.format(fmt, ...)
 		if j > n then
 			break
 		end
-		-- a spec: %[flags][width][.precision]conv
 		local k = j + 1
 		if string_byte(fmt, k) == 37 then
 			out[#out + 1] = '%'
 			i = k + 1
 		else
+			argi = argi + 1
+			if argi > argc then
+				_error("bad argument #" .. argi .. " to 'format' (no value)")
+			end
+			-- flags, width & precision, then the conversion byte
 			while k <= n do
 				local c = string_byte(fmt, k)
-				if c == 45 or c == 43 or c == 32 or c == 35 or c == 48 then
+				if c == 45 or c == 43 or c == 35 or c == 32 or c == 46 or (c >= 48 and c <= 57) then
 					k = k + 1
 				else
 					break
 				end
 			end
-			while k <= n and string_byte(fmt, k) >= 48 and string_byte(fmt, k) <= 57 do
-				k = k + 1
+			if k - j >= 22 then
+				_error("invalid format (too long)")
 			end
-			local hasprec = string_byte(fmt, k) == 46
-			if hasprec then
-				k = k + 1
-				while k <= n and string_byte(fmt, k) >= 48 and string_byte(fmt, k) <= 57 do
-					k = k + 1
-				end
-			end
-			local conv = string_byte(fmt, k)
-			_assert(conv, "invalid conversion '" .. string_sub(fmt, j) .. "' to 'format'")
 			local spec = string_sub(fmt, j, k)
-			argi = argi + 1
-			_assert(argi <= _select('#', ...), "bad argument #" .. (argi + 1) .. " to 'format' (no value)")
+			local conv = string_byte(fmt, k)
 			local arg = _select(argi, ...)
-			if conv == 100 or conv == 105 or conv == 120 or conv == 88 or conv == 111 or conv == 99 or conv == 117 then
-				local v = tointeger(arg)
-				if v == nil and _type(arg) == 'string' then
-					v = tointeger(tonumber(arg))
-				end
-				if v == nil then
-					_error("bad argument #" .. (argi + 1) .. " to 'format' (" ..
-						(_type(arg) == 'number' and 'number has no integer representation' or 'number expected, got ' .. _type(arg)) .. ")")
-				end
+			if conv == 99 then -- c, as a raw byte
+				checkformat(spec, '-', false)
+				local v = checkint(arg, argi, 'format', argc)
+				out[#out + 1] = padspec(spec, string_char(v & 255))
+			elseif conv == 100 or conv == 105 or conv == 117 or conv == 111 or conv == 120 or conv == 88 then
+				local v = checkint(arg, argi, 'format', argc)
+				checkformat(spec, (conv == 100 or conv == 105) and '-+0 ' or conv == 117 and '-0' or '-#0', true)
 				out[#out + 1] = host('fmt', spec, v)
-			elseif conv == 97 or conv == 65 or conv == 101 or conv == 69 or conv == 102 or conv == 70 or conv == 103 or conv == 71 then
-				local v = tonumber(arg)
-				_assert(v, "bad argument #" .. (argi + 1) .. " to 'format' (number expected, got " .. _type(arg) .. ")")
-				out[#out + 1] = host('fmt', spec, v + 0.0)
-			elseif conv == 115 then -- s
-				local v = _tostring(arg)
-				if #spec == 2 then
-					out[#out + 1] = v
+			elseif conv == 97 or conv == 65 or conv == 101 or conv == 69 or conv == 102 or conv == 103 or conv == 71 then
+				-- C checks %a's spec before its argument, the others after
+				local hexa = conv == 97 or conv == 65
+				if hexa then
+					checkformat(spec, '-+#0 ', true)
+				end
+				local v = _tonumber(arg)
+				if _type(v) ~= 'number' then
+					_error("bad argument #" .. argi .. " to 'format' (number expected, got " .. argtype(arg, argi, argc) .. ")")
+				end
+				if not hexa then
+					checkformat(spec, '-+#0 ', true)
+				end
+				-- * 1.0 keeps -0.0
+				out[#out + 1] = host('fmt', spec, v * 1.0)
+			elseif conv == 112 then -- p
+				checkformat(spec, '-', false)
+				local ty = _type(arg)
+				if ty == 'table' or ty == 'function' or ty == 'thread' or ty == 'string' then
+					out[#out + 1] = padspec(spec, hexid(arg))
 				else
-					-- precision cuts, width pads
-					local flags = string.match(spec, '^%%([-+ #0]*)')
-					local w = tonumber(string.match(spec, '^%%[-+ #0]*(%d*)')) or 0
-					local p = tonumber(string.match(spec, '%.(%d*)'))
-					if hasprec then
-						v = string_sub(v, 1, p or 0)
-					end
-					if #v < w then
-						if string.find(flags, '-', 1, true) then
-							v = v .. string.rep(' ', w - #v)
-						else
-							v = string.rep(' ', w - #v) .. v
-						end
-					end
-					out[#out + 1] = v
+					out[#out + 1] = padspec(spec, '(null)')
 				end
 			elseif conv == 113 then -- q
+				if #spec > 2 then
+					_error("specifier '%q' cannot have modifiers")
+				end
 				local ty = math_type(arg)
 				if _type(arg) == 'string' then
 					out[#out + 1] = quotestr(arg)
@@ -1306,22 +1394,29 @@ function string.format(fmt, ...)
 						out[#out + 1] = '1e9999'
 					elseif arg == -1/0 then
 						out[#out + 1] = '-1e9999'
-					elseif arg == math_floor(arg) and arg >= -0x1p63 and arg < 0x1p63 then
-						out[#out + 1] = host('fmt', '%a', arg)
 					else
 						out[#out + 1] = host('fmt', '%a', arg)
 					end
 				elseif arg == nil or arg == true or arg == false then
 					out[#out + 1] = _tostring(arg)
 				else
-					_error("bad argument #" .. (argi + 1) .. " to 'format' (value has no literal form)")
+					_error("bad argument #" .. argi .. " to 'format' (value has no literal form)")
 				end
-			elseif conv == 112 then -- p
-				local ty = _type(arg)
-				if ty == 'table' or ty == 'function' or ty == 'thread' or ty == 'string' then
-					out[#out + 1] = hexid(arg)
+			elseif conv == 115 then -- s
+				local v = _tostring(arg)
+				if #spec == 2 then
+					out[#out + 1] = v
 				else
-					out[#out + 1] = '(null)'
+					if string.find(v, '\0', 1, true) then
+						_error("bad argument #" .. argi .. " to 'format' (string contains zeros)")
+					end
+					checkformat(spec, '-', true)
+					local dot = string.find(spec, '.', 1, true)
+					if dot then
+						-- precision cuts
+						v = string_sub(v, 1, tonumber(string_sub(spec, dot + 1, -2)) or 0)
+					end
+					out[#out + 1] = padspec(spec, v)
 				end
 			else
 				_error("invalid conversion '" .. spec .. "' to 'format'")
@@ -1528,7 +1623,8 @@ function utf8.codes(s, lax)
 	return lax and utf8lax or utf8strict, s, 0
 end
 
--- concat halves, so long lists don't copy the same bytes over & over
+-- concat halves, so long lists don't copy the same bytes over & over.
+-- For tables with a metatable, so __index & __len are used
 local function concatrange(t, sep, i, j)
 	if i == j then
 		local v = t[i]
@@ -1536,20 +1632,43 @@ local function concatrange(t, sep, i, j)
 		if ty == 'number' then
 			return v .. ''
 		elseif ty ~= 'string' then
-			_error("invalid value (at index " .. i .. ") in table for 'concat'")
+			_error("invalid value (" .. ty .. ") at index " .. i .. " in table for 'concat'")
 		end
 		return v
 	end
-	local m = (i + j) // 2
+	local m = i + (j - i) // 2
 	return concatrange(t, sep, i, m) .. sep .. concatrange(t, sep, m + 1, j)
 end
-function table.concat(t, sep, i, j)
-	i = i or 1
-	j = j or #t
+local tconcat = _luwa.concat
+function table.concat(...)
+	local t, sep, i, j = ...
+	local argc = _select('#', ...)
+	if _type(t) ~= 'table' then
+		_error("bad argument #1 to 'concat' (table expected, got " .. argtype(t, 1, argc) .. ")")
+	end
+	sep = sep == nil and '' or checkstr(sep, 2, 'concat', argc)
+	i = i == nil and 1 or checkint(i, 3, 'concat', argc)
+	if j == nil then
+		j = #t
+		if math_type(j) ~= 'integer' then
+			_error('object length is not an integer')
+		end
+	else
+		j = checkint(j, 4, 'concat', argc)
+	end
 	if i > j then
 		return ''
 	end
-	return concatrange(t, sep or '', i, j)
+	if debug_getmetatable(t) then
+		return concatrange(t, sep, i, j)
+	end
+	local r, bad = tconcat(t, sep, i, j)
+	if r then
+		return r
+	elseif not bad then
+		_error('not enough memory')
+	end
+	_error("invalid value (" .. _type(_rawget(t, bad)) .. ") at index " .. bad .. " in table for 'concat'")
 end
 
 utf8.charpattern = "[\0-\x7F\xC2-\xFD][\x80-\xBF]*"

@@ -53,6 +53,7 @@ local genesis = func(function(f)
 	f:i32(alloc.corostate.live)
 	f:structset(coro, 'state')
 	f:call(rt.initstatics)
+	f:call(require('stdstr').initclasses)
 end)
 
 -- Sets up the prelude to run, returns _ENV. eval then runs the prelude
@@ -134,7 +135,15 @@ local initPrelude = func(R.tbl, function(f)
 		GS.fdepth, GF._fdepth,
 		GS.slot, GF._slot,
 		GS.reinterp, GF._reinterp,
-		GS.host, GF._host)
+		GS.host, GF._host,
+		GS.strmap, GF._strmap,
+		GS.strrep, GF._strrep,
+		GS.concat, GF._concat,
+		GS.classend, GF._classend,
+		GS.single, GF._single,
+		GS.span, GF._span,
+		GS.scan, GF._scan,
+		GS.findplain, GF._findplain)
 
 	addmod(GS.coroutine,
 		GS.create, GF.coro_create,

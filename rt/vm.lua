@@ -1302,6 +1302,7 @@ defMop('Syscall', function(mop, ctx)
 		local stdcoro = require 'stdcoro'
 		local stddebug = require 'stddebug'
 		local stdmath = require 'stdmath'
+		local stdstr = require 'stdstr'
 
 		-- Each builtin is a wasm func to call, or a function that writes its code inline.
 		-- { sw = fn } is a builtin that may switch frames: fn gets the pc after the syscall
@@ -1358,6 +1359,14 @@ defMop('Syscall', function(mop, ctx)
 			_host = std.host,
 			table_unpack = std.table_unpack,
 			_lex = std.lexgen,
+			_strmap = stdstr.strmap,
+			_strrep = stdstr.strrep,
+			_concat = stdstr.concat,
+			_classend = stdstr.classend,
+			_single = stdstr.single,
+			_span = stdstr.span,
+			_scan = stdstr.scan,
+			_findplain = stdstr.findplain,
 			_random = function()
 				f:call(rt.random)
 				f:call(alloc.newf64)
