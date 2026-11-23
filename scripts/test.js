@@ -174,7 +174,7 @@ const cases = [
 	["return select(2, pcall(load('local s return 1 + s', '=c')))", "c:1: attempt to perform arithmetic on a nil value (local 's')"],
 	["return select(2, pcall(load('local s return #s', '=c')))", "c:1: attempt to get length of a nil value (local 's')"],
 	["return select(2, pcall(require, 'no.such.mod')):sub(1, 6)", "module"],
-	["return select(2, load('x = = 1', '=c'))", "c:1: syntax error near '='"],
+	["return select(2, load('x = = 1', '=c'))", "c:1: unexpected symbol near '='"],
 	["return select(2, load('local x <const> = 1\\nx = 2', '=c'))", "c:2: attempt to assign to const variable 'x'"],
 	// debug info
 	["return debug.getinfo(1, 'l').currentline", 1],

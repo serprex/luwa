@@ -66,7 +66,7 @@ return {
 	ErrNNil = 64,
 	ForPrep = 65,
 	ForLoop = 66,
-	-- A compare & the Jif or JifNot right after it, see bcgen's push
+	-- A compare & the Jif or JifNot right after it, see lcode.lua's emitop
 	JifLt = 67,
 	JifLe = 68,
 	JifGt = 69,

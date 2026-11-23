@@ -1,6 +1,5 @@
-local astgen = require 'astgen'
-local bcgen = require 'bcgen'
-
+-- The prelude's bytecode, compiled by scripts/luac.js. Gives the static objects rt.lua makes:
+-- each constant once, then each function after what it uses, as { name, paramc, isdotdotdot, bc, consts, localc }
 return function(...)
 	local result = {}
 	local prevsult = {
@@ -8,91 +7,51 @@ return function(...)
 		float = {},
 		string = {},
 	}
-
 	local funcnums, funcprefix
-	local strconst = {}
-	local function func2lua(func, toplevel)
-		local name = funcprefix .. funcnums
-		funcnums = funcnums + 1
-		local subfuncs = {}
-		local consts = {}
-		for i=1, #func.consts do
-			local c = func.consts[i]
-			local ct = math.type(c) or type(c)
-			consts[#consts+1] = strconst[ct](c)
-		end
-		if #consts == 0 then
-			consts = nil
-		end
-		result[#result+1] = {
-			name,
-			#func.params,
-			func.isdotdotdot,
-			string.char(table.unpack(func.bc)),
-			consts,
-			#func.locals,
-		}
-		return name
-	end
-	function strconst.integer(c)
-		if prevsult.integer[c] then
-			return prevsult.integer[c]
-		else
-			local pack = string.pack('<i8', c)
+	local func2lua
+	local function konst(kind, c)
+		local key = kind == 'integer' and string.pack('<i8', c) or kind == 'float' and string.pack('<d', c) or c
+		if not prevsult[kind][key] then
 			result[#result+1] = c
-			prevsult.integer[c] = function() return GN.integer[pack] end
-			return prevsult.integer[c]
-		end
-	end
-	function strconst.float(c)
-		if prevsult.float[c] then
-			return prevsult.float[c]
-		else
-			local pack = string.pack('<d', c)
-			result[#result+1] = c
-			prevsult.float[c] = function() return GN.float[pack] end
-			return prevsult.float[c]
-		end
-	end
-	function strconst.string(c)
-		if prevsult.string[c] then
-			return prevsult.string[c]
-		else
-			result[#result+1] = c
-			prevsult.string[c] = function() return GS[c] end
-			return prevsult.string[c]
-		end
-	end
-	function strconst.table(c)
-		local pack = func2lua(c)
-		return function() return GF[pack] end
-	end
-	local lexers = {}
-	for i=1,select('#', ...) do
-		local srcfile = select(i, ...)
-		lexers[srcfile] = io.popen("./scripts/luac-lex.js '" .. srcfile:gsub("'", "'\\''") .. "'")
-	end
-	for i=1,select('#', ...) do
-		local srcfile = select(i, ...)
-		local data = lexers[srcfile]:read('a')
-		local lx, offs = string.unpack('<s4', data)
-		local vlen, offs = string.unpack('<i4', data, offs)
-		local vals = {}
-		for i=1,vlen do
-			local ty = data:byte(offs)
-			if ty == 0 then
-				vals[i], offs = string.unpack('<i8', data, offs+1)
-			elseif ty == 1 then
-				vals[i], offs = string.unpack('<d', data, offs+1)
+			if kind == 'string' then
+				prevsult[kind][key] = function() return GS[c] end
 			else
-				vals[i], offs = string.unpack('<s4', data, offs+1)
+				prevsult[kind][key] = function() return GN[kind][key] end
 			end
 		end
-
+		return prevsult[kind][key]
+	end
+	function func2lua(fn)
+		local name = funcprefix .. funcnums
+		funcnums = funcnums + 1
+		local consts = {}
+		for i, k in ipairs(fn.k) do
+			if k[1] == 's' then
+				consts[i] = konst('string', k[2])
+			elseif k[1] == 'i' then
+				consts[i] = konst('integer', (string.unpack('<i8', k[2])))
+			elseif k[1] == 'f' then
+				consts[i] = konst('float', (string.unpack('<d', k[2])))
+			else
+				local sub = func2lua(k[2])
+				consts[i] = function() return GF[sub] end
+			end
+		end
+		result[#result+1] = { name, fn.p, fn.v, fn.b, #consts > 0 and consts or nil, fn.l }
+		return name
+	end
+	local args = {}
+	for i = 1, select('#', ...) do
+		args[i] = "'" .. select(i, ...):gsub("'", "'\\''") .. "'"
+	end
+	require('make').dep('scripts/luac.js', 'scripts/comp.wasm', ...)
+	local h = io.popen('node scripts/luac.js ' .. table.concat(args, ' '))
+	local fns = load(h:read('a'))()
+	assert(h:close(), 'scripts/luac.js failed')
+	for i = 1, select('#', ...) do
 		funcnums = 0
-		funcprefix = srcfile:gsub('^.*/(.*)%.lua$', '%1')
-		print(funcprefix)
-		func2lua(bcgen(astgen(lx, vals)))
+		funcprefix = select(i, ...):gsub('^.*/(.*)%.lua$', '%1')
+		func2lua(fns[i])
 	end
 	return result
 end

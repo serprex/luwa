@@ -1112,7 +1112,43 @@ local std_lexgen = func(function(f)
 	f:call(tmppush)
 end)
 
+-- _luwa.compile(src, source, short, tbcpush, tbcclose, vargunpack): the main function of src.
+-- On a compile error: false, then the error's code, line, s, e, tok, n, n2, arg & arg2 (see lparse.lua)
+local std_compile = func(function(f)
+	local lparse = require 'lparse'
+	local fn = f:locals(V)
+	loadparam(f, 0)
+	f:refcast(R.str)
+	loadparam(f, 1)
+	loadparam(f, 2)
+	f:i32(1)
+	loadparam(f, 3)
+	loadparam(f, 4)
+	loadparam(f, 5)
+	f:call(lparse.compile)
+	f:tee(fn)
+	f:refisnull()
+	f:iff(function()
+		alloc.lfalse(f)
+		f:call(tmppush)
+		for _, n in ipairs{ 'code', 'line', 's', 'e', 'tok', 'n', 'n2' } do
+			f:loadg(lparse.errs[n])
+			f:i64extends()
+			f:call(newi64)
+			f:call(tmppush)
+		end
+		f:loadg(lparse.errs.arg)
+		f:call(tmppush)
+		f:loadg(lparse.errs.arg2)
+		f:call(tmppush)
+		f:ret()
+	end)
+	f:load(fn)
+	f:call(tmppush)
+end)
+
 return {
+	compile = std_compile,
 	error = std_error,
 	next = std_next,
 	pcall = std_pcall,

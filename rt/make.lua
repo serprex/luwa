@@ -341,6 +341,7 @@ local function mod()
 		_start = nil,
 		_code = {},
 		_data = {},
+		_tag = {},
 		_declfunc = {},
 		fcache = {},
 		ids = {},
@@ -1233,6 +1234,29 @@ function funcmeta:retcallref(fty)
 	self:unreach()
 end
 
+-- Exceptions. throw: the tag's params on the stack
+function funcmeta:throw(tag)
+	self:popts(tag.fty.params)
+	self:emit(0x08)
+	self:emituint(self.mod:tag(tag))
+	self:unreach()
+end
+-- try_table with one catch_all: an exception thrown in block() goes to the end of scope caught,
+-- a block around this one. block takes & gives nothing
+function funcmeta:trytable(caught, block)
+	caught = self:labelidx(caught)
+	assert(#self:labeltypes(caught) == 0, 'catch_all target takes no values')
+	self:emit(0x1f)
+	self:emitblockty({}, {})
+	self:emituint(1)
+	self:emit(0x02)
+	self:emituint(self.scope - caught)
+	self:pushscope('block', {}, {})
+	block(self.scope)
+	self:popscope()
+	self:emit(0x0b)
+end
+
 -- References
 
 function funcmeta:refnull(h)
@@ -1639,6 +1663,16 @@ local function memory(sz, mxsz)
 	return { sz = sz, mxsz = mxsz, ismem = true }
 end
 
+-- Tag, for exceptions. fty is a func type with no results
+
+local function tag(fty)
+	assert(fty.isdef and fty.kind == 'func' and #fty.results == 0)
+	return { istag = true, fty = fty }
+end
+function modmeth:tag(t)
+	return pushid(self._tag, t)
+end
+
 -- Global
 
 function modmeth:global(globe)
@@ -1803,6 +1837,9 @@ function modmeth:compile()
 		local exp = self._export[i]
 		if exp.kind == 0 then
 			self:func(exp.obj)
+		elseif exp.kind == 3 then
+			-- before the global section is written
+			self:global(exp.obj)
 		end
 	end
 	if self._start then
@@ -1842,6 +1879,13 @@ function modmeth:compile()
 	sec[5] = loopSection(self._memory, function(bc, mem)
 		encode_limits(bc, mem.sz, mem.mxsz)
 	end)
+
+	if #self._tag > 0 then
+		sec[13] = loopSection(self._tag, function(bc, t)
+			bc[#bc+1] = 0
+			encode_varuint(bc, self:typeidx(t.fty))
+		end)
+	end
 
 	-- a global's init can add more globals, so loop by index
 	do
@@ -1944,7 +1988,7 @@ function modmeth:compile()
 	end)
 
 	-- data count (12) goes before code (10)
-	local order = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 10, 11 }
+	local order = { 1, 2, 3, 4, 5, 13, 6, 7, 8, 9, 12, 10, 11 }
 	for i = 1, #order do
 		local id = order[i]
 		if sec[id] then
@@ -2044,7 +2088,32 @@ local refs = {
 }
 anyfunc = refs.funcref
 
+-- Files a generator reads besides its Lua modules, for depfile
+local deps = {}
+local function dep(...)
+	for i = 1, select('#', ...) do
+		deps[#deps+1] = select(i, ...)
+	end
+end
+-- Writes out.d for ninja: every rt/ module loaded so far, plus files given to dep
+local function depfile(out)
+	local files = {}
+	for name in pairs(package.loaded) do
+		local path = package.searchpath(name, package.path)
+		if path and path:sub(1, 3) == 'rt/' then
+			files[#files+1] = path
+		end
+	end
+	for _, f in ipairs(deps) do
+		files[#files+1] = f
+	end
+	table.sort(files)
+	io.open(out .. '.d', 'w'):write(out, ': ', table.concat(files, ' '), '\n'):close()
+end
+
 return {
+	dep = dep,
+	depfile = depfile,
 	i32 = i32,
 	i64 = i64,
 	f32 = f32,
@@ -2077,6 +2146,7 @@ return {
 	func = func,
 	namefuncs = namefuncs,
 	global = global,
+	tag = tag,
 	data = data,
 	passivedata = passivedata,
 	memory = memory,

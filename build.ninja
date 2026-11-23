@@ -1,10 +1,12 @@
 rule mkrt
  command=./rt/mkrt.lua
-rule mklex
- command=./rt/mklex.lua
-rule mkboot
- command=./scripts/luac.lua $out $in
-build scripts/lex.wasm:mklex | rt/_lex.lua rt/_float.lua rt/alloc.lua rt/obj.lua rt/_table.lua rt/stack.lua rt/jsapi.lua rt/make.lua rt/mklex.lua rt/lex.lua
-build bootrt.lua:mkboot rt/prelude.lua | scripts/luac.lua scripts/luac-lex.js scripts/lex.wasm rt/bcgen.lua rt/bc.lua rt/lex.lua rt/ast.lua rt/astgen.lua
-build rt.wasm:mkrt | rt/microbc.lua rt/frame.lua rt/alloc.lua rt/rt.lua rt/sys.lua rt/stack.lua rt/obj.lua rt/std.lua rt/stdstr.lua rt/stdcoro.lua rt/stddebug.lua rt/stdmath.lua rt/_string.lua rt/_float.lua rt/_table.lua rt/util.lua rt/vm.lua rt/env.lua rt/jsapi.lua rt/jit.lua rt/_lex.lua rt/make.lua rt/mkrt.lua rt/bootrt.lua scripts/lex.wasm rt/astgen.lua rt/bcgen.lua rt/ast.lua rt/bc.lua rt/lex.lua rt/prelude.lua
+ depfile=$out.d
+ deps=gcc
+rule mkcomp
+ command=./rt/mkcomp.lua
+ depfile=$out.d
+ deps=gcc
+build scripts/comp.wasm:mkcomp | rt/mkcomp.lua
+# comp.wasm is listed so it gets built first, the depfile alone doesn't order builds
+build rt.wasm:mkrt | rt/mkrt.lua scripts/comp.wasm
 default rt.wasm

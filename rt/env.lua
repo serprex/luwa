@@ -111,11 +111,7 @@ local initPrelude = func(R.tbl, function(f)
 		GS._VERSION, GS[rt.Version])
 	addfun(addkv2luwa,
 		GS.lexgen, GF._lex,
-		GS.astgen, GF.astgen0,
-		GS.bcgen, GF.bcgen0,
-		GS.lex, GF.lex0,
-		GS.ast, GF.ast0,
-		GS.bc, GF.bc0,
+		GS.compile, GF._compile,
 		GS.fn_new, GF._fn_new,
 		GS.fn_set_localc, GF._fn_set_localc,
 		GS.fn_set_paramc, GF._fn_set_paramc,

@@ -1,8 +1,6 @@
 .ninja_*
-rt.wasm
-scripts/lex.wasm
-./bootrt.lua
+*.wasm
+*.wasm.d
 lua-*-tests/
-bench/lua.wasm
 lua-5.5.1/
 wasi-sdk/

@@ -1,5 +1,4 @@
 import mkrt from './rt.js';
-import { fromUtf8 } from './util.js';
 
 const taBoard = document.getElementById('taBoard');
 const prOut = document.getElementById('prOut');
@@ -7,7 +6,7 @@ prOut.textContent = '';
 
 // Turn a value from obj2js into text for prOut
 function show(v) {
-	if (v instanceof Uint8Array) return fromUtf8(v);
+	if (v instanceof Uint8Array) return new TextDecoder().decode(v);
 	if (typeof v === 'bigint') return v + 'n';
 	if (v && v.hash instanceof Map) return 'table';
 	if (v && v.function) return 'function';

@@ -1,5 +1,4 @@
 // rt.wasm keeps Lua values as WasmGC objects, so JS holds them directly
-import * as util from './util.js';
 
 const wasmurl = new URL('rt.wasm', import.meta.url);
 const isnode = typeof process !== 'undefined' && process.versions && process.versions.node;
@@ -93,7 +92,7 @@ FFI.prototype.newtbl = function() {
 	return this.mod.newtbl();
 }
 FFI.prototype.newstr = function(s) {
-	if (typeof s === "string") s = util.asUtf8(s);
+	if (typeof s === "string") s = new TextEncoder().encode(s);
 	const o = this.mod.newstr(s.length);
 	for (let i = 0; i < s.length; i++) {
 		this.mod.strset(o, i, s[i]);

@@ -761,7 +761,7 @@ op(bc.ReturnVarg, function(b)
 	b:VargPush()
 	b:Ret()
 end)
--- bcgen puts a Return after these, for when the function isn't a Lua one & gets a normal call
+-- the compiler puts a Return after these, for when the function isn't a Lua one & gets a normal call
 op(bc.ReturnCall, function(b) b:CallChain('norm', false, true) end)
 op(bc.ReturnCallVarg, function(b) b:CallChain('norm', true, true) end)
 

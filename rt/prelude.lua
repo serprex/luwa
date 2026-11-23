@@ -2201,10 +2201,10 @@ end
 _error = error
 
 -- To-be-closed variables. Each coroutine has a list of the values of its <close> variables in scope:
--- l[2i-1] is a value, l[2i] the frame count when it was declared. bcgen emits calls to tbcpush & tbcclose
+-- l[2i-1] is a value, l[2i] the frame count when it was declared. The compiler emits calls to tbcpush & tbcclose
 local tbclists = {}
 local fdepth = _luwa.fdepth
--- local x <close> = v, after v is stored. nil & false are kept too, so bcgen's counts stay right
+-- local x <close> = v, after v is stored. nil & false are kept too, so the compiler's counts stay right
 function tbcpush(v, name)
 	if v ~= nil and v ~= false then
 		local mt = debug_getmetatable(v)
@@ -2670,24 +2670,7 @@ local function chunkid(src)
 	return '[string "' .. l .. '..."]'
 end
 
-local fakereqtbl = {
-	ast = _luwa.ast,
-	bc = _luwa.bc,
-	lex =  _luwa.lex,
-	astgen = _luwa.astgen,
-	bcgen = _luwa.bcgen,
-}
-local fakereqcache = {}
-local fakereqenv
-local function fakereq(s)
-	local fs = fakereqcache[s]
-	if not fs then
-		fs = fakereqtbl[s](fakereqenv)
-		fakereqcache[s] = fs
-	end
-	return fs
-end
--- In a function with a named vararg table t, ... reads t[1..t.n]. bcgen emits calls to this
+-- In a function with a named vararg table t, ... reads t[1..t.n]. The compiler emits calls to this
 local function vargunpack(t)
 	local n = _rawget(t, 'n')
 	if math_type(n) ~= 'integer' or n < 0 or n > 0x3fffffff then
@@ -2695,84 +2678,55 @@ local function vargunpack(t)
 	end
 	return table_unpack(t, 1, n)
 end
-fakereqenv = {
-	_vargunpack = vargunpack,
-	_tbcpush = tbcpush,
-	_tbcclose = tbcclose,
-	assert = _assert,
-	-- compile errors carry their own position
-	error = rawerror,
-	tostring = _tostring,
-	getmetatable = _getmetatable,
-	ipairs = ipairs,
-	pairs = _pairs,
-	pcall = _pcall,
-	require = fakereq,
-	select = _select,
-	setmetatable = setmetatable,
-	type = type,
-	coroutine = {
-		wrap = coroutine.wrap,
-		yield = coroutine.yield,
-	},
-	math = {
-		type = math_type,
-		max = math.max,
-	},
-	string = {
-		byte = string.byte,
-		match = string.match,
-		pack = string.pack,
-		unpack = string.unpack,
-	},
-	table = {
-		insert = table.insert,
-		remove = table.remove,
-		sort = table.sort,
-		unpack = table_unpack,
-	},
-}
-local astgen = fakereq('astgen')
-local bcgen = fakereq('bcgen')
 
--- Make a function object from bcgen's output.
--- Nested functions are bcgen tables in consts, turn those into function objects too.
--- LoadFunc copies these and fills in frees
--- src & short are the chunk's source name & how messages show it
-local function asm2fn(asm, src, short, main)
-	local fn = _luwa.fn_new()
-	_luwa.fn_set_info(fn, {
-		source = src,
-		short_src = short,
-		what = main and 'main' or 'Lua',
-		linedefined = main and 0 or asm.linedefined or -1,
-		lastlinedefined = main and 0 or asm.lastlinedefined or -1,
-		-- pc, line pairs & pc -> operand names, from bcgen
-		lines = asm.lineinfo,
-		names = asm.opnames,
-		name = asm.fname,
-		-- the main chunk's _ENV param is an upvalue in C Lua
-		nparams = main and 0 or #asm.params,
-		isvararg = asm.isdotdotdot,
-		nups = main and 1 or #asm.freenames,
-		upnames = main and { '_ENV' } or asm.freenames,
-		-- { name, isparam, slot index, startpc, endpc } for debug.getlocal
-		locvars = asm.locvars,
-	})
-	_luwa.fn_set_localc(fn, #asm.locals)
-	_luwa.fn_set_paramc(fn, #asm.params)
-	_luwa.fn_set_isdotdotdot(fn, asm.isdotdotdot)
-	_luwa.fn_set_bc(fn, string_char(table_unpack(asm.bc)))
-	local consts = {}
-	for i=1, #asm.consts do
-		local c = asm.consts[i]
-		if type(c) == 'table' then
-			c = asm2fn(c, src, short)
-		end
-		consts[i] = c
+-- Token text for compile errors, by the lexer's token bytes (lex.lua)
+local toknames = { [0] = '<eof>', [64] = '<name>', [128] = '<string>', [192] = '<number>',
+	'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local',
+	'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
+	'+', '-', '*', '/', '%', '^', '#', '&', '~', '|', '<<', '>>', '//', '==', '~=', '<', '>', '<=', '>=', '=',
+	'(', ')', '{', '}', '[', ']', '::', ';', ':', ',', '.', '..', '...',
+}
+local function tokstr(t)
+	local s = toknames[t]
+	if t == 0 or t >= 64 then
+		return s
 	end
-	_luwa.fn_set_consts(fn, _luwa.vec_new(table_unpack(consts)))
-	return fn
+	return "'" .. s .. "'"
+end
+-- Messages of compile errors from _luwa.compile, by code (see lcode.lua). arg & arg2 are names, n a line
+local semerrors = {
+	[10] = function(a) return "attempt to assign to const variable '" .. a .. "'" end,
+	[11] = function(a) return "variable '" .. a .. "' not declared" end,
+	[12] = function(a) return "_ENV is global when accessing variable '" .. a .. "'" end,
+	[13] = function(a) return "unknown attribute '" .. a .. "'" end,
+	[14] = function() return 'multiple to-be-closed variables in local list' end,
+	[15] = function() return 'global variables cannot be to-be-closed' end,
+	[16] = function(a) return "label '" .. a .. "' already defined" end,
+	[17] = function() return 'break outside of loop' end,
+	[18] = function(a) return "no visible label '" .. a .. "' for goto" end,
+	[19] = function(a, a2, n) return '<goto ' .. a .. '> at line ' .. n .. " jumps into the scope of '" .. a2 .. "'" end,
+	[20] = function() return "cannot use '...' outside a vararg function" end,
+}
+local function compileerror(chunk, src, code, line, s, e, tok, n, n2, arg, arg2)
+	if code == 4 then
+		return lexerror(chunk, src, n, s, e)
+	end
+	local msg
+	if code >= 10 then
+		msg = semerrors[code](arg, arg2, n)
+	else
+		local near = e < 0 and '<eof>' or "'" .. string_sub(src, s + 1, e) .. "'"
+		if code == 1 or (code == 3 and n == line) then
+			msg = tokstr(tok) .. ' expected near ' .. near
+		elseif code == 3 then
+			msg = tokstr(tok) .. ' expected (to close ' .. tokstr(n2) .. ' at line ' .. n .. ') near ' .. near
+		elseif code == 2 then
+			msg = 'unexpected symbol near ' .. near
+		else
+			msg = 'syntax error near ' .. near
+		end
+	end
+	return chunk .. ':' .. line .. ': ' .. msg
 end
 
 local function _load(src, name, mode, env)
@@ -2792,19 +2746,10 @@ local function _load(src, name, mode, env)
 		src = table.concat(parts)
 	end
 	local short = chunkid(name)
-	local lx, vals, lines, errend = _luwa.lexgen(src)
-	if not lx then
-		return nil, lexerror(short, src, vals, lines, errend)
+	local fn, code, line, s, e, tok, n, n2, arg, arg2 = _luwa.compile(src, name, short, tbcpush, tbcclose, vargunpack)
+	if not fn then
+		return nil, compileerror(short, src, code, line, s, e, tok, n, n2, arg, arg2)
 	end
-	local ok, root = _pcall(astgen, lx, vals, lines, short)
-	if not ok then
-		return nil, root
-	end
-	local ok, asm = _pcall(bcgen, root, short)
-	if not ok then
-		return nil, asm
-	end
-	local fn = asm2fn(asm, name, short, true)
 	_luwa.fn_set_frees(fn, _luwa.vec_new(env or _ENV))
 	-- compiled chunks take _ENV as their first param, like the prelude does
 	-- TODO make _ENV the chunk's first free instead, saving this extra call

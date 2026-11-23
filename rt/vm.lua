@@ -1448,6 +1448,7 @@ defMop('Syscall', function(mop, ctx)
 			_host = std.host,
 			table_unpack = std.table_unpack,
 			_lex = std.lexgen,
+			_compile = std.compile,
 			_strmap = stdstr.strmap,
 			_strrep = stdstr.strrep,
 			_concat = stdstr.concat,

@@ -40,7 +40,7 @@ jobs:
       # copy the files index.html needs into one folder for github pages
       - name: pages bundle
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-        run: mkdir _site && cp index.html ui.js rt.js util.js rt.wasm _site/
+        run: mkdir _site && cp index.html ui.js rt.js rt.wasm _site/
 
       - uses: actions/upload-pages-artifact@v5
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'

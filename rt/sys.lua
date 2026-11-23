@@ -63,4 +63,5 @@ return {
 	'_fltdigits',
 	'_fmtint',
 	'_findplain',
+	'_compile',
 }

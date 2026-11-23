@@ -25,10 +25,7 @@ GS = {}
 GF = {}
 
 local function doboot()
-	return table.unpack(require('bootrt')(
-		'./rt/prelude.lua',
-		'./rt/astgen.lua', './rt/bcgen.lua',
-		'./rt/ast.lua', './rt/bc.lua', './rt/lex.lua'))
+	return table.unpack(require('bootrt')('./rt/prelude.lua'))
 end
 
 -- Static object list, in creation order: { kind, global, data... }
@@ -125,7 +122,7 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	'index', 'arith', 'bitwise', 'concat', 'compare', 'len', 'xpcall', 'defined', 'overflow', 'for',
 	'error in error handling',
 	-- begin _luwa fields
-	'lexgen', 'astgen', 'bcgen', 'lex', 'ast', 'bc',
+	'lexgen', 'compile',
 	'vec_new', 'random', 'objid', 'sub', 'reinterp', 'host', 'unpack',
 	'fn_new', 'fn_set_localc', 'fn_set_paramc', 'fn_set_isdotdotdot',
 	'fn_set_bc', 'fn_set_frees', 'fn_set_consts', 'fn_set_info', 'fn_info', 'frame', 'seterrfns', 'upvalid', 'upval', 'fdepth', 'slot',
@@ -170,6 +167,7 @@ addStatics('float', 'integer', 'normal', 'suspended', 'running', 'dead', 'file',
 	{'_vec_new', 0, true, SYS'_vec_new' .. RET},
 	{'_fn_new', 0, false, SYS'_fn_new' .. RET},
 	{'_lex', 1, false, SYS'_lex' .. RET},
+	{'_compile', 6, false, SYS'_compile' .. RET},
 	{'_random', 0, false, SYS'_random' .. RET},
 	{'_objid', 1, false, SYS'_objid' .. RET},
 	{'_upvalid', 2, false, SYS'_upvalid' .. RET},

@@ -90,4 +90,6 @@ end
 local chunks = mod:compile()
 
 -- output file is rt.wasm, or the first arg
-io.open(... or 'rt.wasm', 'w'):write(table.unpack(chunks)):close()
+local out = ... or 'rt.wasm'
+io.open(out, 'w'):write(table.unpack(chunks)):close()
+M.depfile(out)
