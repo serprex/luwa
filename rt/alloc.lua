@@ -57,6 +57,14 @@ tbl:define{
 	{ M.ref(vals), mut = true, name = 'hash' },
 	{ M.refnull(tbl), mut = true, name = 'meta' },
 }
+-- JIT'd code for a function: (base, locbase, pc, bc, consts, frees) -> 0 when it switched frames,
+-- 1 when the main function returned, 2 when it ran out of budget
+local jitfty = M.functype({ i32, i32, i32, M.refnull(bytes), M.refnull(vals), M.refnull(vals) }, { i32 })
+-- Shared by a proto & its closures: how often it ran, & its JIT'd code once there is some
+local jitcell = M.struct({
+	{ i32, mut = true, name = 'hot' },
+	{ M.refnull(jitfty), mut = true, name = 'code' },
+}, { name = 'jitcell' })
 local functy = M.struct({
 	{ i8, name = 'type' },
 	{ i32, name = 'id' },
@@ -68,6 +76,7 @@ local functy = M.struct({
 	{ i32, mut = true, name = 'paramc' },
 	-- Lua table from load: source, name, line table & such, for errors & debug. nil for builtins
 	{ V, mut = true, name = 'info' },
+	{ M.refnull(jitcell), mut = true, name = 'jit' },
 }, { name = 'functy', super = idobj })
 -- Growable lists: the Lua value stack, and the call frames (8 i32s each, see frame.lua)
 local stack = M.struct({
@@ -104,6 +113,8 @@ local R = {
 	idobj = M.refnull(idobj),
 	tbl = M.refnull(tbl),
 	functy = M.refnull(functy),
+	jitcell = M.refnull(jitcell),
+	jitfty = M.refnull(jitfty),
 	stack = M.refnull(stack),
 	frames = M.refnull(frames),
 	coro = M.refnull(coro),
@@ -253,6 +264,13 @@ local newtbl = func(M.ref(tbl), function(f)
 	f:structnew(tbl)
 end)
 
+-- A fresh jitcell, for a new function that isn't a closure of another
+local function newjitcell(f)
+	f:i32(0)
+	f:refnull(jitfty)
+	f:structnew(jitcell)
+end
+
 local newfunc = func(M.ref(functy), function(f)
 	f:i32(types.functy)
 	f:call(nextid)
@@ -263,6 +281,7 @@ local newfunc = func(M.ref(functy), function(f)
 	f:i32(0)
 	f:i32(0)
 	f:refnull(M.heap.eq)
+	newjitcell(f)
 	f:structnew(functy)
 end)
 
@@ -309,6 +328,9 @@ return {
 	idobj = idobj,
 	tbl = tbl,
 	functy = functy,
+	jitfty = jitfty,
+	jitcell = jitcell,
+	newjitcell = newjitcell,
 	stack = stack,
 	frames = frames,
 	coro = coro,

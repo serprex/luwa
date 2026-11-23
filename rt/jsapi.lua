@@ -133,7 +133,16 @@ local fninfo = func(V, V, function(f, fn)
 	end)
 end)
 
+-- For rt.js's JIT: give a function its code
+local jitset = func(R.functy, R.jitfty, void, function(f, fn, code)
+	f:load(fn)
+	f:structget(alloc.functy, 'jit')
+	f:load(code)
+	f:structset(alloc.jitcell, 'code')
+end)
+
 return {
+	jitset = jitset,
 	framelen = framelen,
 	framefield = framefield,
 	stackget = stackget,

@@ -231,6 +231,7 @@ local initstatics = func(function(f)
 			f:i32(localc)
 			f:i32(paramc)
 			f:refnull(M.heap.eq)
+			alloc.newjitcell(f)
 			f:structnew(functy)
 		end
 		f:storeg(g)
@@ -252,6 +253,8 @@ local log = importfunc('', 'log', f64, f64)
 local pow = importfunc('', 'pow', f64, f64, f64)
 -- op, a, b -> result. rt.js has the ops
 local host = importfunc('', 'host', V, V, V, V)
+-- fn got hot: rt.js has it joined (jit.lua) & compiled, now or soon, & gives it code with jitset
+local jitreq = importfunc('', 'jitreq', R.functy, void)
 
 return {
 	initstatics = initstatics,
@@ -268,5 +271,6 @@ return {
 	log = log,
 	pow = pow,
 	host = host,
+	jitreq = jitreq,
 	Version = Version,
 }

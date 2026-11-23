@@ -94,6 +94,59 @@ local function typeofv(f, v)
 	alloc.typeofst(f)
 end
 
+-- Calls & jumps back to a function count towards compiling it. Past JITHOT the host is asked to.
+-- Gives the function's JIT'd code, or null while it has none
+local JITHOT = 500
+local hotcode = func(R.functy, R.jitfty, function(f, fn)
+	local cell = f:locals(R.jitcell)
+	local code = f:locals(R.jitfty)
+	local n = f:locals(i32)
+	f:load(fn)
+	f:structget(functy, 'jit')
+	f:tee(cell)
+	f:refisnull()
+	f:iff(function()
+		f:refnull(alloc.jitfty)
+		f:ret()
+	end)
+	f:load(cell)
+	f:structget(alloc.jitcell, 'code')
+	f:tee(code)
+	f:refisnull()
+	f:eqz()
+	f:iff(function()
+		f:load(code)
+		f:ret()
+	end)
+	f:load(cell)
+	f:load(cell)
+	f:structget(alloc.jitcell, 'hot')
+	f:i32(1)
+	f:add()
+	f:tee(n)
+	f:structset(alloc.jitcell, 'hot')
+	f:load(n)
+	f:i32(JITHOT)
+	f:eq()
+	f:iff(function()
+		f:load(fn)
+		f:call(rt.jitreq)
+	end)
+	f:refnull(alloc.jitfty)
+end)
+
+-- Go on to the next op. In the interpreter that's the end of eval's switch.
+-- In JIT code it's a gap the JIT fills with a branch to the next op's code
+local function brnop(f, ctx, scopes)
+	if ctx.jit then
+		f:gap{ kind = 'nop', inner = f.scope - ctx.jitroot }
+		f:unreach()
+		ctx.js.dead = true
+	else
+		f:br(scopes.nop)
+	end
+end
+
 local mopcomp = {}
 local function isfloat(mty)
 	return mty == 'f32' or mty == 'f64'
@@ -290,6 +343,7 @@ local function mkcgctx(f, L)
 		locbase = { r = L.locbase },
 		consts = { r = L.consts },
 		frees = { r = L.frees },
+		fn = { r = L.fn },
 	}
 end
 local function genOp(ctx, op)
@@ -313,6 +367,10 @@ local function genOp(ctx, op)
 	return function(scopes)
 		local f = ctx.f
 		emitOp(subctx, scopes, f)
+		-- JIT code falls through to the next op, which sets pc itself
+		if ctx.jit then
+			return
+		end
 		-- SetPc branches out before this, so jumps skip it
 		if argoffset > 0 then
 			f:load(ctx.pc.r)
@@ -467,7 +525,16 @@ callmop('FltObjFromFlt', alloc.newf64)
 defEmit('Flt64Int', function(f) f:i64truncs() end)
 defEmit('Int64Flt', function(f) f:f64converts() end)
 -- Push & Pop are written out here rather than calling tmppush & tmppop, the engine doesn't inline them into eval
+-- In JIT code they're gaps, see jitpieces
 defEmit('Push', {'obj', 'i32'}, function(f, mop, ctx, v, n)
+	local js = ctx.js
+	if js then
+		f:gap{ kind = 'push', sp = js.sp }
+		f:pop()
+		js.sp = js.sp + 1
+		js.top = math.max(js.top, js.sp)
+		return
+	end
 	f:store(v)
 	stackfield(f, 'len')
 	f:tee(n)
@@ -488,6 +555,14 @@ defEmit('Push', {'obj', 'i32'}, function(f, mop, ctx, v, n)
 	f:structset(stack, 'len')
 end)
 defEmit('Pop', {'i32', 'vals'}, function(f, mop, ctx, n, a)
+	local js = ctx.js
+	if js then
+		f:gap{ kind = 'pop', sp = js.sp }
+		f:push(V)
+		js.sp = js.sp - 1
+		js.low = math.min(js.low, js.sp)
+		return
+	end
 	stackfield(f, 'arr')
 	f:tee(a)
 	stackfield(f, 'len')
@@ -503,31 +578,93 @@ defEmit('Pop', {'i32', 'vals'}, function(f, mop, ctx, n, a)
 	f:load(n)
 	f:structset(stack, 'len')
 end)
-defEmit('Peek', function(f)
+defEmit('Peek', function(f, mop, ctx)
+	local js = ctx.js
+	if js then
+		f:gap{ kind = 'peek', sp = js.sp }
+		f:push(V)
+		js.low = math.min(js.low, js.sp - 1)
+		return
+	end
 	f:i32(1)
 	f:call(nthtmp)
 end)
+-- Where a SetPc goes, for the JIT: { 'arg', k } is the 4 byte arg k bytes past the opcode,
+-- { 'pc', k } is k bytes past the opcode
+local function jittarget(node)
+	local m = microbc.mops
+	if node.op == m.Arg then
+		return { 'arg', node[1] * 4 }
+	elseif node.op == m.ArgAt then
+		return { 'arg', node[1] }
+	elseif node.op == m.Add and node[1].op == m.Pc and node[2].op == m.Int then
+		return { 'pc', node[2][1] }
+	end
+	error('SetPc: the JIT needs a target read from the bytecode')
+end
 defMop('SetPc', function(mop, ctx)
+	if ctx.jit then
+		-- the JIT makes this a branch to the target op
+		local t = jittarget(mop[1])
+		cg(ctx, function(f)
+			f:gap{ kind = 'jmp', t[1], t[2], inner = f.scope - ctx.jitroot, sp = ctx.js.sp }
+			f:unreach()
+			ctx.js.dead = true
+		end)
+		return
+	end
+	local r = newreg(ctx, 'i32')
 	resolve(ctx, mop[1])
 	cg(ctx, function(f, scopes)
+		f:tee(r.r)
+		f:load(ctx.pc.r)
+		f:ltu()
+		f:iff(function()
+			-- a jump back: go to the JIT'd code once there is some, it can start at any op
+			f:load(ctx.fn.r)
+			f:call(hotcode)
+			f:refisnull()
+			f:eqz()
+			f:iff(function()
+				setf(f, 'pc', function() f:load(r.r) end)
+				f:br(ctx.reload)
+			end)
+		end)
+		f:load(r.r)
 		f:store(ctx.pc.r)
 		f:br(scopes.nop)
 	end)
 end)
--- Arg n is the nth 4 byte arg after the opcode. pc already points past the opcode
+-- Arg n is the nth 4 byte arg after the opcode. pc already points past the opcode.
+-- The JIT puts in the value from the bytecode
 defEmit('Arg', function(f, mop, ctx)
+	if ctx.jit then
+		f:gap{ kind = 'arg', mop[1] * 4 }
+		f:push(i32)
+		return
+	end
 	f:load(ctx.bc.r)
 	f:load(ctx.pc.r)
 	addk(f, mop[1] * 4)
 	f:call(frame.bcarg)
 end)
 defEmit('ArgAt', function(f, mop, ctx)
+	if ctx.jit then
+		f:gap{ kind = 'arg', mop[1] }
+		f:push(i32)
+		return
+	end
 	f:load(ctx.bc.r)
 	f:load(ctx.pc.r)
 	addk(f, mop[1])
 	f:call(frame.bcarg)
 end)
 defEmit('Pc', function(f, mop, ctx)
+	if ctx.jit then
+		f:gap{ kind = 'pc' }
+		f:push(i32)
+		return
+	end
 	f:load(ctx.pc.r)
 end)
 -- Slot n of the function's consts or frees.
@@ -927,7 +1064,22 @@ local function switchframe(f, ctx, scopes)
 	f:lts()
 	retif(f, 1)
 	setf(f, 'pc', function() f:load(ctx.pc.r) end)
-	f:br(ctx.reload)
+	if ctx.jit then
+		-- back to eval, which reads the frame again
+		f:i32(0)
+		f:ret()
+		ctx.js.dead = true
+	else
+		f:br(ctx.reload)
+	end
+end
+-- JIT code: before pushing onto the Lua stack, the values the JIT kept in locals go there first
+local function jitflush(ctx)
+	if ctx.jit then
+		cg(ctx, function(f)
+			f:gap{ kind = 'flush', sp = ctx.js.sp }
+		end)
+	end
 end
 -- Push mop's args from the ith on to the Lua stack
 local function pushargs(ctx, mop, i)
@@ -963,6 +1115,7 @@ end
 -- Error(kind, operands...): call the prelude's errfn(kind, operands...), which raises the error.
 -- Raises 'invalid operation' before errfn is set, or without a kind
 defMop('Error', function(mop, ctx)
+	jitflush(ctx)
 	cg(ctx, function(f, scopes)
 		f:loadg(frame.errfn)
 		f:refisnull()
@@ -972,6 +1125,10 @@ defMop('Error', function(mop, ctx)
 				f:call(frame.throw)
 				switchframe(f, ctx, scopes)
 			end)
+			-- only that branch left
+			if ctx.js then
+				ctx.js.dead = false
+			end
 		else
 			f:drop()
 			f:loadg(GS['invalid operation'])
@@ -986,6 +1143,7 @@ defMop('Error', function(mop, ctx)
 	end
 end)
 defMop('CallMeta', function(mop, ctx)
+	jitflush(ctx)
 	pushargs(ctx, mop, 2)
 	-- 'none' is a norm call that keeps no results
 	local retc = mop[1] == 'none' and 0 or 1
@@ -994,6 +1152,7 @@ defMop('CallMeta', function(mop, ctx)
 end)
 -- 3 results, then back to the start of this op
 defMop('ForCoerce', function(mop, ctx)
+	jitflush(ctx)
 	pusherrfn(ctx, 'for')
 	pushargs(ctx, mop, 1)
 	callmeta(ctx, 4, calltypes.norm, 3, -1)
@@ -1020,20 +1179,52 @@ defMop('Ret', function(mop, ctx)
 		switchframe(f, ctx, scopes)
 	end)
 end)
+-- JIT code: each branch of an If or Typeck starts from the stack use before it.
+-- After, the stack use is that of the branches that didn't leave the op, which have to agree.
+-- fallsthru is when there's no else & code can skip all the branches
+local function jitbranches(ctx, fallsthru)
+	local js = ctx.js
+	if not js then
+		return function(fn) return fn end, function() end
+	end
+	local sp0 = js.sp
+	local live = {}
+	if fallsthru then
+		live[1] = sp0
+	end
+	local function wrap(fn)
+		return fn and function()
+			js.sp, js.dead = sp0, false
+			fn()
+			if not js.dead then
+				live[#live+1] = js.sp
+			end
+		end
+	end
+	local function merge()
+		for i = 2, #live do
+			assert(live[i] == live[1], 'jit: branches leave the Lua stack at different heights')
+		end
+		js.sp, js.dead = live[1] or sp0, #live == 0
+	end
+	return wrap, merge
+end
 defMop('If', function(mop, ctx)
 	resolve(ctx, mop[1])
 	local wty = microTypeToWasmType(mop.out)
 	local t = genblock(ctx, mop.thenb, wty)
 	local e = mop.elseb and genblock(ctx, mop.elseb, wty)
 	cg(ctx, function(f, scopes)
+		local wrap, merge = jitbranches(ctx, not e)
 		f:iff(wty,
-			function()
+			wrap(function()
 				t(f, scopes)
-			end,
-			e and function()
+			end),
+			wrap(e and function()
 				e(f, scopes)
-			end
+			end)
 		)
+		merge()
 	end)
 end)
 defMop('Select', function(mop, ctx)
@@ -1074,12 +1265,13 @@ defMop('Typeck', function(mop, ctx)
 	end
 	local default = mop.default and genblock(ctx, mop.default, wty)
 	cg(ctx, function(f, scopes)
+		local wrap, merge = jitbranches(ctx, not default)
 		-- if case 1 then ... else if case 2 then ... else default
 		local function rec(i)
 			local case = cases[i]
 			if not case then
 				if default then
-					default(f, scopes)
+					wrap(function() default(f, scopes) end)()
 				end
 				return
 			end
@@ -1091,13 +1283,14 @@ defMop('Typeck', function(mop, ctx)
 					f:band()
 				end
 			end
-			f:iff(wty, function()
+			f:iff(wty, wrap(function()
 				bodies[i](f, scopes)
-			end, (cases[i+1] or default) and function()
+			end), (cases[i+1] or default) and function()
 				rec(i+1)
 			end)
 		end
 		rec(1)
+		merge()
 	end)
 end)
 
@@ -1186,7 +1379,7 @@ defMop('Syscall', function(mop, ctx)
 				else
 					f:call(body)
 				end
-				f:br(scopes.nop)
+				brnop(f, ctx, scopes)
 			end
 		end
 		f:switch(function()
@@ -1211,7 +1404,7 @@ local eval = func(i32, function(f)
 	local fn = f:locals(R.functy)
 
 	local L = {
-		base = base, locbase = locbase, bc = bc, pc = pc, consts = consts, frees = frees,
+		base = base, locbase = locbase, bc = bc, pc = pc, consts = consts, frees = frees, fn = fn,
 	}
 	local ctx = mkcgctx(f, L)
 
@@ -1248,6 +1441,8 @@ local eval = func(i32, function(f)
 
 	-- Run up to this many ops before going back to the host, so it can do other work
 	local budget = f:locals(i32)
+	local code = f:locals(R.jitfty)
+	local jr = f:locals(i32)
 	f:i32(0x10000)
 	f:store(budget)
 	f:loop(function(reload)
@@ -1278,6 +1473,39 @@ local eval = func(i32, function(f)
 		f:structget(functy, 'frees')
 		f:store(frees)
 
+		-- run the function's JIT'd code if it has some, else count towards making it
+		f:load(fn)
+		f:call(hotcode)
+		f:tee(code)
+		f:refisnull()
+		f:eqz()
+		f:iff(function()
+			f:load(base)
+			f:load(locbase)
+			f:load(pc)
+			f:load(bc)
+			f:load(consts)
+			f:load(frees)
+			f:load(code)
+			f:callref(alloc.jitfty)
+			f:tee(jr)
+			f:iff(function()
+				-- main returned, or out of budget. pc is in the frame already
+				f:load(jr)
+				f:i32(1)
+				f:eq()
+				f:ret()
+			end)
+			-- it switched frames
+			f:load(budget)
+			f:i32(1)
+			f:sub()
+			f:tee(budget)
+			f:brif(reload)
+			f:i32(0)
+			f:ret()
+		end)
+
 		f:loop(function(loop)
 			f:switch(function(scopes)
 				-- switch bc[pc++]
@@ -1300,8 +1528,161 @@ local eval = func(i32, function(f)
 	f:i32(0)
 end)
 
+-- The JIT's pieces of code. Each op's microcode built like eval's,
+-- in a function of the JIT module jm, which imports what it uses from rt.
+-- The JIT function's params are base, locbase, pc, bc, consts & frees, the same as eval's locals.
+-- Inside an op, pc is the pc after the opcode, like in eval
+local function jitpieces(jm)
+	local f = jm:builder({ i32, i32, i32, R.bytes, R.vals, R.vals }, { i32 })
+	local ctx = {
+		f = f,
+		jit = true,
+		regdef = {},
+		regtys = {},
+		base = { r = 1 },
+		locbase = { r = 2 },
+		pc = { r = 3 },
+		bc = { r = 4 },
+		consts = { r = 5 },
+		frees = { r = 6 },
+		-- how the op being emitted uses the Lua stack: sp is pushes less pops so far,
+		-- low & top how far below & above where it started it got, dead once the code left the op
+		js = {},
+	}
+	-- jumps back count this down, & leave when it reaches 0
+	local budget = f:locals(i32)
+	-- The JIT keeps the top of the Lua stack in these locals between ops, see jit.lua
+	local NSLOT = 16
+	local slots = table.pack(f:locals(V, NSLOT))
+	for i = 2, NSLOT do
+		assert(slots[i] == slots[1] + i - 1)
+	end
+	local oplist = {}
+	for op in pairs(microbc.ops) do
+		oplist[#oplist+1] = op
+	end
+	table.sort(oplist)
+	local gens = {}
+	for _, op in ipairs(oplist) do
+		gens[op] = genOp(ctx, op)
+	end
+	for _, wty in ipairs(ctx.regtys) do
+		local regdef = ctx.regdef[wty]
+		local rs = table.pack(f:locals(wty, #regdef))
+		for i=1,#regdef do
+			regdef[i].r = rs[i]
+		end
+	end
+	local function bytestr(t, i, j)
+		local parts = {}
+		for k = i, j, 4096 do
+			parts[#parts+1] = string.char(table.unpack(t, k, math.min(k + 4095, j)))
+		end
+		return table.concat(parts)
+	end
+	-- The code fn emits as a string, & its gaps with pos made relative to it
+	local js = ctx.js
+	local function piece(fn)
+		js.sp, js.low, js.top, js.dead = 0, 0, 0, false
+		f:pushscope('block', {}, {})
+		ctx.jitroot = f.scope
+		local start = #f.bcode
+		f.gaps = {}
+		fn()
+		f:popscope()
+		for _, g in ipairs(f.gaps) do
+			g.pos = g.pos - start
+		end
+		return { code = bytestr(f.bcode, start + 1, #f.bcode), gaps = f.gaps }
+	end
+	-- ops that use the Lua stack other than with Push, Pop & Peek, or leave the op for a call or return
+	local m = microbc.mops
+	local stackmops = { [m.CallChain] = true, [m.Ret] = true, [m.VargPush] = true, [m.VargPushN] = true,
+		[m.AppendN] = true, [m.AppendVarg] = true, [m.Syscall] = true, [m.MakeClosure] = true }
+	local pieces, oplen = {}, {}
+	for _, op in ipairs(oplist) do
+		local p = piece(function() gens[op]({}) end)
+		pieces[op] = p
+		-- pops it needs, most values above where it started, & change when it falls through to the next op
+		p.need, p.top = -js.low, js.top
+		p.fall = not js.dead and js.sp or nil
+		p.slots = true
+		microbc.walk(microbc.ops[op], function(node)
+			if stackmops[node.op] then
+				p.slots = false
+			end
+		end)
+		-- bytes the op takes: call ops have a count of calls, Syscall a 1 byte arg
+		local len = 1 + argsize(microbc.ops[op])
+		microbc.walk(microbc.ops[op], function(node)
+			if node.op == microbc.mops.CallChain then
+				len = 'call'
+			elseif node.op == microbc.mops.Syscall then
+				len = 2
+			end
+		end)
+		oplen[op] = len
+	end
+	local prologue = piece(function()
+		f:i32(0x10000)
+		f:store(budget)
+	end)
+	-- after a jump back has set pc: count budget down, at 0 save pc & leave
+	local backedge = piece(function()
+		f:load(budget)
+		f:i32(1)
+		f:sub()
+		f:tee(budget)
+		f:eqz()
+		f:iff(function()
+			setf(f, 'pc', function() f:load(ctx.pc.r) end)
+			f:i32(2)
+			f:ret()
+		end)
+	end)
+	-- the code for a Push, Pop & Peek on the Lua stack itself
+	local function snippet(fn)
+		local start = #f.bcode
+		fn()
+		return bytestr(f.bcode, start + 1, #f.bcode)
+	end
+	local realpush = snippet(function()
+		f:push(V)
+		f:call(tmppush)
+	end)
+	local realpop = snippet(function()
+		f:call(tmppop)
+		f:pop()
+	end)
+	local realpeek = snippet(function()
+		f:i32(1)
+		f:call(nthtmp)
+		f:pop()
+	end)
+	local locals = {}
+	M.encode_varuint(locals, f.localbcn)
+	for _, b in ipairs(f.localbc) do
+		locals[#locals+1] = b
+	end
+	return {
+		ops = pieces,
+		oplen = oplen,
+		prologue = prologue.code,
+		backedge = backedge.code,
+		locals = bytestr(locals, 1, #locals),
+		-- 0 based local indices
+		pclocal = ctx.pc.r - 1,
+		slot0 = slots[1] - 1,
+		nslot = NSLOT,
+		realpush = realpush,
+		realpop = realpop,
+		realpeek = realpeek,
+	}
+end
+
 return {
 	calltypes = calltypes,
 	init = init,
 	eval = eval,
+	jitpieces = jitpieces,
 }

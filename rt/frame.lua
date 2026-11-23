@@ -662,6 +662,9 @@ local makeclosure = func(V, i32, V, function(f, protov, n)
 	f:structget(functy, 'paramc')
 	f:load(proto)
 	f:structget(functy, 'info')
+	-- closures share the proto's JIT'd code
+	f:load(proto)
+	f:structget(functy, 'jit')
 	f:structnew(functy)
 end)
 

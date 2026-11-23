@@ -13,7 +13,7 @@ const [nodefs, nodecp] = isnode ?
 
 async function rtwathen(ab) {
 	const ffi = new FFI();
-	const inst = await WebAssembly.instantiate(ab, {'':{
+	const host = {
 		echoobj: x => {
 			const v = ffi.obj2js(x);
 			console.log(v instanceof Uint8Array ? new TextDecoder().decode(v) : v);
@@ -30,10 +30,56 @@ async function rtwathen(ab) {
 		log: Math.log,
 		pow: Math.pow,
 		host: (op, a, b) => ffi.host(op, a, b),
-	}});
+		jitreq: fn => ffi.jit && ffi.jit.queue.push(fn),
+	};
+	const inst = await WebAssembly.instantiate(ab, {'': host});
 	ffi.mod = inst.instance.exports;
+	const nojit = isnode && process.env.LUWA_NOJIT;
+	ffi.jit = nojit ? null : new JIT(host, ffi.mod);
 	return ffi;
 }
+
+// The JIT. rt.wasm joins the code for a batch of hot functions into a module
+// in its memory (rt/jit.lua), this compiles it & gives each function its code
+function JIT(host, mod) {
+	this.imports = { '': host, rt: mod };
+	this.mod = mod;
+	// functions that got hot since the last flush
+	this.queue = [];
+}
+// Compile what got hot into one module, creating a module has a fixed cost
+JIT.prototype.flush = function() {
+	const m = this.mod, fns = this.queue;
+	this.queue = [];
+	if (!fns.length) return;
+	const t0 = JIT.time && performance.now();
+	const start = m.jitbegin(fns.length);
+	// 0 for a function the JIT can't handle, its export is there but not used
+	const ok = fns.map(fn => m.jitbody(fn));
+	const len = m.jitend();
+	const t1 = JIT.time && performance.now();
+	let inst;
+	try {
+		inst = new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(m.jitmem.buffer, start, len)), this.imports);
+	} catch (e) {
+		// a bug in the JIT. Keep interpreting
+		console.error('jit:', e.message);
+		return;
+	}
+	if (JIT.time) {
+		JIT.time.join += t1 - t0;
+		JIT.time.compile += performance.now() - t1;
+		JIT.time.fns += fns.length;
+		JIT.time.bytes += len;
+	}
+	for (let i = 0; i < fns.length; i++) if (ok[i]) m.jitset(fns[i], inst.exports['f' + i]);
+}
+// LUWA_JITTIME=1 prints how long joining & compiling took
+JIT.time = isnode && process.env.LUWA_JITTIME ? { join: 0, compile: 0, fns: 0, bytes: 0 } : null;
+if (JIT.time) process.on('exit', () => {
+	const t = JIT.time;
+	console.error(`jit: ${t.fns} fns, ${t.bytes} bytes, join ${t.join.toFixed(2)}ms, compile ${t.compile.toFixed(2)}ms`);
+});
 export default function mkrt() {
 	return rtwa.then(rtwathen);
 }
@@ -377,6 +423,7 @@ FFI.prototype.evalWait = function() {
 			try {
 				for (let i = 0; i < 10000; i++) {
 					if (mod.eval()) return resolve();
+					if (ffi.jit && ffi.jit.queue.length) ffi.jit.flush();
 				}
 			} catch (e) {
 				// a wasm trap, like Error's unreachable. Add where Lua was

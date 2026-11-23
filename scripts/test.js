@@ -281,7 +281,7 @@ const errors = [
 	"return 'a' + 1",
 ];
 
-// Known gaps (see plans/plan.md). Reported, but don't fail the run
+// Known gaps. Reported, but don't fail the run
 const todo = [
 ];
 

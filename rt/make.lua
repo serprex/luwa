@@ -586,6 +586,14 @@ local function callsig(f)
 	end
 end
 
+-- Mark a spot in the code for someone else to fill in later, see modmeth:builder.
+-- g.pos is set to where the next byte goes
+function funcmeta:gap(g)
+	g.pos = #self.bcode
+	self.gaps[#self.gaps+1] = g
+	return g
+end
+
 function funcmeta:prstack()
 	local s = {}
 	for i = 1, #self.stack do
@@ -1178,7 +1186,10 @@ mkstoreop('i64store16', 0x3d, i64)
 mkstoreop('i64store32', 0x3e, i64)
 
 function funcmeta:funcidx(f)
-	if f.isfunc then
+	local imp = f.isfunc and self.mod.extern and self.mod.extern(f)
+	if imp then
+		return self.mod:import(imp)
+	elseif f.isfunc then
 		return self.mod:func(f)
 	else
 		return self.mod:import(f)
@@ -1527,6 +1538,7 @@ local function newbuilder(m, fn, params, results)
 		stack = {},
 		scope = 0,
 		scopes = {},
+		gaps = {},
 	}, funcmt)
 	fb:pushscope('func', {}, results)
 	return fb
@@ -1548,6 +1560,12 @@ function modmeth:func(f)
 	f.bgen(fb, table.unpack(ps))
 	fb:popscope()
 	return id
+end
+
+-- A func builder that isn't part of the module, to take pieces of code out of.
+-- Its calls & globals still get indices in the module
+function modmeth:builder(params, results)
+	return newbuilder(self, { params = params, results = results }, { table.unpack(params) }, results)
 end
 
 -- func(params..., result, body). result can be void, a type, or a list of types
@@ -1618,12 +1636,16 @@ function modmeth:memory(mem)
 end
 
 local function memory(sz, mxsz)
-	return { sz = sz, mxsz = mxsz }
+	return { sz = sz, mxsz = mxsz, ismem = true }
 end
 
 -- Global
 
 function modmeth:global(globe)
+	local imp = self.extern and not globe.m and self.extern(globe)
+	if imp then
+		return self:import(imp)
+	end
 	return pushid(self._global, globe) + self.gid
 end
 
@@ -1754,6 +1776,20 @@ function modmeth:constexpr(bc, ty, init)
 	bc[#bc+1] = 0x0b
 end
 
+-- A func's entry in the code section, without its size: locals, code, end
+local function funcbody(fu)
+	local fc = {}
+	encode_varuint(fc, fu.localbcn)
+	for j=1, #fu.localbc do
+		fc[#fc+1] = fu.localbc[j]
+	end
+	for j = 1, #fu.bcode do
+		fc[#fc+1] = fu.bcode[j]
+	end
+	fc[#fc+1] = 0x0b
+	return fc
+end
+
 function modmeth:compile()
 	local chunks = {"\0asm\1\0\0\0"}
 
@@ -1858,16 +1894,7 @@ function modmeth:compile()
 	end
 
 	sec[10] = loopSection(self._func, function(bc, fu)
-		local fc = {}
-		encode_varuint(fc, fu.localbcn)
-		for j=1, #fu.localbc do
-			fc[#fc+1] = fu.localbc[j]
-		end
-		for j = 1, #fu.bcode do
-			fc[#fc+1] = fu.bcode[j]
-		end
-		fc[#fc+1] = 0x0b
-
+		local fc = funcbody(fu)
 		encode_varuint(bc, #fc)
 		for j = 1, #fc do
 			bc[#bc+1] = fc[j]
@@ -1878,7 +1905,7 @@ function modmeth:compile()
 		if data.passive then
 			bc[#bc+1] = 1
 		else
-			encode_varuint(bc, self.ids[data.mem])
+			encode_varuint(bc, self.ids[data.mem] or self:memory(data.mem))
 			if type(data.offexpr) == 'number' then
 				bc[#bc+1] = 0x41
 				encode_varint(bc, data.offexpr)
@@ -1960,6 +1987,50 @@ function modmeth:compile()
 	return chunks
 end
 
+-- The module's own funcs, as a list of { type index, code section entry without its size }
+function modmeth:funcbodies()
+	local r = {}
+	for i = 1, #self._func do
+		local fu = self._func[i]
+		r[i] = { self:type(fu.fn.fty), funcbody(fu) }
+	end
+	return r
+end
+
+-- Only the type & import sections, for a module that gets the rest added elsewhere.
+-- Types used by the imports, own funcs & builder code must already be known
+function modmeth:header()
+	local chunks = {"\0asm\1\0\0\0"}
+	assert(#self._global == 0, 'header: module has its own globals')
+	local imps = loopSection(self._import, function(bc, imp)
+		encode_string(bc, imp.m)
+		encode_string(bc, imp.f)
+		bc[#bc+1] = imp.ty
+		if imp.ty == 0 then
+			encode_varuint(bc, self:type(imp))
+		elseif imp.ty == 3 then
+			self:encodevt(bc, imp.type)
+			bc[#bc+1] = imp.mut
+		else
+			error('header: only func & global imports')
+		end
+	end)
+	local types = loopSection(self._type, function(bc, group)
+		if group.explicit or #group > 1 then
+			bc[#bc+1] = 0x4e
+			encode_varuint(bc, #group)
+			for i = 1, #group do
+				self:encodedef(bc, group[i])
+			end
+		else
+			self:encodedef(bc, group[1])
+		end
+	end)
+	writeSection(chunks, 1, types)
+	writeSection(chunks, 2, imps)
+	return table.concat(chunks)
+end
+
 local refs = {
 	anyref = refnull(heap.any),
 	eqref = refnull(heap.eq),
@@ -2013,4 +2084,5 @@ return {
 	importtable = importtable,
 	importmemory = importmemory,
 	importglobal = importglobal,
+	encode_varuint = encode_varuint,
 }
