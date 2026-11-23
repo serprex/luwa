@@ -682,14 +682,46 @@ local function defVecSlot(name, which)
 end
 defVecSlot('LoadConst', 'consts')
 defVecSlot('LoadFree', 'frees')
--- Stack slot n, from base (params) or locbase (locals)
+-- JIT code: a local's index is Arg(n) or Arg(n) + k. Gives n's byte offset & k
+local function jitslot(node)
+	local m = microbc.mops
+	if node.op == m.Arg then
+		return node[1] * 4, 0
+	elseif node.op == m.Add and node[1].op == m.Arg and node[2].op == m.Int then
+		return node[1][1] * 4, node[2][1]
+	end
+	error('the JIT needs a local index read from the bytecode')
+end
+-- Stack slot n, from base (params) or locbase (locals).
+-- In JIT code params & locals are wasm locals, see jit.lua
 local function defStackSlot(lname, sname, basereg)
-	defEmit(lname, function(f, mop, ctx)
-		f:load(ctx[basereg].r)
-		f:add()
-		f:call(sget)
+	local which = basereg == 'base' and 0 or 1
+	defMop(lname, function(mop, ctx)
+		if ctx.jit then
+			local off, k = jitslot(mop[1])
+			cg(ctx, function(f)
+				f:gap{ kind = 'lget', off, k, inner = which }
+				f:push(V)
+			end)
+			return
+		end
+		resolve(ctx, mop[1])
+		cg(ctx, function(f)
+			f:load(ctx[basereg].r)
+			f:add()
+			f:call(sget)
+		end)
 	end)
 	defMop(sname, function(mop, ctx)
+		if ctx.jit then
+			local off, k = jitslot(mop[1])
+			resolve(ctx, mop[2])
+			cg(ctx, function(f)
+				f:gap{ kind = 'lset', off, k, inner = which }
+				f:pop()
+			end)
+			return
+		end
 		resolve(ctx, mop[1])
 		cg(ctx, function(f)
 			f:load(ctx[basereg].r)
@@ -1000,6 +1032,11 @@ defMop('ForPrep', function(mop, ctx)
 		f:load(ctx.locbase.r)
 		f:add()
 		f:call(forprep)
+		if ctx.jit then
+			-- forprep wrote the 3 locals on the Lua stack, read them into the wasm locals
+			local off = jitslot(mop[1])
+			f:gap{ kind = 'lload', off, 3 }
+		end
 	end)
 end)
 -- Lua shifts are logical. Shifting 64 or more either way gives 0, a negative count shifts the other way
@@ -1067,8 +1104,10 @@ defEmit('VargPush', function(f)
 	f:drop()
 end)
 -- A frame helper left the pc to run next on the stack, -1 means the main function returned.
--- The top frame may be a different one now: save pc in it & go back to where eval reads the frame
-local function switchframe(f, ctx, scopes)
+-- The top frame may be a different one now: save pc in it & go back to where eval reads the frame.
+-- keep is when this function's frame stays under the new one (a call, not a return or tail call):
+-- then JIT code writes its wasm locals back to the Lua stack on the way out
+local function switchframe(f, ctx, scopes, keep)
 	f:tee(ctx.pc.r)
 	f:i32(0)
 	f:lts()
@@ -1077,7 +1116,12 @@ local function switchframe(f, ctx, scopes)
 	if ctx.jit then
 		-- back to eval, which reads the frame again
 		f:i32(0)
-		f:ret()
+		if keep then
+			f:gap{ kind = 'exit', inner = f.scope - ctx.jitroot }
+		else
+			f:ret()
+		end
+		f:unreach()
 		ctx.js.dead = true
 	else
 		f:br(ctx.reload)
@@ -1119,7 +1163,7 @@ local function callmeta(ctx, argc, callty, retc, pcoff)
 		f:load(ctx.pc.r)
 		addk(f, pcoff)
 		f:call(frame.callmeta)
-		switchframe(f, ctx, scopes)
+		switchframe(f, ctx, scopes, true)
 	end)
 end
 -- Error(kind, operands...): call the prelude's errfn(kind, operands...), which raises the error.
@@ -1180,7 +1224,7 @@ defMop('CallChain', function(mop, ctx)
 		f:load(ctx.pc.r)
 		f:i32(callty)
 		f:call(helper)
-		switchframe(f, ctx, scopes)
+		switchframe(f, ctx, scopes, not mop[3])
 	end)
 end)
 defMop('Ret', function(mop, ctx)
@@ -1571,6 +1615,8 @@ local function jitpieces(jm)
 	}
 	-- jumps back count this down, & leave when it reaches 0
 	local budget = f:locals(i32)
+	-- the Lua stack when the function started, see jit.lua's writeback
+	local entrystack = f:locals(R.stack)
 	-- The JIT keeps the top of the Lua stack in these locals between ops, see jit.lua
 	local NSLOT = 16
 	local slots = table.pack(f:locals(V, NSLOT))
@@ -1646,8 +1692,11 @@ local function jitpieces(jm)
 	local prologue = piece(function()
 		f:i32(0x10000)
 		f:store(budget)
+		f:loadg(gstack)
+		f:store(entrystack)
 	end)
-	-- after a jump back has set pc: count budget down, at 0 save pc & leave
+	-- after a jump back has set pc: count budget down, at 0 save pc & leave.
+	-- The jit puts the branch to the exit at the gap, so it's split in two there
 	local backedge = piece(function()
 		f:load(budget)
 		f:i32(1)
@@ -1657,15 +1706,53 @@ local function jitpieces(jm)
 		f:iff(function()
 			setf(f, 'pc', function() f:load(ctx.pc.r) end)
 			f:i32(2)
-			f:ret()
+			f:gap{ kind = 'exit', inner = f.scope - ctx.jitroot }
+			f:unreach()
 		end)
 	end)
+	local begap = assert(backedge.gaps[1])
 	-- the code for a Push, Pop & Peek on the Lua stack itself
 	local function snippet(fn)
 		local start = #f.bcode
 		fn()
 		return bytestr(f.bcode, start + 1, #f.bcode)
 	end
+	-- pieces for reading & writing Lua stack slots: i32.const n, then pbase or lbase gives the slot,
+	-- then callsget, or local.get of the value & callsset
+	local pbase = snippet(function()
+		f:push(i32)
+		f:load(ctx.base.r)
+		f:add()
+		f:pop()
+	end)
+	local lbase = snippet(function()
+		f:push(i32)
+		f:load(ctx.locbase.r)
+		f:add()
+		f:pop()
+	end)
+	local callsget = snippet(function()
+		f:push(i32)
+		f:call(sget)
+		f:pop()
+	end)
+	local callsset = snippet(function()
+		f:push(i32)
+		f:push(V)
+		f:call(sset)
+	end)
+	-- writing back is only safe while this function's frame is still on the same Lua stack:
+	-- the stack is the one it started with & reaches past its locals. Leaves that test less localc
+	local wbguard = snippet(function()
+		f:loadg(gstack)
+		f:load(entrystack)
+		f:refeq()
+		f:call(stacklen)
+		f:load(ctx.locbase.r)
+		f:sub()
+		f:pop()
+		f:pop()
+	end)
 	local realpush = snippet(function()
 		f:push(V)
 		f:call(tmppush)
@@ -1679,18 +1766,27 @@ local function jitpieces(jm)
 		f:call(nthtmp)
 		f:pop()
 	end)
-	local locals = {}
-	M.encode_varuint(locals, f.localbcn)
-	for _, b in ipairs(f.localbc) do
-		locals[#locals+1] = b
-	end
+	-- the locals' declarations, without their count: the JIT adds one for Lua's params & locals
+	local vty = {}
+	jm:encodevt(vty, V)
 	return {
 		ops = pieces,
 		oplen = oplen,
 		prologue = prologue.code,
-		backedge = backedge.code,
-		locals = bytestr(locals, 1, #locals),
-		-- 0 based local indices
+		backedge = backedge.code:sub(1, begap.pos),
+		backedge2 = backedge.code:sub(begap.pos + 1),
+		beinner = begap.inner,
+		pbase = pbase,
+		lbase = lbase,
+		callsget = callsget,
+		callsset = callsset,
+		wbguard = wbguard,
+		locals = bytestr(f.localbc, 1, #f.localbc),
+		nlocdecl = f.localbcn,
+		vty = bytestr(vty, 1, #vty),
+		-- 0 based local indices. Lua's params & locals come after all of these
+		loc0 = #f.localty,
+		budget = budget - 1,
 		pclocal = ctx.pc.r - 1,
 		slot0 = slots[1] - 1,
 		nslot = NSLOT,
