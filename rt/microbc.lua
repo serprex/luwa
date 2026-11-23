@@ -382,9 +382,9 @@ mkMop('TblSet', {
 	alloc = true,
 	arg = {'tbl', 'obj', 'obj'},
 })
--- tbllen allocates a temporary int
+-- tbllen reads the table & saves a hint in it, so it's a statement
 mkMop('LoadTblLen', {
-	alloc = true,
+	stmt = true,
 	arg = {'tbl'},
 	out = 'i32',
 })

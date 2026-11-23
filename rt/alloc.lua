@@ -47,14 +47,20 @@ local vec = M.struct({
 }, { name = 'vec', super = obj })
 -- Objects hashed by identity get an id, wasm has no addresses
 local idobj = M.struct({ { i8, name = 'type' }, { i32, name = 'id' } }, { name = 'idobj', super = obj, final = false })
--- Hash only for now: hash holds key, value pairs. hlen counts used pairs
+-- hash holds key, value pairs, hlen counts used pairs. Keys 1..asize live in arr[k-1] instead,
+-- arr can be longer than asize. len is the last length # found, a hint for the next one.
+-- noflags has a bit per metamethod name (frame.metabits), set when this table, as a metatable,
+-- was found to have no such field. Adding a key clears them all
 local tbl = M.struct(nil, { name = 'tbl', super = idobj })
 tbl:define{
 	{ i8, name = 'type' },
 	{ i32, name = 'id' },
 	{ i32, mut = true, name = 'len' },
 	{ i32, mut = true, name = 'hlen' },
+	{ i32, mut = true, name = 'noflags' },
 	{ M.ref(vals), mut = true, name = 'hash' },
+	{ i32, mut = true, name = 'asize' },
+	{ M.ref(vals), mut = true, name = 'arr' },
 	{ M.refnull(tbl), mut = true, name = 'meta' },
 }
 -- JIT'd code for a function: (base, locbase, pc, bc, consts, frees) -> 0 when it switched frames,
@@ -252,14 +258,23 @@ local strfrombytes = func(M.refnull(bytes), M.ref(str), function(f, b)
 	f:structnew(str)
 end)
 
+-- Shared by every table with no array part yet. Never written, a table grows into a new array
+local emptyvals = M.global(M.ref(vals), false, function(f)
+	f:i32(0)
+	f:arraynewdefault(vals)
+end)
+
 local newtbl = func(M.ref(tbl), function(f)
 	f:i32(types.tbl)
 	f:call(nextid)
 	f:i32(0)
 	f:i32(0)
+	f:i32(0)
 	-- 4 pairs
 	f:i32(8)
 	f:arraynewdefault(vals)
+	f:i32(0)
+	f:loadg(emptyvals)
 	f:refnull(tbl)
 	f:structnew(tbl)
 end)
