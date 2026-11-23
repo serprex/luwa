@@ -718,6 +718,13 @@ end)
 local MAXFRAMES, EXTRAFRAMES = 200000, 2000
 -- set from a stack overflow until the stack is well below the limit again
 local overflowing = M.global(i32, true)
+-- JIT'd code calls the next JIT'd frame itself instead of going back to eval (vm.jitpieces' runframes).
+-- jitdepth is how many of those calls are on the wasm stack, jitfuel how many more before going back to the host.
+-- setlocals counts debug.setlocal's writes: JIT'd code keeps locals in wasm locals, so after a call it
+-- only carries on when this is the same as when it started, else eval starts it again
+local jitdepth = M.global(i32, true)
+local jitfuel = M.global(i32, true)
+local setlocals = M.global(i32, true)
 local throw -- below, callchain raises with it
 
 -- Is v a Lua function from load (its info is a table). Only those get tail calls:
@@ -1417,6 +1424,146 @@ local retframe = func(i32, function(f)
 	getf(f, 'pc')
 end)
 
+-- The JIT's fast paths, small enough for mkrt to copy into JIT modules so V8 can inline them.
+-- callone: a call op with one call & no varargs, argc args, keeping retc results. The caller carries on at nextpc.
+-- When it's a Lua function & there's room for its frame, push the frame & return its pc (0),
+-- else -2 for the caller to use callchain, which handles the rest
+local callone = func(i32, i32, i32, i32, i32, function(f, argc, retc, nextpc, callty)
+	local cnt, fs, paramc, localc, locals, at = f:locals(i32, 6)
+	local fn = f:locals(R.functy)
+	local arr = f:locals(R.i32s)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'len')
+	f:tee(cnt)
+	f:i32(df.sizeof * MAXFRAMES)
+	f:geu()
+	f:loadg(overflowing)
+	f:bor()
+	f:iff(function()
+		f:i32(-2)
+		f:ret()
+	end)
+	f:call(stacklen)
+	f:load(argc)
+	f:sub()
+	f:i32(1)
+	f:sub()
+	f:tee(fs)
+	f:call(sget)
+	f:reftest(M.ref(functy))
+	f:eqz()
+	f:iff(function()
+		f:i32(-2)
+		f:ret()
+	end)
+	f:load(fs)
+	f:call(sget)
+	f:refcast(R.functy)
+	f:tee(fn)
+	f:structget(functy, 'paramc')
+	f:store(paramc)
+	f:load(fn)
+	f:structget(functy, 'localc')
+	f:store(localc)
+	-- the caller's pc
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'arr')
+	f:load(cnt)
+	f:i32(df.sizeof - df.pc)
+	f:sub()
+	f:load(nextpc)
+	f:arrayset(alloc.i32s)
+	-- like framefor: locals start at max(args, params), missing ones are nil
+	f:load(argc)
+	f:load(paramc)
+	f:load(argc)
+	f:load(paramc)
+	f:gts()
+	f:select()
+	f:tee(locals)
+	f:load(argc)
+	f:sub()
+	f:load(localc)
+	f:add()
+	f:call(extendtmp)
+	f:call(fpush)
+	f:store(at)
+	f:loadg(gframes)
+	f:structget(alloc.frames, 'arr')
+	f:store(arr)
+	fwr(f, arr, at, 'type', function() f:load(callty) end)
+	fwr(f, arr, at, 'pc', function() f:i32(0) end)
+	fwr(f, arr, at, 'base', function()
+		f:load(fs)
+		f:i32(1)
+		f:add()
+	end)
+	fwr(f, arr, at, 'dotdotdot', function() f:load(paramc) end)
+	fwr(f, arr, at, 'retb', function() f:i32(-1) end)
+	fwr(f, arr, at, 'retc', function() f:load(retc) end)
+	fwr(f, arr, at, 'locals', function() f:load(locals) end)
+	fwr(f, arr, at, 'frame', function()
+		f:load(locals)
+		f:load(localc)
+		f:add()
+	end)
+	f:i32(0)
+end)
+-- retone: the Return op. A norm frame keeping a fixed count, like retframe's first case, else retframe
+local retone = func(i32, function(f)
+	local at, base, retb, key, e, c = f:locals(i32, 6)
+	local arr = f:locals(R.i32s)
+	ftop(f, arr, at)
+	frd(f, arr, at, 'type')
+	f:i32(calltypes.norm)
+	f:ne()
+	frd(f, arr, at, 'retc')
+	f:tee(key)
+	f:i32(RETALL)
+	f:eq()
+	f:bor()
+	f:iff(function()
+		f:call(retframe)
+		f:ret()
+	end)
+	frd(f, arr, at, 'base')
+	f:tee(base)
+	frd(f, arr, at, 'retb')
+	f:add()
+	f:store(retb)
+	f:load(base)
+	frd(f, arr, at, 'frame')
+	f:add()
+	f:tee(e)
+	f:load(key)
+	f:add()
+	f:call(stacklen)
+	f:sub()
+	f:tee(c)
+	f:i32(0)
+	f:gts()
+	f:iff(function()
+		f:load(c)
+		f:call(extendtmp)
+	end)
+	f:load(retb)
+	f:load(e)
+	f:load(key)
+	f:call(scopy)
+	f:load(retb)
+	f:load(key)
+	f:add()
+	f:call(setstacklen)
+	f:loadg(gframes)
+	f:load(at)
+	f:structset(alloc.frames, 'len')
+	f:load(arr)
+	f:load(at)
+	f:i32(df.pc - df.sizeof)
+	f:add()
+	f:arrayget(alloc.i32s)
+end)
+
 return {
 	calltypes = calltypes,
 	RETALL = RETALL,
@@ -1445,6 +1592,8 @@ return {
 	tailchain = tailchain,
 	tailchainvarg = tailchainvarg,
 	retframe = retframe,
+	callone = callone,
+	retone = retone,
 	switchto = switchto,
 	pushfrom = pushfrom,
 	coroback = coroback,
@@ -1457,4 +1606,7 @@ return {
 	appendn = appendn,
 	appendvarg = appendvarg,
 	makeclosure = makeclosure,
+	jitdepth = jitdepth,
+	jitfuel = jitfuel,
+	setlocals = setlocals,
 }

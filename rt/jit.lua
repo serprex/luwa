@@ -15,8 +15,10 @@
 --
 -- Lua's params & locals are wasm locals too. On entry each one the function reads is read from the Lua stack.
 -- The loop is inside a block (exit) that leaving for a call or a metamethod branches out of, after it the
--- locals set since entry are written back, so the callee & debug see them & they're read again on return.
--- Each Lua param & local has an i32 wasm local too, set to 1 when it's set (dirty).
+-- locals set since entry are written back, so the callee & debug see them.
+-- Each Lua param & local has an i32 wasm local too, set to 1 when it's set (dirty) & 0 once written back.
+-- Then vm.jitpieces' runframes runs the callee's JIT'd code with call_ref, & once this frame is on top again
+-- branches to a loop round the exit block, which starts the op at pc. So locals stay in wasm locals across calls.
 -- Returns & tail calls leave with a plain return, their frame is gone.
 local M = require 'make'
 local func = M.func
@@ -101,7 +103,7 @@ local function image(jit)
 		put(rec + CODELEN, code[2])
 	end
 	for _, k in ipairs{ 'header', 'locals', 'prologue', 'backedge', 'backedge2', 'realpush', 'realpop', 'realpeek',
-			'pbase', 'lbase', 'callsget', 'callsset', 'wbguard', 'vty' } do
+			'pbase', 'lbase', 'callsget', 'callsset', 'wbguard', 'vty', 'runframes', 'runframes2' } do
 		L[k] = blob(jit[k])
 	end
 	-- the copied rt funcs: their type indices, & their bodies each after its size
@@ -125,8 +127,9 @@ local function image(jit)
 	L.pcl = jit.pclocal
 	L.nlocdecl = jit.nlocdecl
 	L.loc0 = jit.loc0
-	L.budget = jit.budget
 	L.beinner = jit.beinner
+	L.rfinner = jit.rfinner
+	L.xcode = jit.xcode
 	L.slot0 = jit.slot0
 	L.nslot = jit.nslot
 	L.out = (#img + 7) & ~7
@@ -761,7 +764,9 @@ local body = func(R.functy, i32, function(f, fn)
 			lop(0x21, lo(i))
 		end)
 	end)
-	-- block exit (result i32), then the loop
+	-- loop back here after a call, block exit (result i32), then the loop
+	emit(0x03)
+	emit(0x40)
 	emit(0x02)
 	emit(0x7f)
 	emit(0x03)
@@ -1055,11 +1060,11 @@ local body = func(R.functy, i32, function(f, fn)
 		get(fa, lo(k))
 		f:call(flush)
 	end)
-	-- end B_N, the loop & the exit block, keep exit's result in budget
+	-- end B_N, the loop & the exit block, keep exit's result in xcode
 	for _, b in ipairs{ 0x0b, 0x00, 0x0b, 0x00, 0x0b, 0x21 } do
 		emit(b)
 	end
-	f:i32(L.budget)
+	f:i32(L.xcode)
 	f:call(uleb)
 	-- write back the locals it sets, when its frame is still there
 	each(i, function()
@@ -1104,14 +1109,30 @@ local body = func(R.functy, i32, function(f, fn)
 				luslot()
 				lop(0x20, lo(i))
 				copyblob(f, L.callsset)
+				-- i32.const 0, local.set of its dirty flag: it may carry on after a call
+				emit(0x41)
+				emit(0)
+				lop(0x21, function()
+					f:load(i)
+					f:load(P)
+					f:add()
+					f:load(Lc)
+					f:add()
+				end)
 				emit(0x0b)
 			end)
 		end)
 		emit(0x0b)
 	end)
-	emit(0x20)
-	f:i32(L.budget)
+	-- run the frames it called, see vm.jitpieces. It returns, or branches back to the loop round everything
+	copyblob(f, L.runframes)
+	emit(0x0c)
+	f:i32(L.rfinner)
 	f:call(uleb)
+	copyblob(f, L.runframes2)
+	-- end that loop, unreachable, end the function
+	emit(0x0b)
+	emit(0x00)
 	emit(0x0b)
 	f:i32(1)
 end)

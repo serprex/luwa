@@ -34,7 +34,9 @@ export(_js, 'typeof', 'newstr', 'newtbl', 'newi64', 'newf64', 'strlen', 'strget'
 -- jit.lua puts the JIT'd functions after this header
 local inline = {}
 for _, f in ipairs{ _stack.tmppush, _stack.tmppop, _stack.reserve, _stack.sget, _stack.sset, _stack.nthtmp,
-		_stack.stacklen, _stack.ftop, _stack.fget, _stack.fset, require('alloc').boxi64, require('alloc').typeof } do
+		_stack.stacklen, _stack.ftop, _stack.fget, _stack.fset, _stack.extendtmp, _stack.setstacklen, _stack.scopy,
+		_stack.fpush, require('frame').callone, require('frame').retone,
+		require('alloc').boxi64, require('alloc').typeof } do
 	inline[assert(f)] = true
 end
 local nextern = 0

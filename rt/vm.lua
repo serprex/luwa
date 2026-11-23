@@ -97,6 +97,8 @@ end
 -- Calls & jumps back to a function count towards compiling it. Past JITHOT the host is asked to.
 -- Gives the function's JIT'd code, or null while it has none
 local JITHOT = 500
+-- How deep JIT'd code calls JIT'd code on the wasm stack, see jitpieces' runframes. Deeper goes through eval
+local JITDEPTH = 200
 local hotcode = func(R.functy, R.jitfty, function(f, fn)
 	local cell = f:locals(R.jitcell)
 	local code = f:locals(R.jitfty)
@@ -1219,17 +1221,50 @@ defMop('CallChain', function(mop, ctx)
 	else
 		helper = mop[2] and frame.callchainvarg or frame.callchain
 	end
+	local r = ctx.jit and newreg(ctx, 'i32')
 	cg(ctx, function(f, scopes)
-		f:load(ctx.bc.r)
-		f:load(ctx.pc.r)
-		f:i32(callty)
-		f:call(helper)
+		local function chain()
+			f:load(ctx.bc.r)
+			f:load(ctx.pc.r)
+			f:i32(callty)
+			f:call(helper)
+		end
+		if ctx.jit and not mop[2] and not mop[3] then
+			-- args from the bytecode are constants here: retc, how many calls, then each one's arg count.
+			-- One call goes to callone, which gives -2 when callchain has to do it
+			f:gap{ kind = 'arg', 4 }
+			f:push(i32)
+			f:i32(1)
+			f:eq()
+			f:iff(i32, function()
+				f:gap{ kind = 'arg', 8 }
+				f:push(i32)
+				f:gap{ kind = 'arg', 0 }
+				f:push(i32)
+				f:load(ctx.pc.r)
+				addk(f, 12)
+				f:i32(callty)
+				f:call(frame.callone)
+			end, function()
+				f:i32(-2)
+			end)
+			f:tee(r.r)
+			f:i32(-2)
+			f:eq()
+			f:iff(function()
+				chain()
+				f:store(r.r)
+			end)
+			f:load(r.r)
+		else
+			chain()
+		end
 		switchframe(f, ctx, scopes, not mop[3])
 	end)
 end)
 defMop('Ret', function(mop, ctx)
 	cg(ctx, function(f, scopes)
-		f:call(frame.retframe)
+		f:call(ctx.jit and frame.retone or frame.retframe)
 		switchframe(f, ctx, scopes)
 	end)
 end)
@@ -1509,6 +1544,10 @@ local eval = func(i32, function(f)
 	local jr = f:locals(i32)
 	f:i32(0x10000)
 	f:store(budget)
+	f:i32(0)
+	f:storeg(frame.jitdepth)
+	f:i32(0x10000)
+	f:storeg(frame.jitfuel)
 	f:loop(function(reload)
 		-- ops that switch frames come back here. Other ops leave the frame alone,
 		-- so its fields stay in locals & pc is only saved in the frame when leaving
@@ -1617,6 +1656,12 @@ local function jitpieces(jm)
 	local budget = f:locals(i32)
 	-- the Lua stack when the function started, see jit.lua's writeback
 	local entrystack = f:locals(R.stack)
+	-- for runframes: why the loop was left, the frame index of this function's frame,
+	-- frame.setlocals when it started, & the frame it calls
+	local xcode, myat, epoch, at, cbase = f:locals(i32, 5)
+	local farr = f:locals(R.i32s)
+	local cfn = f:locals(R.functy)
+	local ccode = f:locals(R.jitfty)
 	-- The JIT keeps the top of the Lua stack in these locals between ops, see jit.lua
 	local NSLOT = 16
 	local slots = table.pack(f:locals(V, NSLOT))
@@ -1694,7 +1739,117 @@ local function jitpieces(jm)
 		f:store(budget)
 		f:loadg(gstack)
 		f:store(entrystack)
+		frame.ftop(f, farr, myat)
+		f:loadg(frame.setlocals)
+		f:store(epoch)
 	end)
+	-- After the loop was left & the locals written back (see jit.lua). xcode 0 is a call:
+	-- run the frames above this one with their JIT'd code, calling it directly, until this frame is on top again,
+	-- then carry on at its pc with a br (the gap) to the loop round everything.
+	-- Anything else goes back to eval: other code, a different Lua stack, this frame gone, too deep,
+	-- or debug.setlocal ran. The locals are on the Lua stack by then, so eval can start this frame again
+	local runframes = piece(function()
+		f:load(xcode)
+		f:iff(function()
+			f:load(xcode)
+			f:ret()
+		end)
+		f:loop(function(again)
+			f:loadg(gstack)
+			f:load(entrystack)
+			f:refeq()
+			f:eqz()
+			f:iff(function()
+				f:i32(0)
+				f:ret()
+			end)
+			frame.ftop(f, farr, at)
+			f:load(at)
+			f:load(myat)
+			f:eq()
+			f:iff(function()
+				f:loadg(frame.setlocals)
+				f:load(epoch)
+				f:ne()
+				f:iff(function()
+					f:i32(0)
+					f:ret()
+				end)
+				frame.frd(f, farr, at, 'pc')
+				f:store(ctx.pc.r)
+				f:gap{ kind = 'nop', inner = f.scope - ctx.jitroot }
+				f:unreach()
+			end)
+			f:load(at)
+			f:load(myat)
+			f:lts()
+			f:loadg(frame.jitdepth)
+			f:i32(JITDEPTH)
+			f:ges()
+			f:bor()
+			f:iff(function()
+				f:i32(0)
+				f:ret()
+			end)
+			-- out of fuel: back to the host, like a jump back out of budget. The top frame's pc is saved
+			f:loadg(frame.jitfuel)
+			f:i32(1)
+			f:sub()
+			f:tee(cbase)
+			f:i32(0)
+			f:les()
+			f:iff(function()
+				f:i32(2)
+				f:ret()
+			end)
+			f:load(cbase)
+			f:storeg(frame.jitfuel)
+			-- the function is at base-1
+			frame.frd(f, farr, at, 'base')
+			f:tee(cbase)
+			f:i32(1)
+			f:sub()
+			f:call(sget)
+			f:refcast(R.functy)
+			f:tee(cfn)
+			f:call(hotcode)
+			f:tee(ccode)
+			f:refisnull()
+			f:iff(function()
+				f:i32(0)
+				f:ret()
+			end)
+			f:loadg(frame.jitdepth)
+			f:i32(1)
+			f:add()
+			f:storeg(frame.jitdepth)
+			f:load(cbase)
+			f:load(cbase)
+			frame.frd(f, farr, at, 'locals')
+			f:add()
+			frame.frd(f, farr, at, 'pc')
+			f:load(cfn)
+			f:structget(functy, 'bc')
+			f:load(cfn)
+			f:structget(functy, 'consts')
+			f:load(cfn)
+			f:structget(functy, 'frees')
+			f:load(ccode)
+			f:callref(alloc.jitfty)
+			f:tee(xcode)
+			f:loadg(frame.jitdepth)
+			f:i32(1)
+			f:sub()
+			f:storeg(frame.jitdepth)
+			f:iff(function()
+				f:load(xcode)
+				f:ret()
+			end)
+			f:br(again)
+		end)
+		f:unreachable()
+	end)
+	local rfgap = assert(runframes.gaps[1])
 	-- after a jump back has set pc: count budget down, at 0 save pc & leave.
 	-- The jit puts the branch to the exit at the gap, so it's split in two there
 	local backedge = piece(function()
@@ -1776,6 +1931,10 @@ local function jitpieces(jm)
 		backedge = backedge.code:sub(1, begap.pos),
 		backedge2 = backedge.code:sub(begap.pos + 1),
 		beinner = begap.inner,
+		runframes = runframes.code:sub(1, rfgap.pos),
+		runframes2 = runframes.code:sub(rfgap.pos + 1),
+		rfinner = rfgap.inner,
+		xcode = xcode - 1,
 		pbase = pbase,
 		lbase = lbase,
 		callsget = callsget,
@@ -1786,7 +1945,6 @@ local function jitpieces(jm)
 		vty = bytestr(vty, 1, #vty),
 		-- 0 based local indices. Lua's params & locals come after all of these
 		loc0 = #f.localty,
-		budget = budget - 1,
 		pclocal = ctx.pc.r - 1,
 		slot0 = slots[1] - 1,
 		nslot = NSLOT,
