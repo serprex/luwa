@@ -139,10 +139,11 @@ local initPrelude = func(R.tbl, function(f)
 		GS.strmap, GF._strmap,
 		GS.strrep, GF._strrep,
 		GS.concat, GF._concat,
-		GS.classend, GF._classend,
-		GS.single, GF._single,
-		GS.span, GF._span,
-		GS.scan, GF._scan,
+		GS.match, GF._match,
+		GS.capture, GF._capture,
+		GS.captures, GF._captures,
+		GS.fltdigits, GF._fltdigits,
+		GS.fmtint, GF._fmtint,
 		GS.findplain, GF._findplain)
 
 	addmod(GS.coroutine,

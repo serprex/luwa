@@ -781,223 +781,52 @@ function string.reverse(...)
 	return strmap(s, 2)
 end
 
--- Lua patterns, a port of lstrlib.c's matcher. One match runs at a time:
--- the state is these upvalues, set by setstate before each match
-local msrc, mslen, mpat, mplen, mlevel
-local capinit, caplen = {}, {}
-local CAP_UNF, CAP_POS = -1, -2
-local function setstate(s, p)
-	msrc, mslen, mpat, mplen, mlevel = s, #s, p, #p, 0
+-- Lua patterns. The matcher is in wasm (rt/stdstr.lua), a port of lstrlib.c's.
+-- wmatch(s, p, si, pi, anchor, lastmatch) gives start, end (just past the match) & capture count,
+-- start 0 when there's no match, -code for an error. The captures of the last match stay in wasm
+local wmatch, wcapture, wcaptures = _luwa.match, _luwa.capture, _luwa.captures
+local matcherrs = {
+	"malformed pattern (ends with '%')",
+	"malformed pattern (missing ']')",
+	"malformed pattern (missing arguments to '%b')",
+	"missing '[' after '%f' in pattern",
+	'invalid pattern capture',
+	'too many captures',
+	'pattern too complex',
+}
+local function matcherr(code)
+	code = -code
+	if code >= 16 then
+		_error('invalid capture index %' .. (code - 16))
+	end
+	_error(matcherrs[code])
 end
 
--- Class matching is in wasm (rt/stdstr.lua): a class is p[pi..ep), a byte, '.', %x or [...]
-local wclassend, wsingle, wspan, wscan = _luwa.classend, _luwa.single, _luwa.span, _luwa.scan
--- index just past the single char class at p
-local function classend(p)
-	local e = wclassend(mpat, p)
-	if e == 0 then
-		if string_byte(mpat, p) == 37 then
-			_error("malformed pattern (ends with '%')")
-		end
-		_error("malformed pattern (missing ']')")
-	end
-	return e
-end
-local function singlematch(s, p, ep)
-	return wsingle(msrc, s, mpat, p, ep)
-end
-
-local domatch
-local function maxexpand(s, p, ep)
-	local i = wspan(msrc, s, mpat, p, ep)
-	while i >= 0 do
-		local res = domatch(s + i, ep + 1)
-		if res then
-			return res
-		end
-		i = i - 1
-	end
-end
-local function minexpand(s, p, ep)
-	while true do
-		local res = domatch(s, ep + 1)
-		if res then
-			return res
-		elseif singlematch(s, p, ep) then
-			s = s + 1
-		else
-			return nil
-		end
-	end
-end
-local function startcapture(s, p, what)
-	mlevel = mlevel + 1
-	capinit[mlevel] = s
-	caplen[mlevel] = what
-	local res = domatch(s, p)
-	if not res then
-		mlevel = mlevel - 1
-	end
-	return res
-end
-local function endcapture(s, p)
-	local l
-	for k = mlevel, 1, -1 do
-		if caplen[k] == CAP_UNF then
-			l = k
-			break
-		end
-	end
-	if not l then
-		_error('invalid pattern capture')
-	end
-	caplen[l] = s - capinit[l]
-	local res = domatch(s, p)
-	if not res then
-		caplen[l] = CAP_UNF
-	end
-	return res
-end
-local function matchbalance(s, p)
-	if p + 1 > mplen then
-		_error("malformed pattern (missing arguments to '%b')")
-	end
-	local b, e = string_byte(mpat, p, p + 1)
-	if s > mslen or string_byte(msrc, s) ~= b then
-		return nil
-	end
-	local cont = 1
-	s = s + 1
-	while s <= mslen do
-		local c = string_byte(msrc, s)
-		if c == e then
-			cont = cont - 1
-			if cont == 0 then
-				return s + 1
-			end
-		elseif c == b then
-			cont = cont + 1
-		end
-		s = s + 1
-	end
-end
-local function matchcapture(s, l)
-	l = l - 48
-	if l < 1 or l > mlevel or caplen[l] == CAP_UNF then
-		_error('invalid capture index %' .. l)
-	end
-	local len = caplen[l]
-	if mslen - s + 1 >= len and
-		string_sub(msrc, capinit[l], capinit[l] + len - 1) == string_sub(msrc, s, s + len - 1) then
-		return s + len
-	end
-end
--- Match from s with pattern at p. Gives the index past the match, or nil
-function domatch(s, p)
-	while true do
-		if p > mplen then
-			return s
-		end
-		local pc = string_byte(mpat, p)
-		local nc = string_byte(mpat, p + 1)
-		if pc == 40 then -- (
-			if nc == 41 then
-				return startcapture(s, p + 2, CAP_POS)
-			else
-				return startcapture(s, p + 1, CAP_UNF)
-			end
-		elseif pc == 41 then -- )
-			return endcapture(s, p + 1)
-		elseif pc == 36 and p == mplen then -- $ at the end
-			return s == mslen + 1 and s or nil
-		elseif pc == 37 and nc == 98 then -- %b
-			s = matchbalance(s, p + 2)
-			if not s then
-				return nil
-			end
-			p = p + 4
-		elseif pc == 37 and nc == 102 then -- %f
-			p = p + 2
-			if string_byte(mpat, p) ~= 91 then
-				_error("missing '[' after '%f' in pattern")
-			end
-			local ep = classend(p)
-			-- before the start & past the end count as byte 0
-			local prevok, curok
-			if s == 1 then
-				prevok = wsingle('\0', 1, mpat, p, ep)
-			else
-				prevok = wsingle(msrc, s - 1, mpat, p, ep)
-			end
-			if s <= mslen then
-				curok = wsingle(msrc, s, mpat, p, ep)
-			else
-				curok = wsingle('\0', 1, mpat, p, ep)
-			end
-			if not prevok and curok then
-				p = ep
-			else
-				return nil
-			end
-		elseif pc == 37 and nc and nc >= 48 and nc <= 57 then -- %0-9
-			s = matchcapture(s, nc)
-			if not s then
-				return nil
-			end
-			p = p + 2
-		else
-			local ep = classend(p)
-			local epc = string_byte(mpat, ep)
-			if not singlematch(s, p, ep) then
-				if epc == 42 or epc == 63 or epc == 45 then -- * ? -
-					p = ep + 1
-				else
-					return nil
-				end
-			elseif epc == 63 then -- ?
-				local res = domatch(s + 1, ep + 1)
-				if res then
-					return res
-				end
-				p = ep + 1
-			elseif epc == 43 then -- +
-				return maxexpand(s + 1, p, ep)
-			elseif epc == 42 then -- *
-				return maxexpand(s, p, ep)
-			elseif epc == 45 then -- -
-				return minexpand(s, p, ep)
-			else
-				s = s + 1
-				p = ep
-			end
-		end
-	end
-end
-
--- capture i of the match s..e-1
+-- capture i of the last match s..e-1
 local function getcapture(i, s, e)
-	if i > mlevel then
-		if i == 1 then
-			return string_sub(msrc, s, e - 1)
-		end
+	local v = wcapture(i, s, e)
+	if v == nil then
 		_error('invalid capture index %' .. i)
-	end
-	local l = caplen[i]
-	if l == CAP_UNF then
+	elseif v == false then
 		_error('unfinished capture')
-	elseif l == CAP_POS then
-		return capinit[i]
 	end
-	return string_sub(msrc, capinit[i], capinit[i] + l - 1)
+	return v
 end
--- all the captures, or the whole match when there are none
-local function getcaptures(s, e, whole)
-	local n = (mlevel == 0 and whole) and 1 or mlevel
-	local t = {}
-	for i = 1, n do
-		t[i] = getcapture(i, s, e)
+local function checkcaps(c, ...)
+	if c == false then
+		_error('unfinished capture')
 	end
-	return table_unpack(t, 1, n)
+	return c, ...
+end
+-- all the captures of the last match, which has level of them, or the whole match when there are none
+local function getcaptures(level, s, e, whole)
+	if level == 0 then
+		if whole then
+			return wcapture(1, s, e)
+		end
+		return
+	end
+	return checkcaps(wcaptures())
 end
 
 -- any of ^$*+?.([%- in p
@@ -1010,28 +839,6 @@ local function hasspecials(p)
 		end
 	end
 	return false
-end
--- When the pattern from pstart begins with a single class that must match a byte (no *, ? or - after it),
--- gives the end of that class, so a match can only start where wscan finds that class. Else nil
-local function firstclass(p, pstart)
-	local pc = string_byte(p, pstart)
-	if not pc or pc == 40 or pc == 41 or (pc == 36 and pstart == #p) then -- ( ) $
-		return nil
-	elseif pc == 37 then
-		local nc = string_byte(p, pstart + 1)
-		if nc == 98 or nc == 102 or (nc and nc >= 48 and nc <= 57) then -- %b %f %0-9
-			return nil
-		end
-	end
-	local ep = wclassend(p, pstart)
-	if ep == 0 then
-		return nil -- malformed, domatch raises the error
-	end
-	local epc = string_byte(p, ep)
-	if epc == 42 or epc == 63 or epc == 45 then -- * ? -
-		return nil
-	end
-	return ep
 end
 local findplain = _luwa.findplain
 local function strfind(s, p, init, plain, find)
@@ -1053,33 +860,21 @@ local function strfind(s, p, init, plain, find)
 		end
 		return i, i + #p - 1
 	end
-	setstate(s, p)
-	local pstart = 1
-	local anchor = string_byte(p, 1) == 94
-	if anchor then
-		pstart = 2
+	local pstart, anchor = 1, 0
+	if string_byte(p, 1) == 94 then
+		pstart, anchor = 2, 1
 	end
-	local fep = not anchor and firstclass(p, pstart)
-	local s1 = init
-	repeat
-		if fep then
-			s1 = wscan(s, s1, p, pstart, fep)
-			if s1 == 0 then
-				return nil
-			end
+	local s1, e, level = wmatch(s, p, init, pstart, anchor, 0)
+	if s1 <= 0 then
+		if s1 < 0 then
+			matcherr(s1)
 		end
-		mlevel = 0
-		local e = domatch(s1, pstart)
-		if e then
-			if find then
-				return s1, e - 1, getcaptures(s1, e, false)
-			else
-				return getcaptures(s1, e, true)
-			end
-		end
-		s1 = s1 + 1
-	until anchor or s1 > slen + 1
-	return nil
+		return nil
+	end
+	if find then
+		return s1, e - 1, getcaptures(level, s1, e, false)
+	end
+	return getcaptures(level, s1, e, true)
 end
 function string.find(s, p, init, plain)
 	return strfind(s, p, init, plain, true)
@@ -1094,27 +889,21 @@ function string.gmatch(s, p, init)
 	if pos < 1 then
 		pos = 1
 	end
-	local lastmatch
-	local fep = firstclass(p, 1)
+	local lastmatch = 0
 	return function()
-		setstate(s, p)
-		local s1, slen = pos, #s
-		while s1 <= slen + 1 do
-			if fep then
-				s1 = wscan(s, s1, p, 1, fep)
-				if s1 == 0 then
-					break
-				end
-			end
-			mlevel = 0
-			local e = domatch(s1, 1)
-			if e and e ~= lastmatch then
-				pos = e
-				lastmatch = e
-				return getcaptures(s1, e, true)
-			end
-			s1 = s1 + 1
+		if pos > #s + 1 then
+			return nil
 		end
+		local s1, e, level = wmatch(s, p, pos, 1, 0, lastmatch)
+		if s1 <= 0 then
+			if s1 < 0 then
+				matcherr(s1)
+			end
+			return nil
+		end
+		pos = e
+		lastmatch = e
+		return getcaptures(level, s1, e, true)
 	end
 end
 function string.gsub(s, p, repl, maxn)
@@ -1130,91 +919,76 @@ function string.gsub(s, p, repl, maxn)
 	_assert(rty == 'string' or rty == 'table' or rty == 'function',
 		"bad argument #3 to 'gsub' (string/function/table expected, got " .. rty .. ")")
 	maxn = maxn or #s + 1
-	local slen = #s
-	local pstart = 1
-	local anchor = string_byte(p, 1) == 94
-	if anchor then
-		pstart = 2
+	local pstart, anchor = 1, 0
+	if string_byte(p, 1) == 94 then
+		pstart, anchor = 2, 1
 	end
 	local out = {}
-	local s1, copyfrom, n, lastmatch = 1, 1, 0, nil
+	local from, copyfrom, n, lastmatch = 1, 1, 0, 0
 	local changed = false
-	local fep = not anchor and firstclass(p, pstart)
-	setstate(s, p)
 	while n < maxn do
-		if fep then
-			local ns = wscan(s, s1, p, pstart, fep)
-			if ns == 0 then
-				break
+		local s1, e, level = wmatch(s, p, from, pstart, anchor, lastmatch)
+		if s1 <= 0 then
+			if s1 < 0 then
+				matcherr(s1)
 			end
-			s1 = ns
-		end
-		mlevel = 0
-		local e = domatch(s1, pstart)
-		if e and e ~= lastmatch then
-			n = n + 1
-			out[#out + 1] = string_sub(s, copyfrom, s1 - 1)
-			local whole = string_sub(s, s1, e - 1)
-			local v
-			if rty == 'string' then
-				-- %0-9 & %% in repl
-				local parts, i, rl = {}, 1, #repl
-				while i <= rl do
-					local c = string_byte(repl, i)
-					if c == 37 then
-						i = i + 1
-						local d = string_byte(repl, i)
-						if d == 37 then
-							parts[#parts + 1] = '%'
-						elseif d and d >= 48 and d <= 57 then
-							if d == 48 then
-								parts[#parts + 1] = whole
-							else
-								local cap = getcapture(d - 48, s1, e)
-								parts[#parts + 1] = _type(cap) == 'number' and cap .. '' or cap
-							end
-						else
-							_error("invalid use of '%' in replacement string")
-						end
-					else
-						-- copy up to the next %
-						local j = i
-						while j < rl and string_byte(repl, j + 1) ~= 37 do
-							j = j + 1
-						end
-						parts[#parts + 1] = string_sub(repl, i, j)
-						i = j
-					end
-					i = i + 1
-				end
-				v = table.concat(parts)
-			elseif rty == 'table' then
-				v = repl[getcapture(1, s1, e)]
-			else
-				v = repl(getcaptures(s1, e, true))
-			end
-			-- repl may have run other matches
-			setstate(s, p)
-			if not v then
-				v = whole
-			else
-				changed = true
-			end
-			if _type(v) == 'number' then
-				v = v .. ''
-			elseif _type(v) ~= 'string' then
-				_error('invalid replacement value (a ' .. _type(v) .. ')')
-			end
-			out[#out + 1] = v
-			s1 = e
-			copyfrom = e
-			lastmatch = e
-		elseif s1 <= slen then
-			s1 = s1 + 1
-		else
 			break
 		end
-		if anchor then
+		n = n + 1
+		out[#out + 1] = string_sub(s, copyfrom, s1 - 1)
+		local v
+		if rty == 'string' then
+			-- %0-9 & %% in repl
+			local parts, i, rl = {}, 1, #repl
+			while i <= rl do
+				local c = string_byte(repl, i)
+				if c == 37 then
+					i = i + 1
+					local d = string_byte(repl, i)
+					if d == 37 then
+						parts[#parts + 1] = '%'
+					elseif d and d >= 48 and d <= 57 then
+						if d == 48 then
+							parts[#parts + 1] = string_sub(s, s1, e - 1)
+						else
+							local cap = getcapture(d - 48, s1, e)
+							parts[#parts + 1] = _type(cap) == 'number' and cap .. '' or cap
+						end
+					else
+						_error("invalid use of '%' in replacement string")
+					end
+				else
+					-- copy up to the next %
+					local j = i
+					while j < rl and string_byte(repl, j + 1) ~= 37 do
+						j = j + 1
+					end
+					parts[#parts + 1] = string_sub(repl, i, j)
+					i = j
+				end
+				i = i + 1
+			end
+			v = table.concat(parts)
+		elseif rty == 'table' then
+			v = repl[getcapture(1, s1, e)]
+		else
+			v = repl(getcaptures(level, s1, e, true))
+		end
+		if not v then
+			v = string_sub(s, s1, e - 1)
+		else
+			changed = true
+		end
+		if _type(v) == 'number' then
+			v = v .. ''
+		elseif _type(v) ~= 'string' then
+			_error('invalid replacement value (a ' .. _type(v) .. ')')
+		end
+		out[#out + 1] = v
+		from = e
+		copyfrom = e
+		lastmatch = e
+		if anchor == 1 then
 			break
 		end
 	end
@@ -1263,46 +1037,275 @@ local function quotestr(s)
 	return table.concat(out)
 end
 
--- Pads v with spaces to the width in spec, on the right when spec has '-'
-local function padspec(spec, v)
-	local flags, w = string.match(spec, '^%%([-+ #0]*)(%d*)')
-	w = tonumber(w) or 0
+-- Number formats for string.format. wasm gives exact rounded digits (rt/stdstr.lua), these lay them out like C
+local fltdigits, fmtint = _luwa.fltdigits, _luwa.fmtint
+
+-- a >= 0 with p digits after the point
+local function fmtfixed(a, p)
+	local d = fltdigits(a, p)
+	if p == 0 then
+		return d
+	end
+	if #d <= p then
+		d = string.rep('0', p + 1 - #d) .. d
+	end
+	local n = #d - p
+	return string_sub(d, 1, n) .. '.' .. string_sub(d, n + 1)
+end
+
+-- a >= 0 rounded to n significant digits: the digits & the exponent of the first
+local function sigdigits(a, n)
+	if a == 0 then
+		return string.rep('0', n), 0
+	end
+	-- guess the exponent from the binary one, then fix k until there are n digits.
+	-- A 0 means k is far too small, which the guess can be for subnormals
+	local k = n - 1 - (((reinterp(a) >> 52) - 1023) * 78913) // 262144
+	local d = fltdigits(a, k)
+	while #d ~= n or d == '0' do
+		k = k + (d == '0' and 20 or n - #d)
+		d = fltdigits(a, k)
+	end
+	return d, n - 1 - k
+end
+
+local function expstr(x)
+	if x < 0 then
+		return x > -10 and '-0' .. -x or x .. ''
+	end
+	return x < 10 and '+0' .. x or '+' .. x
+end
+
+-- a >= 0 as d.ddde+xx with p digits after the point
+local function fmtexp(a, p, alt)
+	local r, x = sigdigits(a, p + 1)
+	local dot = (p > 0 or alt) and '.' or ''
+	return string_sub(r, 1, 1) .. dot .. string_sub(r, 2) .. 'e' .. expstr(x)
+end
+
+-- a >= 0 the way %g does: p significant digits, %e's form when the exponent is under -4 or p or more
+local function fmtgen(a, p, alt)
+	if p == 0 then
+		p = 1
+	end
+	local r, x = sigdigits(a, p)
+	local ip, frac, tail
+	if p > x and x >= -4 then
+		if x >= 0 then
+			ip, frac = string_sub(r, 1, x + 1), string_sub(r, x + 2)
+		else
+			ip, frac = '0', string.rep('0', -x - 1) .. r
+		end
+		tail = ''
+	else
+		ip, frac, tail = string_sub(r, 1, 1), string_sub(r, 2), 'e' .. expstr(x)
+	end
+	if not alt then
+		local z = #frac
+		while z > 0 and string_byte(frac, z) == 48 do
+			z = z - 1
+		end
+		frac = string_sub(frac, 1, z)
+	end
+	if frac ~= '' or alt then
+		return ip .. '.' .. frac .. tail
+	end
+	return ip .. tail
+end
+
+-- a >= 0 as 0x1.hhhp+e like glibc's %a, p hex digits after the point (nil for as many as needed)
+local function fmthex(a, p, alt)
+	local bits = reinterp(a)
+	local e, frac, lead = bits >> 52, bits & 0xfffffffffffff, 1
+	if a == 0 then
+		e, lead = 0, 0
+	elseif e == 0 then
+		e, lead = -1022, 0
+	else
+		e = e - 1023
+	end
+	local h
+	if p and p < 13 then
+		-- round to p hex digits, half to even
+		local sh = (13 - p) * 4
+		local v = (lead << 52) | frac
+		local q, rest, half = v >> sh, v & ((1 << sh) - 1), 1 << (sh - 1)
+		if rest > half or (rest == half and q & 1 == 1) then
+			q = q + 1
+		end
+		lead = q >> (p * 4)
+		h = p > 0 and fmtint(q & ((1 << (p * 4)) - 1), 16, 0) or ''
+		h = string.rep('0', p - #h) .. h
+	else
+		h = fmtint(frac, 16, 0)
+		h = string.rep('0', 13 - #h) .. h
+		local z = 13
+		while z > 0 and string_byte(h, z) == 48 do
+			z = z - 1
+		end
+		h = string_sub(h, 1, z)
+		if p then
+			h = h .. string.rep('0', p - #h)
+		end
+	end
+	if h ~= '' or alt then
+		h = '.' .. h
+	end
+	return '0x' .. lead .. h .. 'p' .. (e < 0 and e or '+' .. e)
+end
+
+-- Spec flags as bits: - + space # 0
+local FMINUS, FPLUS, FSPACE, FALT, FZERO = 1, 2, 4, 8, 16
+local flagbits = { [45] = FMINUS, [43] = FPLUS, [32] = FSPACE, [35] = FALT, [48] = FZERO }
+
+-- Pads v with spaces to width w, on the right with the - flag
+local function padw(fl, w, v)
 	if #v >= w then
 		return v
-	elseif string.find(flags, '-', 1, true) then
+	elseif fl & FMINUS ~= 0 then
 		return v .. string.rep(' ', w - #v)
 	end
 	return string.rep(' ', w - #v) .. v
 end
-
--- Skips up to 2 digits from k
-local function skip2digits(spec, k)
-	for _ = 1, 2 do
-		local c = string_byte(spec, k)
-		if c and c >= 48 and c <= 57 then
-			k = k + 1
-		end
+-- Sign, prefix (like 0x) & body laid out to width w, as C does.
+-- zeros says the 0 flag may pad with zeros, false for inf, nan & ints with a precision
+local function padnum(fl, w, sign, prefix, body, zeros)
+	local n = #sign + #prefix + #body
+	if n >= w then
+		return sign .. prefix .. body
+	elseif fl & FMINUS ~= 0 then
+		return sign .. prefix .. body .. string.rep(' ', w - n)
+	elseif zeros and fl & FZERO ~= 0 then
+		return sign .. prefix .. string.rep('0', w - n) .. body
 	end
-	return k
+	return string.rep(' ', w - n) .. sign .. prefix .. body
+end
+local function possign(fl)
+	if fl & FPLUS ~= 0 then
+		return '+'
+	elseif fl & FSPACE ~= 0 then
+		return ' '
+	end
+	return ''
 end
 
--- Like lstrlib's checkformat: spec may have only these flags, a width of up to 2 digits
--- & a precision of up to 2 digits when prec is true
-local function checkformat(spec, flags, prec)
-	local k = 2
-	while string.find(flags, string_sub(spec, k, k), 1, true) and k < #spec do
-		k = k + 1
+-- %d %i %u %o %x %X of integer v
+local function fmtintspec(conv, v, fl, w, p)
+	local sign, prefix, body = '', '', nil
+	if conv == 100 or conv == 105 then
+		if v < 0 then
+			sign = '-'
+			-- -mininteger is mininteger, which reads right as unsigned
+			v = -v
+		else
+			sign = possign(fl)
+		end
+		body = fmtint(v, 10, 0)
+	else
+		body = fmtint(v, conv == 117 and 10 or conv == 111 and 8 or 16, conv == 88 and 1 or 0)
 	end
-	if string_byte(spec, k) ~= 48 then
-		k = skip2digits(spec, k)
-		if prec and string_byte(spec, k) == 46 then
-			k = skip2digits(spec, k + 1)
+	if p then
+		if p == 0 and v == 0 then
+			body = ''
+		elseif #body < p then
+			body = string.rep('0', p - #body) .. body
 		end
 	end
-	if k ~= #spec then
-		_error("invalid conversion specification: '" .. spec .. "'")
+	if fl & FALT ~= 0 then
+		if conv == 111 then
+			if string_byte(body, 1) ~= 48 then
+				body = '0' .. body
+			end
+		elseif v ~= 0 then
+			prefix = conv == 88 and '0X' or '0x'
+		end
 	end
+	return padnum(fl, w, sign, prefix, body, not p)
 end
+
+-- %a %A %e %E %f %g %G of float v
+local function fmtfltspec(conv, v, fl, w, p)
+	local upper = conv == 65 or conv == 69 or conv == 71
+	local sign = reinterp(v) < 0 and '-' or possign(fl)
+	local a = v < 0 and -v or v
+	local alt = fl & FALT ~= 0
+	local body
+	if a ~= a then
+		body = 'nan'
+	elseif a == 1/0 then
+		body = 'inf'
+	else
+		local prefix = ''
+		if conv == 102 then
+			body = fmtfixed(a, p or 6)
+			if alt and p == 0 then
+				body = body .. '.'
+			end
+		elseif conv == 101 or conv == 69 then
+			body = fmtexp(a, p or 6, alt)
+		elseif conv == 103 or conv == 71 then
+			body = fmtgen(a, p or 6, alt)
+		else
+			prefix = '0x'
+			body = string_sub(fmthex(a, p, alt), 3)
+		end
+		if upper then
+			prefix, body = string.upper(prefix), string.upper(body)
+		end
+		return padnum(fl, w, sign, prefix, body, true)
+	end
+	if upper then
+		body = string.upper(body)
+	end
+	return padnum(fl, w, sign, '', body, false)
+end
+
+-- Like lstrlib's checkformat, for the spec fmt[j..k], j at the % & k at the conversion byte:
+-- only flags in allowed (flag bits), a width of up to 2 digits & when prec is set, a precision of up to 2.
+-- Gives the flags, width & precision (nil for none)
+local function checkformat(fmt, j, k, allowed, prec)
+	local i, fl = j + 1, 0
+	local c = string_byte(fmt, i)
+	while i < k do
+		local b = flagbits[c]
+		if not b or b & allowed == 0 then
+			break
+		end
+		fl = fl | b
+		i = i + 1
+		c = string_byte(fmt, i)
+	end
+	local w, p = 0, nil
+	-- a width can't start with 0
+	if c ~= 48 then
+		for _ = 1, 2 do
+			if c >= 48 and c <= 57 then
+				w = w * 10 + c - 48
+				i = i + 1
+				c = string_byte(fmt, i)
+			end
+		end
+		if prec and c == 46 then
+			p = 0
+			i = i + 1
+			c = string_byte(fmt, i)
+			for _ = 1, 2 do
+				if c >= 48 and c <= 57 then
+					p = p * 10 + c - 48
+					i = i + 1
+					c = string_byte(fmt, i)
+				end
+			end
+		end
+	end
+	if i ~= k then
+		_error("invalid conversion specification: '" .. string_sub(fmt, j, k) .. "'")
+	end
+	return fl, w, p
+end
+
+local FL_C, FL_I, FL_U, FL_X, FL_F = FMINUS, FMINUS | FPLUS | FZERO | FSPACE, FMINUS | FZERO,
+	FMINUS | FALT | FZERO, FMINUS | FPLUS | FALT | FZERO | FSPACE
 
 local host = _luwa.host
 function string.format(...)
@@ -1333,53 +1336,54 @@ function string.format(...)
 				_error("bad argument #" .. argi .. " to 'format' (no value)")
 			end
 			-- flags, width & precision, then the conversion byte
-			while k <= n do
-				local c = string_byte(fmt, k)
-				if c == 45 or c == 43 or c == 35 or c == 32 or c == 46 or (c >= 48 and c <= 57) then
-					k = k + 1
-				else
-					break
-				end
+			local conv = string_byte(fmt, k)
+			while conv == 45 or conv == 43 or conv == 35 or conv == 32 or conv == 46 or (conv and conv >= 48 and conv <= 57) do
+				k = k + 1
+				conv = string_byte(fmt, k)
 			end
 			if k - j >= 22 then
 				_error("invalid format (too long)")
 			end
-			local spec = string_sub(fmt, j, k)
-			local conv = string_byte(fmt, k)
+			local plain = k == j + 1
 			local arg = _select(argi, ...)
-			if conv == 99 then -- c, as a raw byte
-				checkformat(spec, '-', false)
+			if conv == 100 and plain then
+				out[#out + 1] = checkint(arg, argi, 'format', argc) .. ''
+			elseif conv == 115 and plain then
+				out[#out + 1] = _tostring(arg)
+			elseif conv == 99 then -- c, as a raw byte
+				local fl, w = checkformat(fmt, j, k, FL_C, false)
 				local v = checkint(arg, argi, 'format', argc)
-				out[#out + 1] = padspec(spec, string_char(v & 255))
+				out[#out + 1] = padw(fl, w, string_char(v & 255))
 			elseif conv == 100 or conv == 105 or conv == 117 or conv == 111 or conv == 120 or conv == 88 then
 				local v = checkint(arg, argi, 'format', argc)
-				checkformat(spec, (conv == 100 or conv == 105) and '-+0 ' or conv == 117 and '-0' or '-#0', true)
-				out[#out + 1] = host('fmt', spec, v)
+				local fl, w, p = checkformat(fmt, j, k, (conv == 100 or conv == 105) and FL_I or conv == 117 and FL_U or FL_X, true)
+				out[#out + 1] = fmtintspec(conv, v, fl, w, p)
 			elseif conv == 97 or conv == 65 or conv == 101 or conv == 69 or conv == 102 or conv == 103 or conv == 71 then
 				-- C checks %a's spec before its argument, the others after
+				local fl, w, p
 				local hexa = conv == 97 or conv == 65
 				if hexa then
-					checkformat(spec, '-+#0 ', true)
+					fl, w, p = checkformat(fmt, j, k, FL_F, true)
 				end
 				local v = _tonumber(arg)
 				if _type(v) ~= 'number' then
 					_error("bad argument #" .. argi .. " to 'format' (number expected, got " .. argtype(arg, argi, argc) .. ")")
 				end
 				if not hexa then
-					checkformat(spec, '-+#0 ', true)
+					fl, w, p = checkformat(fmt, j, k, FL_F, true)
 				end
 				-- * 1.0 keeps -0.0
-				out[#out + 1] = host('fmt', spec, v * 1.0)
+				out[#out + 1] = fmtfltspec(conv, v * 1.0, fl, w, p)
 			elseif conv == 112 then -- p
-				checkformat(spec, '-', false)
+				local fl, w = checkformat(fmt, j, k, FL_C, false)
 				local ty = _type(arg)
 				if ty == 'table' or ty == 'function' or ty == 'thread' or ty == 'string' then
-					out[#out + 1] = padspec(spec, hexid(arg))
+					out[#out + 1] = padw(fl, w, hexid(arg))
 				else
-					out[#out + 1] = padspec(spec, '(null)')
+					out[#out + 1] = padw(fl, w, '(null)')
 				end
 			elseif conv == 113 then -- q
-				if #spec > 2 then
+				if not plain then
 					_error("specifier '%q' cannot have modifiers")
 				end
 				local ty = math_type(arg)
@@ -1395,7 +1399,7 @@ function string.format(...)
 					elseif arg == -1/0 then
 						out[#out + 1] = '-1e9999'
 					else
-						out[#out + 1] = host('fmt', '%a', arg)
+						out[#out + 1] = (reinterp(arg) < 0 and '-' or '') .. fmthex(arg < 0 and -arg or arg)
 					end
 				elseif arg == nil or arg == true or arg == false then
 					out[#out + 1] = _tostring(arg)
@@ -1404,22 +1408,17 @@ function string.format(...)
 				end
 			elseif conv == 115 then -- s
 				local v = _tostring(arg)
-				if #spec == 2 then
-					out[#out + 1] = v
-				else
-					if string.find(v, '\0', 1, true) then
-						_error("bad argument #" .. argi .. " to 'format' (string contains zeros)")
-					end
-					checkformat(spec, '-', true)
-					local dot = string.find(spec, '.', 1, true)
-					if dot then
-						-- precision cuts
-						v = string_sub(v, 1, tonumber(string_sub(spec, dot + 1, -2)) or 0)
-					end
-					out[#out + 1] = padspec(spec, v)
+				if string.find(v, '\0', 1, true) then
+					_error("bad argument #" .. argi .. " to 'format' (string contains zeros)")
 				end
+				local fl, w, p = checkformat(fmt, j, k, FL_C, true)
+				-- precision cuts
+				if p then
+					v = string_sub(v, 1, p)
+				end
+				out[#out + 1] = padw(fl, w, v)
 			else
-				_error("invalid conversion '" .. spec .. "' to 'format'")
+				_error("invalid conversion '" .. string_sub(fmt, j, k) .. "' to 'format'")
 			end
 			i = k + 1
 		end

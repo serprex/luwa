@@ -1362,10 +1362,11 @@ defMop('Syscall', function(mop, ctx)
 			_strmap = stdstr.strmap,
 			_strrep = stdstr.strrep,
 			_concat = stdstr.concat,
-			_classend = stdstr.classend,
-			_single = stdstr.single,
-			_span = stdstr.span,
-			_scan = stdstr.scan,
+			_match = stdstr.match,
+			_capture = stdstr.capture,
+			_captures = stdstr.captures,
+			_fltdigits = stdstr.fltdigits,
+			_fmtint = stdstr.fmtint,
 			_findplain = stdstr.findplain,
 			_random = function()
 				f:call(rt.random)
