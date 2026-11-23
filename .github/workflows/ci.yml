@@ -36,3 +36,25 @@ jobs:
 
       - name: bootstrap
         run: ./scripts/bootstrap.sh
+
+      # copy the files index.html needs into one folder for github pages
+      - name: pages bundle
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        run: mkdir _site && cp index.html ui.js rt.js util.js rt.wasm _site/
+
+      - uses: actions/upload-pages-artifact@v5
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+  pages:
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5
