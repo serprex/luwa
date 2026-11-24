@@ -139,13 +139,12 @@ end)
 
 -- Go on to the next op. In the interpreter that's the end of eval's switch.
 -- In JIT code it's a gap the JIT fills with a branch to the next op's code
-local function brnop(f, ctx, scopes)
+-- Go to the end of the op: in eval the end of its case, in JIT code a block the op is wrapped in, see Syscall
+local function brnop(f, ctx, nop)
+	f:br(nop)
 	if ctx.jit then
-		f:gap{ kind = 'nop', inner = f.scope - ctx.jitroot }
 		f:unreach()
 		ctx.js.dead = true
-	else
-		f:br(scopes.nop)
 	end
 end
 
@@ -1465,34 +1464,42 @@ defMop('Syscall', function(mop, ctx)
 			end,
 		}
 
-		local cases = {}
-		for i, name in ipairs(require 'sys') do
-			local body = assert(impl[name], 'Syscall has no impl: ' .. name)
-			cases[#cases+1] = i-1
-			cases[#cases+1] = function()
-				if type(body) == 'function' then
-					body()
-				elseif type(body) == 'table' and rawget(body, 'sw') then
-					f:load(ctx.pc.r)
-					f:call(body.sw)
-					switchframe(f, ctx, scopes)
-				else
-					f:call(body)
+		local function syscall(nop)
+			local cases = {}
+			for i, name in ipairs(require 'sys') do
+				local body = assert(impl[name], 'Syscall has no impl: ' .. name)
+				cases[#cases+1] = i-1
+				cases[#cases+1] = function()
+					if type(body) == 'function' then
+						body()
+					elseif type(body) == 'table' and rawget(body, 'sw') then
+						f:load(ctx.pc.r)
+						f:call(body.sw)
+						switchframe(f, ctx, scopes)
+					else
+						f:call(body)
+					end
+					brnop(f, ctx, nop)
 				end
-				brnop(f, ctx, scopes)
 			end
+			f:switch(function()
+				f:load(ctx.bc.r)
+				f:load(ctx.pc.r)
+				f:arrayget(bytes, false)
+				f:load(ctx.pc.r)
+				addk(f, 1)
+				f:store(ctx.pc.r)
+				-- builtins may look at the frame's pc
+				setf(f, 'pc', function() f:load(ctx.pc.r) end)
+			end, table.unpack(cases))
+			f:unreachable()
 		end
-		f:switch(function()
-			f:load(ctx.bc.r)
-			f:load(ctx.pc.r)
-			f:arrayget(bytes, false)
-			f:load(ctx.pc.r)
-			addk(f, 1)
-			f:store(ctx.pc.r)
-			-- builtins may look at the frame's pc
-			setf(f, 'pc', function() f:load(ctx.pc.r) end)
-		end, table.unpack(cases))
-		f:unreachable()
+		-- JIT code has no block ending right after the op to branch to, so it makes one
+		if ctx.jit then
+			f:block(syscall)
+		else
+			syscall(scopes.nop)
+		end
 	end)
 end)
 
@@ -1543,6 +1550,8 @@ local eval = func(i32, function(f)
 	local budget = f:locals(i32)
 	local code = f:locals(R.jitfty)
 	local jr = f:locals(i32)
+	-- 1 when JIT code gave back 3: run the top frame here until it switches frames or jumps back
+	local nojit = f:locals(i32)
 	f:i32(0x10000)
 	f:store(budget)
 	f:i32(0)
@@ -1583,6 +1592,9 @@ local eval = func(i32, function(f)
 		f:tee(code)
 		f:refisnull()
 		f:eqz()
+		f:load(nojit)
+		f:eqz()
+		f:band()
 		f:iff(function()
 			f:load(base)
 			f:load(locbase)
@@ -1593,6 +1605,15 @@ local eval = func(i32, function(f)
 			f:load(code)
 			f:callref(alloc.jitfty)
 			f:tee(jr)
+			f:i32(3)
+			f:eq()
+			f:iff(function()
+				-- the JIT'd code can't start at the top frame's pc, see jit.lua
+				f:i32(1)
+				f:store(nojit)
+				f:br(reload)
+			end)
+			f:load(jr)
 			f:iff(function()
 				-- main returned, or out of budget. pc is in the frame already
 				f:load(jr)
@@ -1609,6 +1630,8 @@ local eval = func(i32, function(f)
 			f:i32(0)
 			f:ret()
 		end)
+		f:i32(0)
+		f:store(nojit)
 
 		f:loop(function(loop)
 			f:switch(function(scopes)
