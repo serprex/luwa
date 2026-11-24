@@ -4,3 +4,4 @@
 lua-*-tests/
 lua-5.5.1/
 wasi-sdk/
+bench/private/

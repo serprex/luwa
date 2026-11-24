@@ -64,4 +64,6 @@ return {
 	'_fmtint',
 	'_findplain',
 	'_compile',
+	'rawequal',
+	'rawlen',
 }

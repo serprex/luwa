@@ -1407,6 +1407,8 @@ defMop('Syscall', function(mop, ctx)
 			type = { sw = std.type },
 			rawget = std.rawget,
 			rawset = std.rawset,
+			rawequal = std.rawequal,
+			rawlen = std.rawlen,
 			next = std.next,
 			string_byte = std.string_byte,
 			string_char = std.string_char,

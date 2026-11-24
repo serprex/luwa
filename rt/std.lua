@@ -114,6 +114,35 @@ local std_rawget = func(function(f)
 	f:call(tmppush)
 end)
 
+local std_rawequal = func(function(f)
+	loadparam(f, 0)
+	loadparam(f, 1)
+	f:call(_obj.eq)
+	alloc.lbool(f)
+	f:call(tmppush)
+end)
+
+-- # of a string or table, no __len. Traps on anything else
+local std_rawlen = func(function(f)
+	loadparam(f, 0)
+	f:call(typeof)
+	f:i32(types.str)
+	f:eq()
+	f:iff(i32, function()
+		loadparam(f, 0)
+		f:refcast(R.str)
+		f:structget(str, 'bytes')
+		f:arraylen()
+	end, function()
+		loadparam(f, 0)
+		f:refcast(R.tbl)
+		f:call(_table.tbllen)
+	end)
+	f:i64extendu()
+	f:call(newi64)
+	f:call(tmppush)
+end)
+
 local std_rawset = func(function(f)
 	loadparam(f, 0)
 	f:refcast(R.tbl)
@@ -1154,6 +1183,8 @@ return {
 	pcall = std_pcall,
 	rawget = std_rawget,
 	rawset = std_rawset,
+	rawequal = std_rawequal,
+	rawlen = std_rawlen,
 	select = std_select,
 	type = std_type,
 	string_byte = std_string_byte,

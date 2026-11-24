@@ -2023,6 +2023,24 @@ function print(...)
 	host('write', 1, table.concat(t, '\t', 1, n) .. '\n')
 end
 
+-- Warnings are off until warn('@on')
+local warnon = false
+function warn(msg, ...)
+	local n = _select('#', ...)
+	_assert(_type(msg) == 'string', "bad argument #1 to 'warn' (string expected, got " .. _type(msg) .. ")")
+	for i = 1, n do
+		local s = _select(i, ...)
+		_assert(_type(s) == 'string', "bad argument #" .. (i + 1) .. " to 'warn' (string expected, got " .. _type(s) .. ")")
+	end
+	if n == 0 and msg:sub(1, 1) == '@' then
+		if msg == '@on' then warnon = true elseif msg == '@off' then warnon = false end
+		return
+	end
+	if warnon then
+		host('write', 2, 'Lua warning: ' .. table.concat({ msg, ... }) .. '\n')
+	end
+end
+
 -- The wasm engine owns the GC, so this only answers like Lua would
 local gcopts = { collect = 0, stop = 0, restart = 0, count = 0.0, step = true, isrunning = true }
 local gcmode = 'incremental'
@@ -2732,6 +2750,10 @@ end
 local function _load(src, name, mode, env)
 	if name == nil then
 		name = _type(src) == 'string' and src or '=(load)'
+	elseif _type(name) == 'number' then
+		name = _tostring(name)
+	elseif _type(name) ~= 'string' then
+		_error("bad argument #2 to 'load' (string expected, got " .. _type(name) .. ")")
 	end
 	if _type(src) == 'function' then
 		-- a function giving pieces until nil or ''

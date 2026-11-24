@@ -106,6 +106,8 @@ local initPrelude = func(R.tbl, function(f)
 		GS.xpcall, GF.xpcall,
 		GS.rawget, GF.rawget,
 		GS.rawset, GF.rawset,
+		GS.rawequal, GF.rawequal,
+		GS.rawlen, GF.rawlen,
 		GS.select, GF.select,
 		GS.type, GF.type,
 		GS._VERSION, GS[rt.Version])
